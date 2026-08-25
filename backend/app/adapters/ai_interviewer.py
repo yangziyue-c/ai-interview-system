@@ -19,7 +19,10 @@
 约定：15 秒内未返回 / 非 2xx / 未配置 URL 时，后端自动使用内置 Mock 题库兜底，
 保证面试流程不中断。
 """
+import asyncio
 import logging
+
+import httpx
 
 from app.adapters.base import HTTPAdapterBase
 from app.config import settings
@@ -59,11 +62,66 @@ SHORT_ANSWER_FOLLOW_UP = "你的回答比较简略，能结合具体的项目经
 SHORT_ANSWER_THRESHOLD = 15  # 回答少于该字数时触发"展开"追问
 
 
+_LLM_SYSTEM_PROMPT = (
+    "你是一名资深互联网公司的技术面试官，正在面试一名应聘「{position}」岗位的计算机专业学生。"
+    "你的提问要专业、有深度，并针对对方的回答进行针对性追问，逐步考察其真实水平。"
+    "只输出下一个面试问题的文本本身，不要输出任何解释、前缀或多余字符。"
+)
+
+_POSITION_LABELS = {"backend": "后端开发工程师", "frontend": "前端开发工程师"}
+
+
 class AIInterviewerAdapter(HTTPAdapterBase):
-    """P2：生成开场题与追问"""
+    """P2：生成开场题与追问
+
+    数据源优先级：
+      1. AI_INTERVIEWER_URL（P2 的 HTTP 服务）
+      2. LLM_API_KEY（直接调 OpenAI 兼容大模型，P2 服务未就绪时的临时方案）
+      3. 内置 Mock 题库
+    任一路径失败/超时（15 秒）均降级到 Mock，流程不中断。
+    """
 
     def __init__(self) -> None:
         super().__init__(settings.AI_INTERVIEWER_URL, "P2-AI面试官")
+
+    async def _generate_via_llm(self, payload: dict, mock_func) -> str:
+        """直接调用 OpenAI 兼容大模型生成问题；失败降级 Mock"""
+        position_label = _POSITION_LABELS.get(payload["position"], "后端开发工程师")
+        messages: list[dict] = [
+            {"role": "system", "content": _LLM_SYSTEM_PROMPT.format(position=position_label)}
+        ]
+        if payload["history"]:
+            for item in payload["history"]:
+                messages.append({
+                    "role": "assistant" if item["role"] == "interviewer" else "user",
+                    "content": item["content"],
+                })
+        else:
+            messages.append({"role": "user", "content": "面试开始，请提问。"})
+
+        try:
+            async with httpx.AsyncClient(timeout=settings.ADAPTER_TIMEOUT_SECONDS) as client:
+                resp = await asyncio.wait_for(
+                    client.post(
+                        f"{settings.LLM_BASE_URL}/chat/completions",
+                        headers={"Authorization": f"Bearer {settings.LLM_API_KEY}"},
+                        json={
+                            "model": settings.LLM_MODEL,
+                            "messages": messages,
+                            "temperature": 0.7,
+                        },
+                    ),
+                    timeout=settings.ADAPTER_TIMEOUT_SECONDS,
+                )
+                resp.raise_for_status()
+                content = (resp.json().get("choices") or [{}])[0].get("message", {}).get("content", "")
+                content = (content or "").strip()
+                if not content:
+                    raise RuntimeError("LLM 返回空内容")
+                return content
+        except Exception as exc:  # noqa: BLE001 - 任何失败都降级
+            logger.warning("LLM 直连失败(%s)，已降级为 Mock 兜底", exc)
+            return await mock_func()
 
     async def generate_question(
         self,
@@ -94,8 +152,14 @@ class AIInterviewerAdapter(HTTPAdapterBase):
             pool = FOLLOW_UP_QUESTIONS
             return pool[(round_no - 2) % len(pool)]
 
-        result = await self.call_or_fallback("/generate", payload, _mock)
-        # Mock 直接返回题目字符串；外部服务返回 {"question": "..."}
+        if self.base_url:
+            result = await self.call_or_fallback("/generate", payload, _mock)
+        elif settings.LLM_API_KEY:
+            result = await self._generate_via_llm(payload, _mock)
+        else:
+            return await _mock()
+
+        # Mock/LLM 直接返回题目字符串；外部服务返回 {"question": "..."}
         if isinstance(result, dict):
             question = str(result.get("question") or "")
         else:

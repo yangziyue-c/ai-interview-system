@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     AI_EVALUATOR_URL: str = ""
     ADAPTER_TIMEOUT_SECONDS: float = 15.0
 
+    # ---- 大模型直连（P2 服务未就绪时的临时方案，OpenAI 兼容接口）----
+    # 优先级：AI_INTERVIEWER_URL > LLM_API_KEY > Mock
+    # 仅保存在本地 .env，切勿提交到 git
+    LLM_BASE_URL: str = ""   # 如 https://api.deepseek.com/v1
+    LLM_API_KEY: str = ""    # API Key
+    LLM_MODEL: str = "deepseek-chat"
+
     # ---- 上传 ----
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_SIZE_MB: int = 20

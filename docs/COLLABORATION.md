@@ -2,7 +2,7 @@
 
 ## 一、仓库信息
 
-- 仓库地址：https://github.com/<你的用户名>/ai-interview-system
+- 仓库地址：https://github.com/yangziyue-c/ai-interview-system
 - 分支策略：
   - `main`：稳定分支，只接受合并请求/直接推送需团队约定
   - 每人功能分支：`feature/xxx`（如 `p2/rag-retrieval`、`p4/chat-ui`）
@@ -22,10 +22,10 @@
 
 ```bash
 # 给每个成员发邀请（用户名按实际替换）
-gh repo add-collaborator <你的用户名>/ai-interview-system p2_github_用户名 --permission push
-gh repo add-collaborator <你的用户名>/ai-interview-system p3_github_用户名 --permission push
-gh repo add-collaborator <你的用户名>/ai-interview-system p4_github_用户名 --permission push
-gh repo add-collaborator <你的用户名>/ai-interview-system p5_github_用户名 --permission push
+gh repo add-collaborator yangziyue-c/ai-interview-system p2_github_用户名 --permission push
+gh repo add-collaborator yangziyue-c/ai-interview-system p3_github_用户名 --permission push
+gh repo add-collaborator yangziyue-c/ai-interview-system p4_github_用户名 --permission push
+gh repo add-collaborator yangziyue-c/ai-interview-system p5_github_用户名 --permission push
 ```
 
 ### 方法 C：组织仓库（5 人都同一学校组织时更规范）
@@ -39,7 +39,7 @@ gh repo add-collaborator <你的用户名>/ai-interview-system p5_github_用户�
 
 ```bash
 # 1. 首次：克隆仓库（用发给你的仓库地址）
-git clone https://github.com/<你的用户名>/ai-interview-system.git
+git clone https://github.com/yangziyue-c/ai-interview-system.git
 cd ai-interview-system
 
 # 2. 每次开发前：拉最新代码 + 建自己的分支
