@@ -1,0 +1,4 @@
+# 行尾规范：bat 必须是 CRLF（cmd 对 LF-only 的 bat 解析会出错）
+*.bat text eol=crlf
+*.py text eol=lf
+*.md text eol=lf
