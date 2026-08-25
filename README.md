@@ -46,7 +46,7 @@ project/
 │   ├── API.md                # 接口文档
 │   ├── DEPLOY.md             # 内网穿透部署说明
 │   └── COLLABORATION.md      # Git 协作与权限授予
-└── a.md                      # 需求文档
+└── frontend/                 # 前端
 ```
 
 ## 快速开始（Windows）

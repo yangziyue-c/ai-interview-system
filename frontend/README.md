@@ -27,7 +27,7 @@ npm run build
 
 然后访问 `http://localhost:8000` 即可（与 API 同端口，无跨域问题）。
 
-## 页面需求（来自 a.md）
+## 页面需求
 
 1. **登录/注册页**：账号密码 + 选择目标岗位（backend/frontend）
 2. **面试页**：
