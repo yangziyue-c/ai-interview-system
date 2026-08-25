@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 模拟面试系统</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center; padding: 24px;
+    }
+    .card {
+      background: #fff; border-radius: 16px; padding: 40px 48px;
+      max-width: 560px; box-shadow: 0 20px 60px rgba(0,0,0,.25);
+    }
+    h1 { font-size: 24px; color: #333; margin-bottom: 8px; }
+    .sub { color: #888; font-size: 14px; margin-bottom: 24px; }
+    .badge { display: inline-block; background: #eef2ff; color: #4f46e5;
+      border-radius: 999px; padding: 4px 14px; font-size: 13px; margin-bottom: 20px; }
+    h2 { font-size: 15px; color: #555; margin: 16px 0 8px; }
+    code { background: #f5f5f7; padding: 2px 6px; border-radius: 4px;
+      font-size: 13px; color: #d63384; }
+    .steps { color: #666; font-size: 14px; line-height: 1.9; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">后端运行正常 ✅</span>
+    <h1>AI 模拟面试系统 · 占位页</h1>
+    <p class="sub">这是后端自动生成的占位页面，说明前后端联调已就绪。</p>
+
+    <h2>🔧 前端同学（P4）看这里</h2>
+    <div class="steps">
+      1. 在 <code>frontend/</code> 目录完成前端开发<br>
+      2. 构建后将 <code>dist/</code> 的全部内容复制到
+         <code>backend/static/</code><br>
+      3. 重启后端，浏览器访问 <code>http://localhost:8000</code>
+         即可看到你的页面（与 API 同端口，无跨域问题）
+    </div>
+
+    <h2>🔌 API 同学（P2/P3）看这里</h2>
+    <div class="steps">
+      接口文档：<code>http://localhost:8000/docs</code>（Swagger UI）<br>
+      健康检查：<code>GET /api/v1/health</code><br>
+      接入说明见 <code>docs/API.md</code> 与 <code>backend/app/adapters/</code>
+    </div>
+  </div>
+</body>
+</html>

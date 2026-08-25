@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 环境配置（含密钥，不入库）
+.env
+
+# 数据库文件
+*.db
+*.sqlite3
+
+# 上传的音频（不入库，目录保留）
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# 前端构建产物（由各成员本地构建，不入库）
+frontend/node_modules/
+frontend/dist/
+
+# 测试与缓存
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
