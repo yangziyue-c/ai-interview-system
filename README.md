@@ -44,8 +44,9 @@ project/
 ├── frontend/                 # 前端（P4 负责）
 ├── docs/
 │   ├── API.md                # 接口文档
+│   ├── DATABASE.md           # 数据库设计文档
 │   ├── DEPLOY.md             # 内网穿透部署说明
-│   └── COLLABORATION.md      # Git 协作与权限授予
+│   └── COLLABORATION.md      # Git 协作指南
 └── frontend/                 # 前端
 ```
 
