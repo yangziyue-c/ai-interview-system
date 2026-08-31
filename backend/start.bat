@@ -15,8 +15,18 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM ---------- 2. 定位 conda 环境的 python（不依赖 activate，避免环境切换失效） ----------
-for /f "delims=" %%B in ('conda info --base') do set "CONDA_BASE=%%B"
+REM ---------- 2. 定位 conda base 目录 ----------
+REM conda 首次运行会输出 ToS 确认等额外文本污染 stdout，
+REM 因此只取以盘符（如 C:）开头的路径行
+set "CONDA_BASE="
+for /f "delims=" %%B in ('conda info --base 2^>nul') do (
+    echo %%B | findstr /b /r "[A-Za-z]:" >nul && set "CONDA_BASE=%%B"
+)
+if not defined CONDA_BASE (
+    echo [错误] 无法定位 conda 安装目录。请在 cmd 中运行 conda info --base 查看输出并联系 P1
+    pause
+    exit /b 1
+)
 set "PYTHON=%CONDA_BASE%\envs\ai_interview\python.exe"
 
 REM ---------- 3. 检查/创建 conda 环境 ----------
