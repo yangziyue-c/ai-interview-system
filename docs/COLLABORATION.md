@@ -2,14 +2,17 @@
 
 ## 一、仓库信息
 
-- 仓库地址：https://github.com/yangziyue-c/ai-interview-system
+- **GitHub**：https://github.com/yangziyue-c/ai-interview-system
+- **Gitee**（国内访问快，推荐国内成员使用）：https://gitee.com/yangziyuegit/ai-interview-system
+- 两个远程内容完全一致，任选其一克隆即可
 - 分支策略：所有成员直接推 `main` 分支（团队人数少，功能模块不重叠，直推最省事）
 
 ## 二、成员的日常提交流程（写给 P2~P5）
 
 ```bash
-# 1. 首次：克隆仓库
-git clone https://github.com/yangziyue-c/ai-interview-system.git
+# 1. 首次：克隆仓库（国内推荐用 Gitee 地址）
+git clone https://gitee.com/yangziyuegit/ai-interview-system.git
+# 或 git clone https://github.com/yangziyue-c/ai-interview-system.git
 cd ai-interview-system
 
 # 2. 每次开发前：拉最新代码
