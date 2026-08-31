@@ -41,6 +41,27 @@ def locate_conda_base() -> Path | None:
     return None
 
 
+def locate_env_python() -> Path | None:
+    """Find ai_interview env's python.exe via `conda env list`.
+
+    Must NOT guess from conda base: envs may live in a user dir
+    (e.g. C:\\Users\\xxx\\.conda\\envs) when the base dir is not writable.
+    """
+    try:
+        out = subprocess.run(
+            ["conda", "env", "list"], capture_output=True, text=True, timeout=60
+        ).stdout
+    except Exception:
+        return None
+    for line in out.splitlines():
+        parts = line.split()
+        if parts and parts[0] == ENV_NAME and len(parts) >= 2:
+            candidate = Path(" ".join(parts[1:])) / "python.exe"
+            if candidate.exists():
+                return candidate
+    return None
+
+
 def main() -> None:
     print("=" * 60)
     print("AI Interview System - backend launcher")
@@ -50,15 +71,18 @@ def main() -> None:
     base = locate_conda_base()
     if base is None:
         fail("conda not found. Please install Anaconda or Miniconda first.")
-    python = base / "envs" / ENV_NAME / "python.exe"
     print(f"[1/5] conda base: {base}")
 
-    # 2. create env if missing
-    if not python.exists():
+    # 2. locate or create the env (real location may differ from base/envs)
+    python = locate_env_python()
+    if python is None:
         print(f"[2/5] creating conda env {ENV_NAME} (Python 3.12)...")
         sh(f"conda create -n {ENV_NAME} python=3.12 -y")
-        if not python.exists():
-            fail("conda env creation failed. Check your network and retry.")
+        python = locate_env_python()
+        if python is None:
+            print("  Conda reported the following environments:")
+            print(sh("conda env list").stdout or "  (none)")
+            fail("cannot locate conda env ai_interview after creation.")
     print(f"[2/5] env python: {python}")
 
     # 3. install deps if missing
