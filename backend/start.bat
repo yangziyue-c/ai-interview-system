@@ -49,7 +49,16 @@ if not exist .env (
     echo [提示] 已生成 .env 配置文件
 )
 
-REM ---------- 6. 启动服务 ----------
+REM ---------- 6. 检查端口占用 ----------
+netstat -ano | findstr ":8000" | findstr "LISTENING" >nul 2>nul
+if not errorlevel 1 (
+    echo [错误] 端口 8000 已被占用。请先关闭占用该端口的程序（可能是上次未关闭的服务窗口）
+    echo        或修改本脚本中的端口号（--port 8000 两处同步修改）
+    pause
+    exit /b 1
+)
+
+REM ---------- 7. 启动服务 ----------
 echo ============================================================
 echo   启动中... 浏览器访问: http://localhost:8000
 echo   接口文档:      http://localhost:8000/docs
