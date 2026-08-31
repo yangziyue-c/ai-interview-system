@@ -50,19 +50,19 @@ if not exist .env (
 )
 
 REM ---------- 6. 检查端口占用 ----------
-netstat -ano | findstr ":8000" | findstr "LISTENING" >nul 2>nul
+netstat -ano | findstr ":8001" | findstr "LISTENING" >nul 2>nul
 if not errorlevel 1 (
-    echo [错误] 端口 8000 已被占用。请先关闭占用该端口的程序（可能是上次未关闭的服务窗口）
-    echo        或修改本脚本中的端口号（--port 8000 两处同步修改）
+    echo [错误] 端口 8001 已被占用。请先关闭占用该端口的程序（可能是上次未关闭的服务窗口）
+    echo        或修改本脚本中的端口号（--port 8001 两处同步修改）
     pause
     exit /b 1
 )
 
 REM ---------- 7. 启动服务 ----------
 echo ============================================================
-echo   启动中... 浏览器访问: http://localhost:8000
-echo   接口文档:      http://localhost:8000/docs
+echo   启动中... 浏览器访问: http://localhost:8001
+echo   接口文档:      http://localhost:8001/docs
 echo   停止服务:      关闭本窗口
 echo ============================================================
-"%PYTHON%" -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+"%PYTHON%" -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 pause

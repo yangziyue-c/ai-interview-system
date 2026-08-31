@@ -2,7 +2,7 @@
 
 ## 环境与接口
 
-- 后端 API 文档（Swagger）：http://localhost:8000/docs
+- 后端 API 文档（Swagger）：http://localhost:8001/docs
 - 完整接口说明：[../docs/API.md](../docs/API.md)
 - 统一响应格式：`{ "code": 0, "message": "ok", "data": ... }`，`code != 0` 即失败
 
@@ -16,7 +16,7 @@ npm install
 npm run dev
 ```
 
-开发时前端运行在 5173 端口，请求后端用代理或直接写 `http://localhost:8000`（后端 CORS 已开放 `*`，无需代理）。
+开发时前端运行在 5173 端口，请求后端用代理或直接写 `http://localhost:8001`（后端 CORS 已开放 `*`，无需代理）。
 
 ### B. 联调/演示模式（构建产物由后端挂载，统一端口）
 
@@ -25,7 +25,7 @@ npm run build
 # 把 dist/ 下的全部内容复制到 backend/static/（覆盖占位页 index.html）
 ```
 
-然后访问 `http://localhost:8000` 即可（与 API 同端口，无跨域问题）。
+然后访问 `http://localhost:8001` 即可（与 API 同端口，无跨域问题）。
 
 ## 页面需求
 

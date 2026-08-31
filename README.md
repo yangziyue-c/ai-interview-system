@@ -67,16 +67,16 @@ conda create -n ai_interview python=3.12 -y
 conda activate ai_interview
 cd backend
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 ```
 
 启动后：
 
 | 地址 | 说明 |
 | :--- | :--- |
-| http://localhost:8000/docs | Swagger 接口文档（可直接在线调试） |
-| http://localhost:8000/api/v1/health | 健康检查 |
-| http://localhost:8000 | 前端页面（构建产物放入 `backend/static/` 后） |
+| http://localhost:8001/docs | Swagger 接口文档（可直接在线调试） |
+| http://localhost:8001/api/v1/health | 健康检查 |
+| http://localhost:8001 | 前端页面（构建产物放入 `backend/static/` 后） |
 
 ## 切换数据库与缓存
 

@@ -2,7 +2,7 @@
 
 启动：
     conda activate ai_interview
-    python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+    python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 （或直接双击 start.bat）
 """
 import logging

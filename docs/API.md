@@ -1,7 +1,7 @@
 # API 接口文档
 
-- Base URL：`http://localhost:8000/api/v1`（内网穿透后为公网地址 + 相同路径）
-- 在线调试：启动后访问 `http://localhost:8000/docs`（Swagger UI）
+- Base URL：`http://localhost:8001/api/v1`（内网穿透后为公网地址 + 相同路径）
+- 在线调试：启动后访问 `http://localhost:8001/docs`（Swagger UI）
 - 统一响应格式：
 
 ```json
@@ -193,7 +193,7 @@ POST /uploads/audio        Content-Type: multipart/form-data
 { "code": 0, "message": "上传成功", "data": { "url": "/uploads/12_ab3f9c2d.mp3" } }
 ```
 
-`url` 为相对路径，完整地址 = 当前服务地址 + url（如 `http://localhost:8000/uploads/12_ab3f9c2d.mp3`）。上传后可直接访问该 URL 播放/下载，提交答案时把 `url` 填入 `audio_url` 字段供 P3 语音识别评估。
+`url` 为相对路径，完整地址 = 当前服务地址 + url（如 `http://localhost:8001/uploads/12_ab3f9c2d.mp3`）。上传后可直接访问该 URL 播放/下载，提交答案时把 `url` 填入 `audio_url` 字段供 P3 语音识别评估。
 
 ---
 

@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "AI 模拟面试系统"
     DEBUG: bool = True
     HOST: str = "0.0.0.0"   # 监听所有网卡，内网穿透/局域网演示必须
-    PORT: int = 8000
+    PORT: int = 8001
 
     # ---- 数据库 ----
     # 默认 SQLite 零配置启动；正式环境在 .env 中切换 MySQL
