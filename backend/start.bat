@@ -22,14 +22,25 @@ set "PYTHON=%CONDA_BASE%\envs\ai_interview\python.exe"
 REM ---------- 3. 检查/创建 conda 环境 ----------
 if not exist "%PYTHON%" (
     echo [首次运行] 正在创建 conda 环境 ai_interview（Python 3.12）...
-    conda create -n ai_interview python=3.12 -y
+    REM conda 可能是 .bat 程序，必须用 call 调用，否则本脚本会提前终止
+    call conda create -n ai_interview python=3.12 -y
+    if not exist "%PYTHON%" (
+        echo [错误] conda 环境创建失败，请检查网络后重试
+        pause
+        exit /b 1
+    )
 )
 
 REM ---------- 4. 安装依赖（已安装则跳过） ----------
 "%PYTHON%" -c "import fastapi, uvicorn, sqlalchemy" >nul 2>nul
 if errorlevel 1 (
     echo [首次运行] 正在安装依赖（约1-2分钟，请耐心等待）...
-    "%PYTHON%" -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+    call "%PYTHON%" -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+    if errorlevel 1 (
+        echo [错误] 依赖安装失败，请检查网络后重试
+        pause
+        exit /b 1
+    )
 )
 
 REM ---------- 5. 初始化 .env ----------

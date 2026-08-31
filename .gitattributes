@@ -1,4 +1,6 @@
 # 行尾规范：bat 必须是 CRLF（cmd 对 LF-only 的 bat 解析会出错）
-*.bat text eol=crlf
+# 用 -text 禁止转换：让 CRLF 原样存入仓库，
+# 这样 GitHub Download ZIP 导出也是 CRLF（text eol=crlf 只在 clone 时转换，zip 导出的是 LF）
+*.bat -text
 *.py text eol=lf
 *.md text eol=lf
