@@ -78,6 +78,18 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 | http://localhost:8001/api/v1/health | 健康检查 |
 | http://localhost:8001 | 前端页面（构建产物放入 `backend/static/` 后） |
 
+### 故障排查：双击 start.bat 报乱码或「xxx 不是内部或外部命令」
+
+这是文件行尾损坏导致的（cmd 要求 CRLF 行尾）。在 `backend` 目录打开 PowerShell，执行：
+
+```powershell
+$c = [IO.File]::ReadAllText('start.bat')
+$c = $c -replace "`r?`n", "`r`n"
+[IO.File]::WriteAllText('start.bat', $c, (New-Object Text.UTF8Encoding($false)))
+```
+
+然后重新双击 start.bat。若问题依旧，请到 GitHub 清除浏览器缓存后重新下载仓库 zip（旧 zip 可能被浏览器/下载器缓存）。
+
 ## 切换数据库与缓存
 
 编辑 `backend/.env`：
