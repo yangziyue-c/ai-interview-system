@@ -2,7 +2,7 @@
 from fastapi import APIRouter
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, validate_position
 from app.core.exceptions import BadRequestError, UnauthorizedError
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models import User
@@ -17,6 +17,7 @@ async def register(req: RegisterRequest, db: DbSession) -> dict:
     exists = await db.scalar(select(User).where(User.username == req.username))
     if exists is not None:
         raise BadRequestError("该用户名已被注册")
+    await validate_position(db, req.target_position)
 
     user = User(
         username=req.username,

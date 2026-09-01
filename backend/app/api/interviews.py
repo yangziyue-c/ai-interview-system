@@ -12,7 +12,7 @@ from fastapi import APIRouter
 from sqlalchemy import select
 
 from app.adapters import get_evaluator_adapter, get_interviewer_adapter
-from app.api.deps import CurrentUser, DbSession, get_owned_interview
+from app.api.deps import CurrentUser, DbSession, get_owned_interview, validate_position
 from app.config import settings
 from app.core.exceptions import BadRequestError, ConflictError
 from app.core.state_machine import InterviewStatus, StateMachine
@@ -81,6 +81,8 @@ async def _finish_interview(db: DbSession, interview: Interview) -> Report:
 
 @router.post("", response_model=dict, summary="开始一场模拟面试")
 async def start_interview(req: StartInterviewRequest, user: CurrentUser, db: DbSession) -> dict:
+    await validate_position(db, req.position)
+
     # 同一用户同时只能有一场进行中的面试
     ongoing = await db.scalar(
         select(Interview).where(

@@ -36,10 +36,14 @@ interviews (面试会话)      status: idle → in_progress → finished
   │ N              │ 1
 qa_records (问答记录)    reports (评估报告)
   round: 第几轮          四个维度分数 + 评语
+
+positions (岗位表，独立无外键)
+  启动时自动 seed 5 个岗位位，enabled 控制上/下线
 ```
 
 - 1 个用户 → N 场面试
 - 1 场面试 → N 条问答记录 + 1 份评估报告（严格一对一）
+- 岗位由 positions 表动态维护（替代硬编码枚举），预留 5 个岗位位
 
 模型代码见 [backend/app/models/](backend/app/models/)。
 
@@ -101,15 +105,32 @@ qa_records (问答记录)    reports (评估报告)
 
 综合得分加权：`total = tech×0.35 + logic×0.25 + expression×0.20 + match×0.20`（见 [ai_evaluator.py](backend/app/adapters/ai_evaluator.py)）。
 
+### 5. positions —— 岗位表（独立无外键）
+
+| 字段 | 类型 | 约束 | 说明 |
+| :--- | :--- | :--- | :--- |
+| id | int | 主键自增 | |
+| code | varchar(32) | unique + index | 岗位唯一标识（注册/面试传此值，如 backend） |
+| name | varchar(64) | not null | 岗位中文名（前端大厅展示） |
+| description | text | 默认空串 | 岗位简介 |
+| tech_stack | JSON | 默认 [] | 技术栈列表（前端岗位详情展示） |
+| focus | JSON | 默认 [] | 考察重点列表 |
+| enabled | bool | 默认 true | 是否开放；占位岗位位置 false，不在岗位列表下发 |
+| sort_order | int | 默认 0 | 岗位大厅展示顺序 |
+| created_at | datetime | server_default=now() | |
+
+启动时若表为空，自动 seed 5 个岗位位（3 个已开放 + 2 个占位待定，见 [position.py](backend/app/models/position.py) 的 `DEFAULT_POSITIONS`）；岗位清单确定后只需更新数据库记录，无需改代码。
+
 ## 四、关键设计决策
 
-1. **双数据库策略**：`DATABASE_URL` 可配置。SQLite 保证演示/开发零依赖成功率；MySQL 体现正式环境技术能力；同一套 ORM 代码，切换零改动。
-2. **状态机与数据库解耦**：`status` 存字符串，状态合法性由代码层状态机保证（[state_machine.py](backend/app/core/state_machine.py)）。转换规则表驱动（`_TRANSITIONS`），非法转换抛 409。新增状态不改表结构，比数据库 ENUM 灵活。
-3. **current_round 指针设计**：会话表只存"进行到第几轮"一个指针，问答明细全在 qa_records，无冗余；轮次上限判断只需比较 `current_round >= 1 + MAX_FOLLOW_UP_ROUNDS`。
-4. **出题即落库、作答再回填**：qa_records 在出题时 INSERT、作答时 UPDATE，任何时刻不会出现"有答案无问题"的脏数据，也天然支持为 P2 重建完整对话历史。
-5. **报告一对一 unique 约束**：数据库层面杜绝一场面试两份报告。
-6. **级联删除**（`ondelete=CASCADE` + `delete-orphan`）：删除用户/面试自动清理全部关联数据，无孤儿记录。
-7. **索引最小化**：只在真实查询路径建索引——登录按 username、面试列表按 user_id、报告按 interview_id、状态筛选按 status。不建冗余索引。
+1. **岗位表化（替代硬编码枚举）**：岗位数量与清单在开发期会频繁调整，故将岗位从代码枚举下沉到 `positions` 表——注册/开始面试时查库校验（无效岗位 400）、前端岗位大厅读 `GET /positions`、Mock 题库按 code 匹配（缺省回退通用池）。新增/下线岗位只需改数据库记录，代码零改动。启动 seed 幂等（表空才插入，不覆盖已有数据）。
+2. **双数据库策略**：`DATABASE_URL` 可配置。SQLite 保证演示/开发零依赖成功率；MySQL 体现正式环境技术能力；同一套 ORM 代码，切换零改动。
+3. **状态机与数据库解耦**：`status` 存字符串，状态合法性由代码层状态机保证（[state_machine.py](backend/app/core/state_machine.py)）。转换规则表驱动（`_TRANSITIONS`），非法转换抛 409。新增状态不改表结构，比数据库 ENUM 灵活。
+4. **current_round 指针设计**：会话表只存"进行到第几轮"一个指针，问答明细全在 qa_records，无冗余；轮次上限判断只需比较 `current_round >= 1 + MAX_FOLLOW_UP_ROUNDS`。
+5. **出题即落库、作答再回填**：qa_records 在出题时 INSERT、作答时 UPDATE，任何时刻不会出现"有答案无问题"的脏数据，也天然支持为 P2 重建完整对话历史。
+6. **报告一对一 unique 约束**：数据库层面杜绝一场面试两份报告。
+7. **级联删除**（`ondelete=CASCADE` + `delete-orphan`）：删除用户/面试自动清理全部关联数据，无孤儿记录。
+8. **索引最小化**：只在真实查询路径建索引——登录按 username、面试列表按 user_id、报告按 interview_id、状态筛选按 status。不建冗余索引。
 
 ## 五、数据流示例（一场完整面试的落库过程）
 

@@ -1,6 +1,5 @@
 """面试相关 schema"""
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -8,7 +7,8 @@ from app.schemas.report import ReportOut
 
 
 class StartInterviewRequest(BaseModel):
-    position: Literal["backend", "frontend"] = Field(description="面试岗位")
+    # 岗位由数据库 positions 表动态维护，存在性校验在服务层
+    position: str = Field(max_length=32, description="面试岗位 code（见 GET /positions）")
 
 
 class AnswerRequest(BaseModel):

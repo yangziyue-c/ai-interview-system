@@ -42,7 +42,7 @@ POST /auth/register
   "password": "123456",
   "nickname": "张三",
   "student_id": "20260001",       // 学号，可选
-  "target_position": "backend"    // backend | frontend
+  "target_position": "backend"    // 目标岗位 code（见 2.1 岗位列表）
 }
 ```
 
@@ -82,19 +82,52 @@ GET /auth/me
 
 ---
 
-## 2. 面试
+## 2. 岗位
 
-### 2.1 开始面试
+### 2.1 岗位列表（岗位大厅用）
 
 ```
-POST /interviews           { "position": "backend" }    // backend | frontend
+GET /positions
+```
+
+> 岗位由后端数据库动态维护（预留 5 个岗位位，未开放的占位岗位不下发）。
+> 前端**不得硬编码岗位列表**，注册/开始面试的 position 必须传本接口返回的 `code`。
+
+```json
+{ "code": 0, "message": "ok", "data": [
+  {
+    "code": "backend",
+    "name": "后端开发工程师",
+    "description": "负责服务端架构与业务逻辑开发，考察编程语言、数据库、并发与系统设计能力。",
+    "tech_stack": ["Java", "Python", "MySQL", "Redis", "Spring Boot"],
+    "focus": ["数据结构与算法", "数据库", "并发编程", "分布式系统"]
+  },
+  {
+    "code": "frontend",
+    "name": "前端开发工程师",
+    "description": "……",
+    "tech_stack": ["HTML/CSS", "JavaScript", "TypeScript", "Vue3", "React"],
+    "focus": ["CSS 布局", "JavaScript 核心", "前端框架", "性能优化"]
+  }
+] }
+```
+
+---
+
+## 3. 面试
+
+### 3.1 开始面试
+
+```
+POST /interviews           { "position": "backend" }    // 岗位 code（见 2.1 岗位列表）
 ```
 
 返回：会话信息（`status: "in_progress"`）+ 开场题 `question`。
 
 > 同一用户同时只能有一场进行中的面试，否则返回 409。
+> position 不存在或未开放时返回 400（`code: 40000`）。
 
-### 2.2 我的面试列表
+### 3.2 我的面试列表
 
 ```
 GET /interviews
@@ -113,7 +146,7 @@ GET /interviews
 ] }
 ```
 
-### 2.3 面试详情（含全部问答）
+### 3.3 面试详情（含全部问答）
 
 ```
 GET /interviews/{interview_id}
@@ -121,7 +154,7 @@ GET /interviews/{interview_id}
 
 返回 `data.qa_records`：`[{round, question, answer, audio_url}]`。
 
-### 2.4 提交答案并获取下一题
+### 3.4 提交答案并获取下一题
 
 ```
 POST /interviews/{interview_id}/answers
@@ -148,7 +181,7 @@ POST /interviews/{interview_id}/answers
 }
 ```
 
-### 2.5 主动结束面试
+### 3.5 主动结束面试
 
 ```
 POST /interviews/{interview_id}/finish
@@ -158,9 +191,9 @@ POST /interviews/{interview_id}/finish
 
 ---
 
-## 3. 报告
+## 4. 报告
 
-### 3.1 获取面试报告
+### 4.1 获取面试报告
 
 ```
 GET /reports/{interview_id}
@@ -185,7 +218,7 @@ GET /reports/{interview_id}
 }
 ```
 
-### 3.2 最近一次面试的改进建议（个人中心用）
+### 4.2 最近一次面试的改进建议（个人中心用）
 
 ```
 GET /reports/latest
@@ -203,7 +236,7 @@ GET /reports/latest
 } }
 ```
 
-### 3.3 能力成长曲线
+### 4.3 能力成长曲线
 
 ```
 GET /reports/growth
@@ -223,9 +256,9 @@ GET /reports/growth
 
 ---
 
-## 4. 上传
+## 5. 上传
 
-### 4.1 上传面试录音
+### 5.1 上传面试录音
 
 ```
 POST /uploads/audio        Content-Type: multipart/form-data
@@ -242,9 +275,9 @@ POST /uploads/audio        Content-Type: multipart/form-data
 
 ---
 
-## 5. 系统
+## 6. 系统
 
-### 5.1 健康检查
+### 6.1 健康检查
 
 ```
 GET /health                { "code": 0, "message": "ok", "data": { "status": "healthy" } }
@@ -264,7 +297,7 @@ POST {AI_INTERVIEWER_URL}/generate
 
 ```json
 {
-  "position": "backend",        // backend | frontend
+  "position": "backend",        // 岗位 code（由 GET /positions 动态下发）
   "round": 2,                   // 当前是第几题（1 开场题，2~7 追问）
   "is_follow_up": true,         // 是否为追问
   "history": [                  // 完整对话历史

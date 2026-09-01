@@ -5,7 +5,7 @@
 """
 from collections.abc import AsyncGenerator
 
-from sqlalchemy import inspect
+from sqlalchemy import func, inspect, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -53,6 +53,12 @@ async def init_db() -> None:
             "student_id",
             "ALTER TABLE users ADD COLUMN student_id VARCHAR(32)",
         )
+        # 岗位 seed：positions 表为空时插入默认 5 个岗位位（幂等，不覆盖已有数据）
+        from app.models.position import DEFAULT_POSITIONS, Position
+
+        position_count = await conn.scalar(select(func.count()).select_from(Position))
+        if position_count == 0:
+            await conn.execute(insert(Position), DEFAULT_POSITIONS)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

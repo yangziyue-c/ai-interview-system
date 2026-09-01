@@ -7,10 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.exceptions import NotFoundError, UnauthorizedError
+from app.core.exceptions import BadRequestError, NotFoundError, UnauthorizedError
 from app.core.security import decode_access_token
 from app.database import get_db
-from app.models import Interview, User
+from app.models import Interview, Position, User
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -44,3 +44,12 @@ async def get_owned_interview(interview_id: int, user: User, db: AsyncSession) -
     if interview is None:
         raise NotFoundError("面试会话不存在")
     return interview
+
+
+async def validate_position(db: AsyncSession, code: str) -> None:
+    """校验岗位 code 存在且已开放（岗位由数据库动态维护，替代硬编码枚举）"""
+    exists = await db.scalar(
+        select(Position.id).where(Position.code == code, Position.enabled.is_(True))
+    )
+    if exists is None:
+        raise BadRequestError(f"岗位不存在或未开放: {code}")

@@ -102,6 +102,49 @@ class TestAuth:
         assert resp.status_code == 401
 
 
+class TestPositions:
+    async def test_positions_list(self, client: AsyncClient):
+        """岗位列表：返回已开放岗位，占位岗位不展示"""
+        _, headers = await _register(client, "pos")
+        resp = await client.get(f"{BASE}/positions", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert len(data) >= 3
+        codes = [p["code"] for p in data]
+        assert "backend" in codes and "frontend" in codes and "test_engineer" in codes
+        assert all("pending" not in c for c in codes), "占位岗位不应出现在列表中"
+        # 岗位项字段完整（前端岗位大厅用）
+        for key in ("code", "name", "description", "tech_stack", "focus"):
+            assert key in data[0]
+
+    async def test_invalid_position(self, client: AsyncClient):
+        """无效岗位：注册与开始面试均返回 40000"""
+        resp = await client.post(
+            f"{BASE}/auth/register",
+            json={
+                "username": _unique_name("badpos"),
+                "password": "pass123456",
+                "target_position": "rust",
+            },
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == 40000
+
+        _, headers = await _register(client, "badpos2")
+        resp = await client.post(f"{BASE}/interviews", json={"position": "rust"}, headers=headers)
+        assert resp.status_code == 400
+        assert resp.json()["code"] == 40000
+
+    async def test_test_engineer_interview(self, client: AsyncClient):
+        """测试岗面试：seed 岗位可用，Mock 题库能出开场题"""
+        _, headers = await _register(client, "qa_pos", position="test_engineer")
+        resp = await client.post(f"{BASE}/interviews", json={"position": "test_engineer"}, headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["interview"]["position"] == "test_engineer"
+        assert data["question"]
+
+
 class TestInterviewFlow:
     async def test_full_interview_auto_finish(self, client: AsyncClient):
         """完整面试：开场题 + 追问至上限 → 自动结束并出报告"""

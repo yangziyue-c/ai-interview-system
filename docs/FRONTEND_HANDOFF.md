@@ -49,6 +49,26 @@ GET /api/v1/reports/latest
 
 从未完成过面试时 `data` 为 `null`（前端显示"暂无建议"即可）。
 
+### 4. 新增「岗位列表」接口（岗位大厅用，**取代 jobs.json 方案**）
+
+```
+GET /api/v1/positions
+```
+
+```json
+{ "code": 0, "message": "ok", "data": [
+  { "code": "backend", "name": "后端开发工程师", "description": "……",
+    "tech_stack": ["Java", "Python", "MySQL"], "focus": ["数据结构与算法", "……"] },
+  { "code": "frontend", "name": "前端开发工程师", "description": "……",
+    "tech_stack": ["HTML/CSS", "JavaScript", "Vue3"], "focus": ["CSS 布局", "……"] }
+] }
+```
+
+> 岗位由后端数据库动态维护（当前已开放 backend / frontend / test_engineer 三个，
+> 预留 5 个岗位位，清单可能调整）。**前端不得硬编码岗位列表**：
+> 岗位大厅展示本接口返回的数据；注册的 `target_position` 和开始面试的 `position`
+> 都必须传本接口返回的 `code`。岗位名→中文名映射由 `name` 字段天然提供，无需自行映射。
+
 ---
 
 ## 二、frontend-spec.md 错误清单与修正对照
@@ -79,7 +99,7 @@ GET /api/v1/reports/latest
 
 | spec | 实际 |
 |---|---|
-| 请求 `{"jobId": "java-backend"}` | 请求 `{"position": "backend"}`，枚举**只有** `backend` / `frontend` |
+| 请求 `{"jobId": "java-backend"}` | 请求 `{"position": "backend"}`，position 必须是岗位接口 `GET /positions` 返回的 `code`（动态下发，不硬编码） |
 | 响应 `{sessionId, firstQuestion}` | 响应 `data.question`（第一题）+ `data.interview`（含 `id`、`current_round`、`status`） |
 
 > 注意：同一用户已有进行中面试时返回 409（`code: 40900`），前端需提示"你有进行中的面试"，
@@ -104,7 +124,7 @@ GET /api/v1/reports/latest
 **历史列表** `GET /api/v1/interviews`
 
 - spec 写的 `jobName/score/date` 不存在。实际字段：`id / position / status / current_round / created_at / started_at / finished_at / total_score`。
-- `position` 是枚举（`"backend"`/`"frontend"`），显示中文"Java 后端开发"需前端自行映射（建议 jobs.json 同时提供映射）。
+- `position` 是岗位 code，显示中文名需用 `GET /positions` 返回的 code→name 映射（前端一次性拉取岗位列表后做映射）。
 - 日期为 ISO 8601（如 `2026-08-30T10:00:00`），前端格式化后再显示。
 
 **报告详情** `GET /api/v1/reports/{interview_id}`（RESTful 路径参数，**不是** query `?sessionId=`）
@@ -117,10 +137,12 @@ GET /api/v1/reports/latest
 | `trend` | **不存在**。成长曲线调独立接口 `GET /api/v1/reports/growth`（按时间升序的得分序列） |
 | 未提及 | `summary` 综合评语、`strengths` 优点、`weaknesses` 缺点（都是前端可展示的现成字段） |
 
-**岗位静态数据**（spec 第三部分）
+**岗位数据**（spec 第三部分）
 
-- 后端**没有** `/api/job/list` 接口 → 采用 spec 中「静态 JSON 置于 `public/jobs.json`」的方案。
-- `jobId` 值必须改为 `"backend"` / `"frontend"`（要原样传给开始面试接口的 `position`）。
+- 后端已提供 `GET /api/v1/positions` 岗位接口（见本文档第一部分第 4 条），
+  **放弃**「静态 JSON 置于 `public/jobs.json`」的方案。
+- 岗位大厅的岗位名称、简介、技术栈、考察重点全部来自该接口；
+  开始面试时把岗位项的 `code` 原样传给 `position`。
 
 **语音格式**
 
@@ -154,7 +176,8 @@ Base URL：`http://localhost:8001/api/v1`（联调期）｜统一响应 `{ code,
 | 注册（自动登录） | `POST /auth/register` | 否 |
 | 登录 | `POST /auth/login` | 否 |
 | 当前用户信息 | `GET /auth/me` | 是 |
-| 开始面试 | `POST /interviews`，body `{"position": "backend"}` | 是 |
+| 岗位列表（岗位大厅） | `GET /positions` | 是 |
+| 开始面试 | `POST /interviews`，body `{"position": "<岗位接口返回的 code>"}` | 是 |
 | 历史面试列表（附分数） | `GET /interviews` | 是 |
 | 面试详情（含全部问答，恢复会话用） | `GET /interviews/{interview_id}` | 是 |
 | 提交答案并获取下一题 | `POST /interviews/{interview_id}/answers`，body `{"answer", "audio_url"?}` | 是 |
@@ -192,7 +215,9 @@ Base URL：`http://localhost:8001/api/v1`（联调期）｜统一响应 `{ code,
    - 不存在语音转文字后端接口，语音输入方案为：浏览器 Web Speech API 转写文本 + 录音
      上传 /api/v1/uploads/audio 后把返回的 url 填入 audio_url 字段一并提交；
    - 面试会话标识为整数 interview.id，不使用字符串 sessionId；
-   - 岗位枚举只有 backend / frontend，静态岗位数据 jobId 必须使用这两个值；
+   - 岗位由后端 GET /positions 接口动态下发（当前已开放 backend / frontend /
+     test_engineer 三个，预留 5 个岗位位），前端不得硬编码岗位列表，
+     注册与开始面试的 position 必须传该接口返回的 code；
    - 补充原规格缺失的内容：注册接口与注册/登录页、主动结束面试接口、
      40100 错误码自动跳转登录、进行中面试（status=in_progress）的恢复入口；
    - 报告雷达图改为 4 个维度：tech_score / logic_score / expression_score / match_score；
@@ -217,16 +242,16 @@ Base URL：`http://localhost:8001/api/v1`（联调期）｜统一响应 `{ code,
 - 用 axios（或 fetch 封装）统一请求层：BaseURL http://localhost:8001/api/v1，
   请求拦截器自动附加 Authorization: Bearer {token}（token 存 localStorage），
   响应拦截器统一处理 { code, message, data } 结构，code===40100 时清除 token 并跳登录页；
-- 页面：登录/注册页（注册含目标岗位选择 backend/frontend、可选学号）、
-  岗位大厅（读 public/jobs.json）、岗位详情、面试对话室（文本+按住说话语音、
+- 页面：登录/注册页（注册含目标岗位选择——选项来自 GET /positions 接口、可选学号）、
+  岗位大厅（读 GET /positions 接口）、岗位详情、面试对话室（文本+按住说话语音、
   语音用 Web Speech API 转写、录音用 MediaRecorder 录 webm 上传 /api/v1/uploads/audio）、
   报告页（4 维雷达图 + 总分 + 评语/优缺点/建议 + 成长曲线折线图）、
   个人中心（用户信息 + 历史列表带分数 + 最近建议）；
 - 面试对话室关键流程：开始面试拿 interview.id → 提交答案后按 finished 判断
   显示下一题或跳转报告；提供"结束面试"按钮；历史列表中 status=in_progress 的
   记录可点击继续作答（用 GET /interviews/{id} 恢复问答记录）；
-- 岗位中文名、技术栈、考察重点均从 public/jobs.json 读取，jobId 字段值与后端
-  position 枚举（backend/frontend）一致；
+- 岗位名称、简介、技术栈、考察重点均从 GET /positions 接口读取，
+  开始面试的 position 必须原样传岗位项的 code；
 - UI 要求：移动端优先的底部 Tab 栏布局，面试对话室采用聊天界面（AI 气泡靠左、
   用户气泡靠右），样式现代简洁，可直接用于课堂演示。
 

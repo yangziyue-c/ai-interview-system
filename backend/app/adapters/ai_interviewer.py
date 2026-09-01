@@ -5,8 +5,8 @@
     POST {AI_INTERVIEWER_URL}/generate
     Content-Type: application/json
     {
-        "position": "backend" | "frontend",
-        "round": 2,                    # 当前是第几题（1 开场题，2~7 追问）
+        "position": "backend",        # 岗位 code（由 GET /positions 动态下发）
+        "round": 2,                   # 当前是第几题（1 开场题，2~7 追问）
         "is_follow_up": true,          # 是否为追问
         "history": [                   # 完整对话历史（含本轮之前的问答）
             {"role": "interviewer", "content": "..."},
@@ -30,6 +30,8 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 # ---------------- Mock 题库 ----------------
+# 岗位由数据库 positions 表动态维护（替代硬编码枚举）；
+# 开场题按岗位 code 匹配专用池，未配置的岗位回退通用池，保证任何岗位都可面试。
 OPENING_QUESTIONS: dict[str, list[str]] = {
     "backend": [
         "请先做个简单的自我介绍，重点说说你最有代表性的后端项目经历。",
@@ -47,7 +49,25 @@ OPENING_QUESTIONS: dict[str, list[str]] = {
         "前端首屏加载速度慢，你会从哪些方面优化？",
         "HTTP 缓存有哪些策略？前端工程中如何配合？",
     ],
+    "test_engineer": [
+        "请先做个简单的自我介绍，重点说说你在测试相关项目或实习中的经历。",
+        "说说你对软件测试整体流程的理解：从需求评审到上线回归，测试人员分别在哪些环节发挥作用？",
+        "等价类划分和边界值分析分别解决什么问题？请举一个你实际用过的例子。",
+        "一个 Bug 从提交到关闭会经历哪些状态流转？如果开发拒绝修复，你会怎么处理？",
+        "接口测试与 UI 测试相比有什么优势？你在项目里如何设计接口自动化测试？",
+        "如果线上出现了一个偶发性的严重 Bug，你会按什么思路去定位和复现？",
+    ],
 }
+
+# 通用开场题池：岗位没有专用题库时的兜底（岗位无关的通用问题）
+GENERAL_OPENING_QUESTIONS: list[str] = [
+    "请先做个简单的自我介绍，重点说说你最有代表性的项目经历。",
+    "谈谈你对我们这个岗位的理解，以及你认为自己最匹配这个岗位的优势是什么？",
+    "最近一次你在项目中遇到技术难题是什么？最后是怎么解决的？",
+    "描述一次你与团队成员意见冲突的经历，你是如何处理的？",
+    "你平时如何学习新技术？请举一个最近学习并应用了新技术的例子。",
+    "你的职业规划是什么？未来三年希望达到什么样的技术水平？",
+]
 
 FOLLOW_UP_QUESTIONS: list[str] = [
     "能结合你做过的一个具体项目，把这个知识点展开说说吗？",
@@ -68,7 +88,7 @@ _LLM_SYSTEM_PROMPT = (
     "只输出下一个面试问题的文本本身，不要输出任何解释、前缀或多余字符。"
 )
 
-_POSITION_LABELS = {"backend": "后端开发工程师", "frontend": "前端开发工程师"}
+_POSITION_LABELS = {"backend": "后端开发工程师", "frontend": "前端开发工程师", "test_engineer": "测试开发工程师"}
 
 
 class AIInterviewerAdapter(HTTPAdapterBase):
@@ -141,7 +161,7 @@ class AIInterviewerAdapter(HTTPAdapterBase):
 
         async def _mock() -> str:
             if not is_follow_up:
-                pool = OPENING_QUESTIONS.get(position, OPENING_QUESTIONS["backend"])
+                pool = OPENING_QUESTIONS.get(position) or GENERAL_OPENING_QUESTIONS
                 return pool[interview_id % len(pool)]
             # 追问：候选回答过短 → 请求展开；否则按轮次轮换追问模板
             last_answer = next(
