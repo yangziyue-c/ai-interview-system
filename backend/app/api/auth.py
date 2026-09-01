@@ -22,6 +22,7 @@ async def register(req: RegisterRequest, db: DbSession) -> dict:
         username=req.username,
         password_hash=hash_password(req.password),
         nickname=req.nickname or req.username,
+        student_id=req.student_id,
         target_position=req.target_position,
     )
     db.add(user)

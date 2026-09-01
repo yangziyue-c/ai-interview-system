@@ -53,6 +53,7 @@ qa_records (问答记录)    reports (评估报告)
 | username | varchar(64) | unique + index | 登录账号，唯一索引防重复注册 |
 | password_hash | varchar(256) | not null | bcrypt 哈希，不存明文 |
 | nickname | varchar(64) | 默认空串 | 展示昵称 |
+| student_id | varchar(32) | nullable | 学号（可选，个人中心展示用） |
 | target_position | varchar(16) | 默认 backend | 目标岗位：backend / frontend |
 | created_at | datetime | server_default=now() | 注册时间，由数据库生成 |
 

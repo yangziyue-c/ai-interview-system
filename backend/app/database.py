@@ -5,6 +5,7 @@
 """
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -24,13 +25,34 @@ engine = create_async_engine(settings.DATABASE_URL, **engine_kwargs)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
+def _ensure_column(conn, table: str, column: str, ddl: str) -> None:
+    """轻量迁移：表已存在但缺列时补列（兼容老数据库，幂等）
+
+    说明：create_all 只建表不加列；模型新增字段后，
+    已存在的数据库需要手动补列才能继续使用。
+    """
+    insp = inspect(conn)
+    if table not in insp.get_table_names():
+        return
+    existing = {c["name"] for c in insp.get_columns(table)}
+    if column not in existing:
+        conn.exec_driver_sql(ddl)
+
+
 async def init_db() -> None:
-    """启动时建表（表不存在才创建，不影响已有数据）"""
+    """启动时建表 + 轻量列迁移（表不存在才创建，不影响已有数据）"""
     # 导入模型，确保注册到 Base.metadata
     from app import models  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # 历史库补列（SQLite / MySQL 通用 DDL，可空列无默认值约束问题）
+        await conn.run_sync(
+            _ensure_column,
+            "users",
+            "student_id",
+            "ALTER TABLE users ADD COLUMN student_id VARCHAR(32)",
+        )
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

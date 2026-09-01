@@ -56,6 +56,33 @@ class TestAuth:
         assert resp.status_code == 400
         assert resp.json()["code"] == 40000
 
+    async def test_register_with_student_id(self, client: AsyncClient):
+        """注册携带学号 → me 返回学号"""
+        username = _unique_name("stu")
+        resp = await client.post(
+            f"{BASE}/auth/register",
+            json={
+                "username": username,
+                "password": "pass123456",
+                "nickname": "学号选手",
+                "student_id": "20260001",
+            },
+        )
+        assert resp.status_code == 200
+        token = resp.json()["data"]["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = await client.get(f"{BASE}/auth/me", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["student_id"] == "20260001"
+
+        # 登录响应同样携带学号
+        resp = await client.post(
+            f"{BASE}/auth/login", json={"username": username, "password": "pass123456"}
+        )
+        assert resp.json()["data"]["user"]["student_id"] == "20260001"
+
     async def test_login_wrong_password(self, client: AsyncClient):
         username = _unique_name("wrong")
         await client.post(
@@ -145,6 +172,39 @@ class TestInterviewFlow:
         assert resp.status_code == 200
         points = resp.json()["data"]
         assert any(p["interview_id"] == interview_id for p in points)
+
+    async def test_list_with_score_and_latest_suggestion(self, client: AsyncClient):
+        """历史列表附带综合得分；最近建议接口返回最新一场的建议"""
+        _, headers = await _register(client, "score")
+
+        # 未完成任何面试时：列表为空、最近建议为 null
+        resp = await client.get(f"{BASE}/interviews", headers=headers)
+        assert resp.json()["data"] == []
+        resp = await client.get(f"{BASE}/reports/latest", headers=headers)
+        assert resp.json()["data"] is None
+
+        # 完成一场面试
+        resp = await client.post(f"{BASE}/interviews", json={"position": "backend"}, headers=headers)
+        interview_id = resp.json()["data"]["interview"]["id"]
+        await client.post(
+            f"{BASE}/interviews/{interview_id}/answers",
+            json={"answer": "我会从索引设计、SQL 优化和缓存策略三个层面来分析慢查询问题。" * 2},
+            headers=headers,
+        )
+        await client.post(f"{BASE}/interviews/{interview_id}/finish", headers=headers)
+
+        # 列表第一项带 total_score 且 > 0
+        resp = await client.get(f"{BASE}/interviews", headers=headers)
+        first = resp.json()["data"][0]
+        assert first["id"] == interview_id
+        assert first["status"] == "finished"
+        assert first["total_score"] is not None and first["total_score"] > 0
+
+        # 最近建议接口返回该场面试的建议
+        resp = await client.get(f"{BASE}/reports/latest", headers=headers)
+        data = resp.json()["data"]
+        assert data["interview_id"] == interview_id
+        assert data["suggestions"] and len(data["suggestions"]) > 0
 
     async def test_two_ongoing_conflict(self, client: AsyncClient):
         """同一用户不能同时进行两场面试"""

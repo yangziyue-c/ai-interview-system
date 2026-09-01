@@ -11,6 +11,7 @@ class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=32, description="登录账号")
     password: str = Field(min_length=6, max_length=64, description="密码")
     nickname: str = Field(default="", max_length=32, description="昵称")
+    student_id: str | None = Field(default=None, max_length=32, description="学号（可选）")
     target_position: Position = Field(default="backend", description="目标岗位")
 
 
@@ -25,6 +26,7 @@ class UserOut(BaseModel):
     id: int
     username: str
     nickname: str
+    student_id: str | None
     target_position: str
     created_at: datetime
 

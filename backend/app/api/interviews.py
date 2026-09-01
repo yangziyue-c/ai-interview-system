@@ -21,6 +21,7 @@ from app.schemas.interview import (
     AnswerRequest,
     FinishInterviewOut,
     InterviewDetailOut,
+    InterviewListItemOut,
     InterviewOut,
     NextQuestionOut,
     QAOut,
@@ -117,13 +118,21 @@ async def start_interview(req: StartInterviewRequest, user: CurrentUser, db: DbS
     )
 
 
-@router.get("", response_model=dict, summary="我的面试历史列表")
+@router.get("", response_model=dict, summary="我的面试历史列表（按时间倒序，附综合得分）")
 async def list_interviews(user: CurrentUser, db: DbSession) -> dict:
-    result = await db.scalars(
-        select(Interview).where(Interview.user_id == user.id).order_by(Interview.created_at.desc())
+    # 左连报告表：已结束的面试附带 total_score，进行中/未出报告的为 null
+    result = await db.execute(
+        select(Interview, Report.total_score)
+        .outerjoin(Report, Report.interview_id == Interview.id)
+        .where(Interview.user_id == user.id)
+        .order_by(Interview.created_at.desc())
     )
-    interviews = result.all()
-    return ok([InterviewOut.model_validate(i).model_dump() for i in interviews])
+    items = []
+    for interview, total_score in result.all():
+        item = InterviewListItemOut.model_validate(interview)
+        item.total_score = total_score
+        items.append(item)
+    return ok([i.model_dump() for i in items])
 
 
 @router.get("/{interview_id}", response_model=dict, summary="面试详情（含全部问答）")

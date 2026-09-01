@@ -36,6 +36,31 @@ async def get_growth(user: CurrentUser, db: DbSession) -> dict:
     return ok(points)
 
 
+@router.get("/latest", response_model=dict, summary="最近一次面试的改进建议（个人中心用）")
+async def get_latest_suggestion(user: CurrentUser, db: DbSession) -> dict:
+    """返回最近一场已结束面试的建议摘要；从未完成过面试时 data 为 null"""
+    result = await db.execute(
+        select(Interview, Report)
+        .join(Report, Report.interview_id == Interview.id)
+        .where(Interview.user_id == user.id, Interview.status == InterviewStatus.FINISHED.value)
+        .order_by(Interview.finished_at.desc())
+        .limit(1)
+    )
+    row = result.first()
+    if row is None:
+        return ok(None)
+    interview, report = row
+    return ok(
+        {
+            "interview_id": interview.id,
+            "position": interview.position,
+            "finished_at": interview.finished_at,
+            "total_score": report.total_score,
+            "suggestions": report.suggestions,
+        }
+    )
+
+
 @router.get("/{interview_id}", response_model=dict, summary="获取指定面试的评估报告")
 async def get_report(interview_id: int, user: CurrentUser, db: DbSession) -> dict:
     interview = await get_owned_interview(interview_id, user, db)

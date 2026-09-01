@@ -38,6 +38,12 @@ class InterviewOut(BaseModel):
     finished_at: datetime | None
 
 
+class InterviewListItemOut(InterviewOut):
+    """历史列表项：附带综合得分（未生成报告时为 null）"""
+
+    total_score: float | None = None
+
+
 class InterviewDetailOut(InterviewOut):
     qa_records: list[QAOut] = []
 

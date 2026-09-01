@@ -41,6 +41,7 @@ POST /auth/register
   "username": "zhangsan",
   "password": "123456",
   "nickname": "张三",
+  "student_id": "20260001",       // 学号，可选
   "target_position": "backend"    // backend | frontend
 }
 ```
@@ -50,9 +51,22 @@ POST /auth/register
 ```json
 {
   "code": 0, "message": "注册成功",
-  "data": { "access_token": "eyJ...", "token_type": "bearer", "user": { "id": 1, ... } }
+  "data": {
+    "access_token": "eyJ...",
+    "token_type": "bearer",
+    "user": {
+      "id": 1,
+      "username": "zhangsan",
+      "nickname": "张三",
+      "student_id": "20260001",
+      "target_position": "backend",
+      "created_at": "2026-09-01T10:00:00"
+    }
+  }
 }
 ```
+
+登录接口返回结构相同（`message` 为“登录成功”）；`GET /auth/me` 的 `data` 即上方的 `user` 对象。
 
 ### 1.2 登录
 
@@ -84,6 +98,19 @@ POST /interviews           { "position": "backend" }    // backend | frontend
 
 ```
 GET /interviews
+```
+
+按时间倒序，每项附带综合得分（`total_score`；未生成报告时为 `null`，如进行中/未结束的面试）：
+
+```json
+{ "code": 0, "message": "ok", "data": [
+  { "id": 1, "position": "backend", "status": "finished", "current_round": 7,
+    "created_at": "2026-08-30T10:00:00", "started_at": "...", "finished_at": "...",
+    "total_score": 84.5 },
+  { "id": 2, "position": "frontend", "status": "in_progress", "current_round": 2,
+    "created_at": "2026-09-01T09:00:00", "started_at": "...", "finished_at": null,
+    "total_score": null }
+] }
 ```
 
 ### 2.3 面试详情（含全部问答）
@@ -158,7 +185,25 @@ GET /reports/{interview_id}
 }
 ```
 
-### 3.2 能力成长曲线
+### 3.2 最近一次面试的改进建议（个人中心用）
+
+```
+GET /reports/latest
+```
+
+返回最近一场已结束面试的得分与建议摘要；从未完成过面试时 `data` 为 `null`：
+
+```json
+{ "code": 0, "message": "ok", "data": {
+  "interview_id": 3,
+  "position": "backend",
+  "finished_at": "2026-08-30T21:00:00",
+  "total_score": 84.5,
+  "suggestions": ["继续深挖技术原理……", "多进行限时模拟面试……"]
+} }
+```
+
+### 3.3 能力成长曲线
 
 ```
 GET /reports/growth
