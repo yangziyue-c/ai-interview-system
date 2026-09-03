@@ -1,17 +1,22 @@
 """
 AI模拟面试与能力提升软件 - 评估模块 Prompt 配置
 负责：3号 - AI评估 & 报告生成
-版本：v1.0
-更新日期：2026-09-02
+版本：v1.1
+更新日期：2026-09-03
 
 使用方式：
     from evaluation_prompts import get_evaluation_prompt, POSITION_CONFIG
-    
+
     # 获取指定岗位的评估Prompt
     prompt = get_evaluation_prompt("backend", dialogue_text)
-    
+
     # dialogue_text 格式：
     # 面试官：xxx\n候选人：xxx\n面试官：xxx\n候选人：xxx\n...
+
+岗位 code 约定：
+    岗位由主后端数据库 positions 表动态维护（当前：backend / frontend / test_engineer，
+    另有 2 个预留位）。本文件的岗位 code 必须与数据库一致；
+    数据库新增岗位时，若此处没有专属配置，评估自动使用通用模板兜底（不会 400）。
 """
 
 import json
@@ -26,8 +31,9 @@ import json
 # ============================================================
 
 POSITION_CONFIG = {
+    # 岗位 code 与主后端数据库 positions 表一一对应，勿单独改动
     "backend": {
-        "name": "Java后端开发工程师",
+        "name": "后端开发工程师",
         "weight_tech": 45,      # 技术正确性权重
         "weight_logic": 20,     # 逻辑严谨性权重
         "weight_expression": 10, # 表达沟通权重
@@ -35,10 +41,10 @@ POSITION_CONFIG = {
         "key_points": """Java基础（集合/并发/JVM/IO）、Spring生态（IOC/AOP/事务）、
 MySQL数据库（索引/事务隔离/MVCC/分库分表）、微服务架构（服务治理/分布式事务）、
 Redis缓存、消息队列、系统设计（高并发/秒杀）""",
-        "position_desc": "Java后端开发工程师，要求扎实的Java语言基础，熟悉Spring Boot/Cloud生态，掌握MySQL等关系型数据库，了解分布式系统和微服务架构，具备良好的系统设计能力。"
+        "position_desc": "后端开发工程师，要求扎实的Java语言基础，熟悉Spring Boot/Cloud生态，掌握MySQL等关系型数据库，了解分布式系统和微服务架构，具备良好的系统设计能力。"
     },
     "frontend": {
-        "name": "Web前端开发工程师",
+        "name": "前端开发工程师",
         "weight_tech": 40,
         "weight_logic": 20,
         "weight_expression": 15,
@@ -46,10 +52,10 @@ Redis缓存、消息队列、系统设计（高并发/秒杀）""",
         "key_points": """JavaScript/TypeScript基础（闭包/原型链/异步编程）、CSS布局（BFC/Flex/Grid）、
 Vue.js/React框架原理（响应式/虚拟DOM）、前端性能优化（关键渲染路径/代码分割）、
 前端工程化（Webpack/Vite）、浏览器渲染机制、HTTP缓存""",
-        "position_desc": "Web前端开发工程师，要求扎实的HTML/CSS/JavaScript基础，熟悉至少一种主流框架（Vue/React），了解前端工程化和性能优化，具备良好的用户体验意识和跨端兼容性处理能力。"
+        "position_desc": "前端开发工程师，要求扎实的HTML/CSS/JavaScript基础，熟悉至少一种主流框架（Vue/React），了解前端工程化和性能优化，具备良好的用户体验意识和跨端兼容性处理能力。"
     },
-    "testing": {
-        "name": "软件测试工程师",
+    "test_engineer": {
+        "name": "测试开发工程师",
         "weight_tech": 35,
         "weight_logic": 20,
         "weight_expression": 15,
@@ -57,9 +63,22 @@ Vue.js/React框架原理（响应式/虚拟DOM）、前端性能优化（关键�
         "key_points": """测试理论与方法（黑盒/白盒/等价类/边界值）、自动化测试（Selenium/Pytest/Page Object）、
 接口测试（Postman/JMeter）、性能测试（压测指标/瓶颈分析）、安全测试（OWASP Top 10）、
 Bug管理流程、测试用例设计、CI/CD中的质量门禁""",
-        "position_desc": "软件测试工程师，要求掌握软件测试理论和方法，熟悉自动化测试框架和工具，具备接口测试和性能测试经验，了解安全测试基本概念，有良好的质量意识和Bug追踪能力。"
+        "position_desc": "测试开发工程师，要求掌握软件测试理论和方法，熟悉自动化测试框架和工具，具备接口测试和性能测试经验，了解安全测试基本概念，有良好的质量意识和Bug追踪能力。"
     }
 }
+
+# 通用兜底配置：数据库新增岗位（如预留位启用）但本文件尚无专属配置时使用
+GENERIC_POSITION = {
+    "weight_tech": 35,
+    "weight_logic": 25,
+    "weight_expression": 20,
+    "weight_match": 20,
+    "key_points": "暂无专属考察点配置，请按岗位通用能力（基础功底、问题分析、实践经验、沟通表达）综合评估",
+    "position_desc": "该岗位暂无专属描述，请按候选人回答的专业性、条理性和与问题本身的契合度进行客观评估。"
+}
+
+# 无专属优秀范例时的说明（拼入 Prompt）
+GENERIC_EXAMPLES_NOTE = "（该岗位暂无精选高分范例，请严格按各维度评分标准评估。）"
 
 
 # ============================================================
@@ -101,7 +120,7 @@ BeanPostProcessor后置处理（AOP代理在此生成）、使用阶段、销毁
 或者闭包引用的DOM节点未释放，都会导致内存问题。因此使用闭包时需注意及时解除引用。
 评分理由：清晰解释了闭包原理，列举了多种用途，同时指出了内存泄漏风险及解决方案，展现了全面的理解。
 """,
-    "testing": """
+    "test_engineer": """
 【范例1 - 黑盒白盒测试】
 问题：请简述黑盒测试和白盒测试的区别，并列举黑盒测试的常用方法。
 优秀回答：黑盒测试将软件视为黑盒子，只关注输入和输出，不考虑内部实现逻辑，主要验证功能是否符合需求。
@@ -132,24 +151,28 @@ BeanPostProcessor后置处理（AOP代理在此生成）、使用阶段、销毁
 def build_position_prompt(position_key, dialogue_text):
     """
     根据岗位和对话内容，构建完整的评估Prompt
-    
+
     参数：
-        position_key: "backend" | "frontend" | "testing"
+        position_key: 岗位 code（如 backend / frontend / test_engineer），
+                      由主后端数据库动态下发；未知 code 自动使用通用模板兜底
         dialogue_text: 格式为 "面试官：xxx\n候选人：xxx\n面试官：xxx\n候选人：xxx\n..."
-    
+
     返回：
         完整的Prompt字符串，可直接发送给DeepSeek API
     """
-    config = POSITION_CONFIG[position_key]
-    
+    # 岗位由主后端数据库 positions 表动态维护：无专属配置时用通用模板兜底，绝不抛错
+    config = POSITION_CONFIG.get(position_key)
+    if config is None:
+        config = {**GENERIC_POSITION, "name": f"「{position_key}」岗位"}
+
     # 从配置中提取权重
     wt = config["weight_tech"]
     wl = config["weight_logic"]
     we = config["weight_expression"]
     wm = config["weight_match"]
-    
-    # 获取对应的优秀范例
-    examples = EXCELLENT_EXAMPLES[position_key]
+
+    # 获取对应的优秀范例（无专属范例时给说明文字）
+    examples = EXCELLENT_EXAMPLES.get(position_key, GENERIC_EXAMPLES_NOTE)
     
     prompt = f"""你是一位资深的技术面试评估专家，有10年以上的一线互联网公司面试官经验。你精通{config['name']}岗位的能力评估，擅长从候选人的回答中精准识别技术深度、逻辑严谨性和沟通表达能力。
 
@@ -230,25 +253,25 @@ def build_position_prompt(position_key, dialogue_text):
 ⚠️ 题库抽取建议：
 每个岗位面试抽取 10-15 道题，题型配比建议如下：
 
-Java后端（15题）：
+后端开发（15题）：
 - 技术知识题：6-7道（Java基础/集合/并发/JVM/Spring/MySQL/Redis）
 - 项目经历深挖：3-4道
 - 场景/系统设计：2-3道
 - 行为面试：1道
 
-Web前端（15题）：
+前端开发（15题）：
 - 技术知识题：6-7道（JavaScript/CSS/框架原理/性能优化/工程化）
 - 项目经历深挖：3-4道
 - 场景/系统设计：2-3道
 - 行为面试：1道
 
-软件测试（15题）：
+测试开发（15题）：
 - 技术知识题：6-7道（测试理论/自动化/接口测试/性能测试/安全测试）
 - 项目经历深挖：3-4道
 - 场景/系统设计：2-3道
 - 行为面试：1道
 
-注：5号的Excel中各岗位题量充足（Python算法31题/Java后端30题/前端30题/测试10题/DevOps10题），15道题完全够用。
+题库现状与得分点/参考答案的评分用法见 docs/QUESTION_BANK_REVIEW.md。
 """
 
 
@@ -259,17 +282,14 @@ Web前端（15题）：
 def get_evaluation_prompt(position_key, dialogue_text):
     """
     统一接口：获取指定岗位的评估Prompt
-    
+
     参数：
-        position_key: "backend" | "frontend" | "testing"
+        position_key: 岗位 code（数据库动态下发，未知 code 用通用模板兜底）
         dialogue_text: 面试对话全文
-        
+
     返回：
         完整的评估Prompt字符串
     """
-    if position_key not in POSITION_CONFIG:
-        raise ValueError(f"不支持的岗位类型：{position_key}。支持的岗位：{list(POSITION_CONFIG.keys())}")
-    
     return build_position_prompt(position_key, dialogue_text)
 
 

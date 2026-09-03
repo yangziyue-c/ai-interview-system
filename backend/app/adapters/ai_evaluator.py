@@ -5,7 +5,7 @@
     POST {AI_EVALUATOR_URL}/evaluate
     Content-Type: application/json
     {
-        "position": "backend" | "frontend",
+        "position": "backend" | "frontend" | "test_engineer",  # 岗位 code（数据库动态下发）
         "qa_list": [
             {"round": 1, "question": "...", "answer": "...", "audio_url": null}
         ]
@@ -23,8 +23,11 @@
         "suggestions": ["建议1", "建议2"]
     }
 
-约定：15 秒内未返回 / 非 2xx / 未配置 URL 时，后端自动使用内置 Mock 评分兜底，
+约定：评估报告生成较慢，单独给 30 秒预算（其余适配器仍 15 秒）；
+超时 / 非 2xx / 未配置 URL 时，后端自动使用内置 Mock 评分兜底，
 保证报告必然生成、流程不中断。
+
+P3 服务本体在 backend/evaluator/（独立 Flask 进程，端口 8002），由 start.py 自动拉起。
 """
 import logging
 
@@ -34,6 +37,10 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 _WEIGHTS = {"tech": 0.35, "logic": 0.25, "expression": 0.20, "match": 0.20}
+
+# 评估报告生成较慢（长 Prompt + 多轮问答），单独 30 秒预算；
+# P3 服务内部自身超时 25 秒，保证主后端在 30 秒内总能收到结果
+EVALUATE_TIMEOUT_SECONDS = 30.0
 
 
 def _mock_evaluate(position: str, qa_list: list[dict]) -> dict:
@@ -128,7 +135,9 @@ class AIEvaluatorAdapter(HTTPAdapterBase):
         async def _mock() -> dict:
             return _mock_evaluate(position, qa_list)
 
-        result = await self.call_or_fallback("/evaluate", payload, _mock)
+        result = await self.call_or_fallback(
+            "/evaluate", payload, _mock, timeout=EVALUATE_TIMEOUT_SECONDS
+        )
         if not isinstance(result, dict) or "total_score" not in result:
             logger.warning("P3 返回缺少评分字段，使用 Mock 兜底")
             result = await _mock()

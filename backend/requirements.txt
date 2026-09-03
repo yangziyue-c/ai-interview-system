@@ -21,6 +21,11 @@ bcrypt>=4.1.0
 # P2/P3 适配器 HTTP 调用
 httpx>=0.27.0
 
+# P3 评估服务（backend/evaluator 独立 Flask 进程，端口 8002）
+flask>=3.0.0
+flask-cors>=4.0.0
+requests>=2.31.0
+
 # 音频上传
 python-multipart>=0.0.9
 

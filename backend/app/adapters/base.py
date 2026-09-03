@@ -27,31 +27,44 @@ class HTTPAdapterBase:
         self.base_url = base_url.rstrip("/") if base_url else ""
         self.name = name
 
-    async def call(self, path: str, payload: dict) -> dict | None:
-        """调用外部服务并返回 JSON；未配置 URL 时返回 None（表示走 Mock）"""
+    async def call(
+        self, path: str, payload: dict, timeout: float | None = None
+    ) -> dict | None:
+        """调用外部服务并返回 JSON；未配置 URL 时返回 None（表示走 Mock）
+
+        timeout: 单次调用预算，默认取 settings.ADAPTER_TIMEOUT_SECONDS；
+        评估报告生成较慢，评估适配器可单独传入更长的预算。
+        """
         if not self.base_url:
             return None
+        t = timeout if timeout is not None else settings.ADAPTER_TIMEOUT_SECONDS
         try:
-            async with httpx.AsyncClient(timeout=settings.ADAPTER_TIMEOUT_SECONDS) as client:
+            async with httpx.AsyncClient(timeout=t) as client:
                 resp = await asyncio.wait_for(
                     client.post(f"{self.base_url}{path}", json=payload),
-                    timeout=settings.ADAPTER_TIMEOUT_SECONDS,
+                    timeout=t,
                 )
                 resp.raise_for_status()
                 return resp.json()
         except asyncio.TimeoutError:
             raise AdapterTimeoutError(
-                f"{self.name} 调用超时（>{settings.ADAPTER_TIMEOUT_SECONDS:.0f}s）"
+                f"{self.name} 调用超时（>{t:.0f}s）"
             ) from None
         except httpx.HTTPStatusError as exc:
             raise RuntimeError(f"{self.name} 返回异常状态码 {exc.response.status_code}") from exc
         except httpx.HTTPError as exc:
             raise RuntimeError(f"{self.name} 网络错误: {exc}") from exc
 
-    async def call_or_fallback(self, path: str, payload: dict, mock_func: Callable[[], Awaitable[Any] | Any]) -> Any:
+    async def call_or_fallback(
+        self,
+        path: str,
+        payload: dict,
+        mock_func: Callable[[], Awaitable[Any] | Any],
+        timeout: float | None = None,
+    ) -> Any:
         """调用外部服务，失败/超时自动降级为 Mock 并记录日志"""
         try:
-            result = await self.call(path, payload)
+            result = await self.call(path, payload, timeout)
             if result is not None:
                 return result
             logger.debug("%s 未配置 URL，使用 Mock 数据", self.name)

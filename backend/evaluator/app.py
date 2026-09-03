@@ -1,15 +1,25 @@
 """
-AI模拟面试与能力提升软件 - 评估服务（3号模块）
+AI模拟面试与能力提升软件 - 评估服务（3号模块，独立进程）
 负责：AI评估 & 报告生成
-端口：8001
+端口：8002（主后端在 8001，本服务仅供主后端内网调用，勿改回 8001）
 接口：POST /evaluate
+
+启动方式：
+- 由 backend/start.py 自动拉起（推荐）
+- 手动：cd backend && python evaluator/app.py
 """
+import os
+import sys
+from pathlib import Path
+
+# Windows 控制台默认 GBK 编码，print 含 emoji/生僻字会抛 UnicodeEncodeError；
+# 统一把 stdout 重配置为 UTF-8（根因修复，勿改为删除 emoji 的绕过写法）
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 import json
-import re
 from datetime import datetime
 
 # 导入Prompt配置
@@ -22,12 +32,33 @@ CORS(app)
 # 配置区域
 # ============================================================
 
-# ✅ 已填入你的 DeepSeek API Key
-DEEPSEEK_API_KEY = "sk-3ae5f*****7a14"
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+# 端口约定：主后端 8001，本服务 8002（同机部署）
+EVALUATOR_PORT = 8002
 
-# 1号后端的地址（用于获取面试详情等）
-BACKEND_URL = "http://localhost:8000"
+
+def _load_api_key() -> str:
+    """从环境变量 / backend/.env 读取 DeepSeek API Key
+
+    协作约定：API Key 严禁硬编码提交（见 docs/COLLABORATION.md）。
+    读取顺序：环境变量 DEEPSEEK_API_KEY > LLM_API_KEY > backend/.env 的 LLM_API_KEY
+    （与主后端共享同一个 Key，填入 backend/.env 的 LLM_API_KEY 即可）。
+    """
+    key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("LLM_API_KEY")
+    if key:
+        return key
+    env_file = Path(__file__).resolve().parent.parent / ".env"
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("LLM_API_KEY="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return ""
+
+
+DEEPSEEK_API_KEY = _load_api_key()
+DEEPSEEK_API_URL = os.environ.get(
+    "DEEPSEEK_API_URL", "https://api.deepseek.com/v1/chat/completions"
+)
 
 # ============================================================
 # 核心评估接口
@@ -39,20 +70,22 @@ def evaluate():
     接收：{"position": "backend", "qa_list": [...]}
     返回：P3格式的评估报告
     """
+    qa_list: list = []  # 提前初始化：JSON 解析失败等异常发生在赋值前时，兜底分支引用安全
     try:
         data = request.get_json()
-        
+
         # 1. 校验参数
         if not data or 'qa_list' not in data:
             return jsonify({"error": "缺少 qa_list 参数"}), 400
         
         position = data.get('position', 'backend')
         qa_list = data.get('qa_list', [])
-        
-        # 校验岗位是否支持
-        if position not in POSITION_CONFIG:
-            return jsonify({"error": f"不支持的岗位：{position}。支持的岗位：{list(POSITION_CONFIG.keys())}"}), 400
-        
+
+        # 岗位由主后端数据库动态下发：未知 code 时评估使用通用模板兜底（不拒绝）
+        # 仅当岗位缺失或为空时返回 400
+        if not isinstance(position, str) or not position.strip():
+            return jsonify({"error": "position 参数缺失"}), 400
+
         if len(qa_list) == 0:
             return jsonify({"error": "qa_list 不能为空"}), 400
         
@@ -79,7 +112,7 @@ def evaluate():
         
     except Exception as e:
         print(f"评估失败：{e}")
-        return jsonify(get_default_report()), 500
+        return jsonify(get_default_report(qa_list)), 500
 
 
 # ============================================================
@@ -87,10 +120,12 @@ def evaluate():
 # ============================================================
 
 def build_dialogue_text(qa_list):
-    """将qa_list拼接成对话文本"""
+    """将qa_list拼接成对话文本（带轮次标记，帮助模型理解追问链）"""
     dialogue = ""
     for qa in qa_list:
-        dialogue += f"面试官：{qa.get('question', '')}\n"
+        round_no = qa.get("round")
+        tag = f"（第{round_no}轮）" if round_no is not None else ""
+        dialogue += f"面试官{tag}：{qa.get('question', '')}\n"
         dialogue += f"候选人：{qa.get('answer', '')}\n"
     return dialogue
 
@@ -113,7 +148,9 @@ def call_llm_for_evaluation(prompt):
                 "temperature": 0.3,
                 "response_format": {"type": "json_object"}
             },
-            timeout=30
+            # 主后端对评估的兜底超时为 30 秒，这里必须小于它：
+            # 超时后返回默认报告(200)，保证主后端在 30 秒内总能拿到结果
+            timeout=25
         )
         
         if response.status_code != 200:
@@ -240,17 +277,26 @@ def get_default_value(field):
     return defaults.get(field, 'N/A')
 
 
-def get_default_report():
-    """降级默认报告"""
+def get_default_report(qa_list=None):
+    """降级默认报告：按平均回答篇幅分档，避免所有失败都返回相同分数"""
+    qa_list = qa_list or []
+    answered = [qa.get("answer", "") for qa in qa_list if (qa.get("answer") or "").strip()]
+    avg_len = sum(len(a) for a in answered) / len(answered) if answered else 0
+    if avg_len >= 60:
+        score, comment = 78.0, "回答较充实"
+    elif avg_len >= 20:
+        score, comment = 68.0, "回答篇幅适中"
+    else:
+        score, comment = 58.0, "回答偏简略"
     return {
-        "total_score": 72.0,
-        "tech_score": 72.0,
-        "logic_score": 72.0,
-        "expression_score": 72.0,
-        "match_score": 72.0,
-        "summary": "评估服务暂时不可用，这是系统生成的默认报告。请稍后重试或联系技术支持。",
+        "total_score": score,
+        "tech_score": score,
+        "logic_score": score,
+        "expression_score": score,
+        "match_score": score,
+        "summary": f"评估服务暂时不可用，系统已按回答篇幅生成临时报告（{comment}）。请稍后重试或联系技术支持。",
         "strengths": ["完成了面试流程", "展示了基本的技术认知"],
-        "weaknesses": ["评估系统暂时无法详细分析", "建议在服务恢复后重新面试"],
+        "weaknesses": ["评估服务暂时无法详细分析", "建议在服务恢复后重新面试"],
         "suggestions": ["重新尝试面试", "或联系技术支持获取帮助"]
     }
 
@@ -266,7 +312,7 @@ def health():
         "status": "healthy",
         "service": "AI Evaluator",
         "supported_positions": list(POSITION_CONFIG.keys()),
-        "api_key_configured": True
+        "api_key_configured": bool(DEEPSEEK_API_KEY)
     })
 
 
@@ -290,10 +336,11 @@ if __name__ == '__main__':
     print("AI 模拟面试 - 评估服务 (3号模块)")
     print("=" * 60)
     print(f"支持的岗位：{', '.join([config['name'] for config in POSITION_CONFIG.values()])}")
-    print(f"API Key 配置状态：✅ 已配置")
+    print(f"API Key 配置状态：{'✅ 已配置' if DEEPSEEK_API_KEY else '❌ 未配置（评估将返回降级报告）'}")
     print("=" * 60)
     print("服务启动中...")
-    print(f"请访问 http://localhost:8001/health 检查服务状态")
-    print(f"评估接口：POST http://localhost:8001/evaluate")
+    print(f"请访问 http://localhost:{EVALUATOR_PORT}/health 检查服务状态")
+    print(f"评估接口：POST http://localhost:{EVALUATOR_PORT}/evaluate")
     print("=" * 60)
-    app.run(host='0.0.0.0', port=8001, debug=True)
+    # debug=False：本服务由 start.py 子进程管理，reloader 会产生额外子进程导致无法正常退出
+    app.run(host='0.0.0.0', port=EVALUATOR_PORT, debug=False)

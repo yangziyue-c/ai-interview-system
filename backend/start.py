@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Backend launcher: locate conda -> create env -> install deps -> start server.
+"""Backend launcher: locate conda -> create env -> install deps -> start servers.
 
 All startup logic lives here so the .bat wrapper stays minimal:
 Python is immune to the encoding / line-ending pitfalls of cmd batch files.
+
+Started processes:
+1. Main FastAPI backend on port 8001 (foreground)
+2. P3 AI evaluator (Flask) on port 8002 (child process, auto-stopped on exit)
 """
 import subprocess
 import sys
@@ -11,7 +15,10 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 ENV_NAME = "ai_interview"
 PORT = "8001"
+EVALUATOR_PORT = "8002"
 PIP_INDEX = "https://pypi.tuna.tsinghua.edu.cn/simple"
+# 主后端 + P3 评估服务所需的全部第三方库（缺任一则触发 pip install）
+IMPORT_CHECK = "import fastapi, uvicorn, sqlalchemy, flask, flask_cors, requests"
 
 
 def sh(cmd: str) -> subprocess.CompletedProcess:
@@ -87,7 +94,7 @@ def main() -> None:
 
     # 3. install deps if missing
     print("[3/5] checking dependencies...")
-    if sh(f'"{python}" -c "import fastapi, uvicorn, sqlalchemy"').returncode != 0:
+    if sh(f'"{python}" -c "{IMPORT_CHECK}"').returncode != 0:
         print("[3/5] installing dependencies (1-2 minutes, please wait)...")
         if sh(f'"{python}" -m pip install -r requirements.txt -i {PIP_INDEX}').returncode != 0:
             fail("dependency install failed. Check your network and retry.")
@@ -99,20 +106,30 @@ def main() -> None:
         )
         print("[4/5] created .env from .env.example")
 
-    # 5. port check
-    print(f"[5/5] checking port {PORT}...")
-    if sh(f'netstat -ano | findstr ":{PORT}" | findstr "LISTENING"').returncode == 0:
-        fail(f"port {PORT} is already in use. Close the other program first.")
+    # 5. port check (main backend 8001 + P3 evaluator 8002)
+    print(f"[5/5] checking ports {PORT} / {EVALUATOR_PORT}...")
+    for port in (PORT, EVALUATOR_PORT):
+        if sh(f'netstat -ano | findstr ":{port}" | findstr "LISTENING"').returncode == 0:
+            fail(f"port {port} is already in use. Close the other program first.")
 
     print("-" * 60)
+    print(f"Starting AI evaluator (P3) on port {EVALUATOR_PORT}...")
+    evaluator = subprocess.Popen([str(python), "evaluator/app.py"], cwd=str(BASE_DIR))
     print(f"Starting server... visit http://localhost:{PORT}/docs")
     print("-" * 60)
-    sys.exit(
-        subprocess.call(
+    try:
+        exit_code = subprocess.call(
             [str(python), "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", PORT],
             cwd=str(BASE_DIR),
         )
-    )
+    finally:
+        # 主后端退出后关闭 P3 评估服务，避免残留孤儿进程占用 8002
+        evaluator.terminate()
+        try:
+            evaluator.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            evaluator.kill()
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
