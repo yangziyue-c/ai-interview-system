@@ -71,7 +71,13 @@ def locate_env_python() -> Path | None:
 
 def main() -> None:
     print("=" * 60)
-    print("AI Interview System - backend launcher")
+    print("AI 模拟面试系统 - 一键启动器")
+    print("=" * 60)
+    print("启动完成后，通过以下地址访问：")
+    print(f"  系统界面（前端页面）：http://localhost:{PORT}")
+    print(f"  接口文档（Swagger）：  http://localhost:{PORT}/docs")
+    print(f"  P3 评估服务健康检查： http://localhost:{EVALUATOR_PORT}/health")
+    print(f"  局域网演示：           http://<本机IP>:{PORT}（同一 WiFi，详见 docs/DEPLOY.md）")
     print("=" * 60)
 
     # 1. locate conda base dir
