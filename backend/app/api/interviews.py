@@ -61,12 +61,14 @@ async def _finish_interview(db: DbSession, interview: Interview) -> Report:
     ]
     data = await get_evaluator_adapter().evaluate(interview.position, qa_list)
 
+    # 5 维契约由评估适配器归一化（缺失字段在适配器层补齐），这里直接消费
     report = Report(
         interview_id=interview.id,
         total_score=float(data["total_score"]),
         tech_score=float(data["tech_score"]),
         logic_score=float(data["logic_score"]),
         expression_score=float(data["expression_score"]),
+        adaptability_score=float(data["adaptability_score"]),
         match_score=float(data["match_score"]),
         summary=str(data.get("summary") or ""),
         strengths=list(data.get("strengths") or []),

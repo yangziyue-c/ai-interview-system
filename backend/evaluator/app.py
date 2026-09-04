@@ -24,6 +24,7 @@ from datetime import datetime
 
 # 导入Prompt配置
 from evaluation_prompts import get_evaluation_prompt, POSITION_CONFIG
+from app.core.evaluation_weights import build_fallback_report
 
 app = Flask(__name__)
 CORS(app)
@@ -112,7 +113,7 @@ def evaluate():
         
     except Exception as e:
         print(f"评估失败：{e}")
-        return jsonify(get_default_report(qa_list)), 500
+        return jsonify(get_default_report(qa_list, position)), 500
 
 
 # ============================================================
@@ -128,6 +129,23 @@ def build_dialogue_text(qa_list):
         dialogue += f"面试官{tag}：{qa.get('question', '')}\n"
         dialogue += f"候选人：{qa.get('answer', '')}\n"
     return dialogue
+
+
+# 报告字段契约：单一字典（默认值），校验补齐与默认值查询都从它派生
+_SCORE_FIELDS = ('total_score', 'tech_score', 'logic_score',
+                 'expression_score', 'adaptability_score', 'match_score')
+_REPORT_FIELDS = {
+    'total_score': 75.0,
+    'tech_score': 75.0,
+    'logic_score': 75.0,
+    'expression_score': 75.0,
+    'adaptability_score': 75.0,
+    'match_score': 75.0,
+    'summary': '评估服务暂时部分异常，这是系统生成的默认报告。请稍后重新尝试面试获取更精准的评估。',
+    'strengths': ['完成了面试流程', '回答有一定条理'],
+    'weaknesses': ['评估系统暂时无法详细分析部分维度'],
+    'suggestions': ['建议重新尝试面试', '或联系技术支持']
+}
 
 
 def call_llm_for_evaluation(prompt):
@@ -163,22 +181,26 @@ def call_llm_for_evaluation(prompt):
         content = clean_json_content(content)
         report = json.loads(content)
         
-        # 验证必要字段
-        required_fields = ['total_score', 'tech_score', 'logic_score', 
-                          'expression_score', 'match_score', 'summary', 
-                          'strengths', 'weaknesses', 'suggestions']
-        for field in required_fields:
-            if field not in report:
-                print(f"⚠️ 大模型返回缺少字段：{field}，使用默认值")
-                report[field] = get_default_value(field)
-        
+        # 校验补齐：键缺失 / 值为 null / 分数字段非数值 → 补默认值
+        # （下游 merge_report 与主后端直接消费，此处保证契约完整）
+        if not isinstance(report, dict):
+            print(f"⚠️ 大模型返回非对象 JSON（{type(report).__name__}），使用默认报告")
+            return get_default_report()
+        for field, default in _REPORT_FIELDS.items():
+            value = report.get(field)
+            if value is None or (field in _SCORE_FIELDS and not isinstance(value, (int, float))):
+                print(f"⚠️ 大模型返回字段缺失或非数值：{field}，使用默认值")
+                report[field] = default
+
         return report
-        
+
     except requests.exceptions.Timeout:
         print("⚠️ 大模型调用超时（30秒），使用默认报告")
         return get_default_report()
     except Exception as e:
         print(f"⚠️ 大模型调用异常：{e}")
+        import traceback
+        traceback.print_exc()  # 保留堆栈便于排障，不要吞掉编程错误
         return get_default_report()
 
 
@@ -228,24 +250,22 @@ def merge_report(llm_report, expr_result, position):
     """合并大模型评估结果和语音分析结果"""
     # 最终表达分：使用语音分析的结果
     final_expression = expr_result.get('expression_score', 75)
-    
+
+    # 字段完整性由 call_llm_for_evaluation 的 required_fields 校验保证，这里直接取值
     report = {
-        "total_score": llm_report.get('total_score', 75.0),
-        "tech_score": llm_report.get('tech_score', 75.0),
-        "logic_score": llm_report.get('logic_score', 75.0),
+        "total_score": llm_report['total_score'],
+        "tech_score": llm_report['tech_score'],
+        "logic_score": llm_report['logic_score'],
         "expression_score": final_expression,
-        "match_score": llm_report.get('match_score', 75.0),
-        "summary": llm_report.get('summary', '表现中规中矩，建议加强练习。'),
-        "strengths": llm_report.get('strengths', ['回答问题有一定条理', '具备基本的技术知识']),
-        "weaknesses": llm_report.get('weaknesses', ['部分回答可以更加深入', '表达能力有提升空间']),
-        "suggestions": llm_report.get('suggestions', [
-            '建议多练习技术深度问题的回答',
-            '可以参考岗位要求进行针对性学习',
-            '建议录制自己的回答回听，提升表达流畅度'
-        ]),
+        "adaptability_score": llm_report['adaptability_score'],
+        "match_score": llm_report['match_score'],
+        "summary": llm_report['summary'],
+        "strengths": llm_report['strengths'],
+        "weaknesses": llm_report['weaknesses'],
+        "suggestions": llm_report['suggestions'],
         "_speech_details": expr_result.get('speech_details', {})
     }
-    
+
     return report
 
 
@@ -262,43 +282,16 @@ def clean_json_content(text):
 
 
 def get_default_value(field):
-    """获取默认字段值"""
-    defaults = {
-        'total_score': 75.0,
-        'tech_score': 75.0,
-        'logic_score': 75.0,
-        'expression_score': 75.0,
-        'match_score': 75.0,
-        'summary': '评估服务暂时部分异常，这是系统生成的默认报告。请稍后重新尝试面试获取更精准的评估。',
-        'strengths': ['完成了面试流程', '回答有一定条理'],
-        'weaknesses': ['评估系统暂时无法详细分析部分维度'],
-        'suggestions': ['建议重新尝试面试', '或联系技术支持']
-    }
-    return defaults.get(field, 'N/A')
+    """获取默认字段值（由单一契约字典 _REPORT_FIELDS 派生）"""
+    return _REPORT_FIELDS.get(field, 'N/A')
 
 
-def get_default_report(qa_list=None):
-    """降级默认报告：按平均回答篇幅分档，避免所有失败都返回相同分数"""
-    qa_list = qa_list or []
-    answered = [qa.get("answer", "") for qa in qa_list if (qa.get("answer") or "").strip()]
-    avg_len = sum(len(a) for a in answered) / len(answered) if answered else 0
-    if avg_len >= 60:
-        score, comment = 78.0, "回答较充实"
-    elif avg_len >= 20:
-        score, comment = 68.0, "回答篇幅适中"
-    else:
-        score, comment = 58.0, "回答偏简略"
-    return {
-        "total_score": score,
-        "tech_score": score,
-        "logic_score": score,
-        "expression_score": score,
-        "match_score": score,
-        "summary": f"评估服务暂时不可用，系统已按回答篇幅生成临时报告（{comment}）。请稍后重试或联系技术支持。",
-        "strengths": ["完成了面试流程", "展示了基本的技术认知"],
-        "weaknesses": ["评估服务暂时无法详细分析", "建议在服务恢复后重新面试"],
-        "suggestions": ["重新尝试面试", "或联系技术支持获取帮助"]
-    }
+def get_default_report(qa_list=None, position=""):
+    """降级默认报告：按平均回答篇幅分档（分档口径与主后端 Mock 共用）
+
+    position 用于 5 维加权；未知岗位回退通用权重。
+    """
+    return build_fallback_report(position, qa_list or [], summary_prefix="评估服务暂时不可用")
 
 
 # ============================================================

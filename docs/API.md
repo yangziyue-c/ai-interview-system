@@ -205,10 +205,11 @@ GET /reports/{interview_id}
   "data": {
     "interview_id": 1,
     "total_score": 84.5,
-    "tech_score": 88.0,       // 技术能力
-    "logic_score": 83.0,      // 逻辑思维
-    "expression_score": 80.0, // 表达沟通
-    "match_score": 87.0,      // 岗位匹配度
+    "tech_score": 88.0,          // 技术水平
+    "logic_score": 83.0,         // 逻辑思维
+    "expression_score": 80.0,    // 沟通表达
+    "adaptability_score": 82.0,  // 应变能力
+    "match_score": 87.0,         // 岗位匹配度
     "summary": "整体表现良好……",
     "strengths": ["回答内容充实……"],
     "weaknesses": ["个别问题可再深入……"],
@@ -217,6 +218,9 @@ GET /reports/{interview_id}
   }
 }
 ```
+
+> 评分维度 5 维（2026-09-04 起，源自团队《评估维度.csv》）：技术水平 / 逻辑思维 /
+> 沟通表达 / 应变能力 / 岗位匹配度。`adaptability_score` 为新增字段，前端雷达图按 5 轴渲染。
 
 ### 4.2 最近一次面试的改进建议（个人中心用）
 
@@ -248,7 +252,7 @@ GET /reports/growth
 { "code": 0, "message": "ok", "data": [
   { "interview_id": 1, "position": "backend", "finished_at": "...",
     "total_score": 76.0, "tech_score": 76.0, "logic_score": 74.0,
-    "expression_score": 78.0, "match_score": 77.0 },
+    "expression_score": 78.0, "adaptability_score": 75.0, "match_score": 77.0 },
   { "interview_id": 3, "position": "backend", "finished_at": "...",
     "total_score": 84.5, ... }
 ] }
@@ -256,9 +260,74 @@ GET /reports/growth
 
 ---
 
-## 5. 上传
+## 5. 题库
 
-### 5.1 上传面试录音
+题库数据来自 `questions` 表（由 `backend/scripts/import_question_bank.py` 从
+`题库/*.xlsx` 导入，当前 3 岗位 × 150 题）。主要供后端开发 B（AI专项1）的
+面试官对话逻辑（选题/追问）使用。
+
+### 5.1 题库列表（过滤 + 分页）
+
+```
+GET /questions?position=backend&category=技术知识&difficulty=easy&stage=开场热身&q=HashMap&limit=20&offset=0
+```
+
+全部查询参数可选：
+
+| 参数 | 说明 |
+| :--- | :--- |
+| position | 岗位 code（backend / frontend / test_engineer） |
+| category | 大类：技术知识 / 场景与设计 / 编码与算法 / 项目深挖 / 行为面试 |
+| difficulty | 难度：easy / medium / hard |
+| stage | 面试阶段：开场热身 / 核心考察 / 深度考察 / 收尾交流 |
+| q | 题干模糊搜索关键词 |
+| limit / offset | 分页（limit 默认 20，最大 100） |
+
+返回：
+
+```json
+{ "code": 0, "message": "ok", "data": {
+  "total": 450,
+  "items": [
+    {
+      "id": 1,
+      "position_code": "backend",
+      "question_no": "tech_001",
+      "category": "技术知识",
+      "sub_category": "Java基础",
+      "difficulty": "easy",
+      "question": "Java中==和equals()的区别是什么？",
+      "soft_skill_tag": "",
+      "score_points": "【basic 0.3】……【core 0.5】……【advanced 0.2】……",
+      "follow_up_triggers": "【L1-触发追问】……【L2-深入追问】……【L3-极限追问】……【降级策略】……",
+      "reference_answer": "完整参考答案……",
+      "note": "高频考点，equals与hashCode契约是必追问点",
+      "interview_stage": "开场热身",
+      "stage_order": 1,
+      "suggested_minutes": 3,
+      "alternative_directions": "方向1：……方向2：……",
+      "excellent_example": "优秀回答范例……"
+    }
+  ]
+} }
+```
+
+> `question` 已剥离「【岗位软技能考察：X】」元信息（独立存于 `soft_skill_tag`），
+> 可直接读给候选人。选题约定见 [REPORT_TO_P2.md](REPORT_TO_P2.md)。
+
+### 5.2 题库详情
+
+```
+GET /questions/{question_id}
+```
+
+返回单题全量字段（结构同 5.1 的 item）。
+
+---
+
+## 6. 上传
+
+### 6.1 上传面试录音
 
 ```
 POST /uploads/audio        Content-Type: multipart/form-data
@@ -275,9 +344,9 @@ POST /uploads/audio        Content-Type: multipart/form-data
 
 ---
 
-## 6. 系统
+## 7. 系统
 
-### 6.1 健康检查
+### 7.1 健康检查
 
 ```
 GET /health                { "code": 0, "message": "ok", "data": { "status": "healthy" } }
@@ -330,18 +399,28 @@ POST {AI_EVALUATOR_URL}/evaluate
 }
 ```
 
-期望返回：
+期望返回（5 维评分）：
 
 ```json
 {
   "total_score": 85.5,
-  "tech_score": 88.0,
-  "logic_score": 83.0,
-  "expression_score": 80.0,
-  "match_score": 90.0,
+  "tech_score": 88.0,          // 技术水平
+  "logic_score": 83.0,         // 逻辑思维
+  "expression_score": 80.0,    // 沟通表达
+  "adaptability_score": 82.0,  // 应变能力
+  "match_score": 90.0,         // 岗位匹配度
   "summary": "综合评语……",
   "strengths": ["优点1", "优点2"],
   "weaknesses": ["不足1"],
   "suggestions": ["建议1", "建议2"]
 }
 ```
+
+各岗位维度权重（源自《评估维度.csv》，代码单一事实源为
+`backend/app/core/evaluation_weights.py`，主后端 Mock 兜底与评估服务共用）：
+
+| 岗位 code | 技术 | 逻辑 | 表达 | 应变 | 匹配 |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| backend | 35% | 25% | 10% | 10% | 20% |
+| frontend | 30% | 20% | 15% | 15% | 20% |
+| test_engineer | 25% | 25% | 20% | 15% | 15% |

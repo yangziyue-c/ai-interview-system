@@ -69,6 +69,22 @@ GET /api/v1/positions
 > 岗位大厅展示本接口返回的数据；注册的 `target_position` 和开始面试的 `position`
 > 都必须传本接口返回的 `code`。岗位名→中文名映射由 `name` 字段天然提供，无需自行映射。
 
+### 5. 报告评分扩展为 5 维（2026-09-04，源自团队《评估维度.csv》）
+
+报告接口与成长曲线新增 `adaptability_score`（应变能力）字段，雷达图从 **4 维升级为 5 维**：
+
+| 维度字段 | 中文名 |
+| :--- | :--- |
+| `tech_score` | 技术水平 |
+| `logic_score` | 逻辑思维 |
+| `expression_score` | 沟通表达 |
+| `adaptability_score` | **应变能力（新增）** |
+| `match_score` | 岗位匹配度 |
+
+报告详情 `GET /reports/{interview_id}` 与成长曲线 `GET /reports/growth` 均返回以上 5 个分数，
+雷达图按 5 轴渲染。各维度权重随岗位不同（见 API.md 附录 P3 或评估服务
+`evaluation_prompts.py`），前端无需计算总分，直接展示 `total_score`。
+
 ---
 
 ## 二、frontend-spec.md 错误清单与修正对照
@@ -132,7 +148,7 @@ GET /api/v1/positions
 | spec 写的字段 | 实际字段 |
 |---|---|
 | `score` | `total_score`（浮点，如 84.5） |
-| `radarLabels` 5 维 / `radarValues` | **4 个维度**：`tech_score` 技术 / `logic_score` 逻辑 / `expression_score` 表达 / `match_score` 岗位匹配度（删掉"应变能力"） |
+| `radarLabels` 5 维 / `radarValues` | **5 个维度**：`tech_score` 技术水平 / `logic_score` 逻辑思维 / `expression_score` 沟通表达 / `adaptability_score` 应变能力 / `match_score` 岗位匹配度 |
 | `suggestions` | ✓ 存在（字符串数组） |
 | `trend` | **不存在**。成长曲线调独立接口 `GET /api/v1/reports/growth`（按时间升序的得分序列） |
 | 未提及 | `summary` 综合评语、`strengths` 优点、`weaknesses` 缺点（都是前端可展示的现成字段） |
@@ -220,8 +236,8 @@ Base URL：`http://localhost:8001/api/v1`（联调期）｜统一响应 `{ code,
      注册与开始面试的 position 必须传该接口返回的 code；
    - 补充原规格缺失的内容：注册接口与注册/登录页、主动结束面试接口、
      40100 错误码自动跳转登录、进行中面试（status=in_progress）的恢复入口；
-   - 报告雷达图改为 4 个维度：tech_score / logic_score / expression_score / match_score；
-     成长曲线数据来自 GET /reports/growth；
+   - 报告雷达图 5 个维度：tech_score / logic_score / expression_score /
+     adaptability_score / match_score；成长曲线数据来自 GET /reports/growth；
 3. 在修订版末尾附一节"相对原规格的修改清单"，逐条列出改了什么、为什么。
 
 只输出修订后的 frontend-spec.md 完整内容，不要输出无关解释。
@@ -245,7 +261,7 @@ Base URL：`http://localhost:8001/api/v1`（联调期）｜统一响应 `{ code,
 - 页面：登录/注册页（注册含目标岗位选择——选项来自 GET /positions 接口、可选学号）、
   岗位大厅（读 GET /positions 接口）、岗位详情、面试对话室（文本+按住说话语音、
   语音用 Web Speech API 转写、录音用 MediaRecorder 录 webm 上传 /api/v1/uploads/audio）、
-  报告页（4 维雷达图 + 总分 + 评语/优缺点/建议 + 成长曲线折线图）、
+  报告页（5 维雷达图：技术/逻辑/表达/应变/匹配 + 总分 + 评语/优缺点/建议 + 成长曲线折线图）、
   个人中心（用户信息 + 历史列表带分数 + 最近建议）；
 - 面试对话室关键流程：开始面试拿 interview.id → 提交答案后按 finished 判断
   显示下一题或跳转报告；提供"结束面试"按钮；历史列表中 status=in_progress 的

@@ -35,15 +35,19 @@ interviews (面试会话)      status: idle → in_progress → finished
   ├────────────────┐
   │ N              │ 1
 qa_records (问答记录)    reports (评估报告)
-  round: 第几轮          四个维度分数 + 评语
+  round: 第几轮          五个维度分数 + 评语
 
 positions (岗位表，独立无外键)
   启动时自动 seed 5 个岗位位，enabled 控制上/下线
+
+questions (题库表，独立无外键，按 position_code 关联岗位)
+  由 scripts/import_question_bank.py 从 题库/*.xlsx 导入，供面试官对话逻辑抽题
 ```
 
 - 1 个用户 → N 场面试
 - 1 场面试 → N 条问答记录 + 1 份评估报告（严格一对一）
 - 岗位由 positions 表动态维护（替代硬编码枚举），预留 5 个岗位位
+- 题库由 questions 表承载（当前 3 岗位 × 150 题），对话逻辑按岗位/阶段/难度抽题
 
 模型代码见 [backend/app/models/](backend/app/models/)。
 
@@ -92,10 +96,11 @@ positions (岗位表，独立无外键)
 | :--- | :--- | :--- | :--- |
 | id | int | 主键自增 | |
 | interview_id | int | FK→interviews，unique + index，级联删除 | 一场面试严格一份报告 |
-| total_score | float | not null | 综合得分（加权） |
-| tech_score | float | not null | 技术能力（0~100） |
+| total_score | float | not null | 综合得分（按岗位 5 维加权） |
+| tech_score | float | not null | 技术水平（0~100） |
 | logic_score | float | not null | 逻辑思维（0~100） |
-| expression_score | float | not null | 表达沟通（0~100） |
+| expression_score | float | not null | 沟通表达（0~100） |
+| adaptability_score | float | 默认 0.0 | 应变能力（0~100，2026-09-04 新增；历史报告启动时自愈式回填，用表达分近似） |
 | match_score | float | not null | 岗位匹配度（0~100） |
 | summary | text | not null | 综合评语 |
 | strengths | JSON | 默认 [] | 优势列表（条数不固定） |
@@ -103,7 +108,16 @@ positions (岗位表，独立无外键)
 | suggestions | JSON | 默认 [] | 改进建议列表 |
 | created_at | datetime | server_default=now() | 报告生成时间 |
 
-综合得分加权：`total = tech×0.35 + logic×0.25 + expression×0.20 + match×0.20`（见 [ai_evaluator.py](backend/app/adapters/ai_evaluator.py)）。
+综合得分按岗位 5 维加权（源自《评估维度.csv》），
+权重单一事实源为 [evaluation_weights.py](backend/app/core/evaluation_weights.py) 的 `POSITION_CONFIG`
+（主后端 Mock 兜底与评估服务均经 `weights_for()` 派生），
+`tests/test_api.py` 的 `test_weights_match_csv` 机器校验 CSV ↔ 代码一致性：
+
+| 岗位 code | 技术 | 逻辑 | 表达 | 应变 | 匹配 |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| backend | 35% | 25% | 10% | 10% | 20% |
+| frontend | 30% | 20% | 15% | 15% | 20% |
+| test_engineer | 25% | 25% | 20% | 15% | 15% |
 
 ### 5. positions —— 岗位表（独立无外键）
 
@@ -121,6 +135,33 @@ positions (岗位表，独立无外键)
 
 启动时若表为空，自动 seed 5 个岗位位（3 个已开放 + 2 个占位待定，见 [position.py](backend/app/models/position.py) 的 `DEFAULT_POSITIONS`）；岗位清单确定后只需更新数据库记录，无需改代码。
 
+### 6. questions —— 面试题库表（独立无外键）
+
+数据由 [import_question_bank.py](backend/scripts/import_question_bank.py) 从仓库根目录
+`题库/*.xlsx`（v13 格式，3 岗位 × 150 题）导入，幂等可重跑。
+
+| 字段 | 类型 | 约束 | 说明 |
+| :--- | :--- | :--- | :--- |
+| id | int | 主键自增 | |
+| position_code | varchar(32) | index | 岗位 code，与 positions 表对齐 |
+| question_no | varchar(32) | unique(position_code, question_no) | 题库编号（tech_001 / scene_012 / code_003 / project_001 / behavior_001），跨岗位可重复 |
+| category | varchar(32) | not null | 大类：技术知识 / 场景与设计 / 编码与算法 / 项目深挖 / 行为面试 |
+| sub_category | varchar(64) | 默认空串 | 题目分类（如 Java基础 / 排障Debug） |
+| difficulty | varchar(16) | not null | 难度：easy / medium / hard |
+| question | text | not null | 题干（已剥离软技能标签，可直接读给候选人） |
+| soft_skill_tag | varchar(64) | 默认空串 | 从题干剥离的「岗位软技能考察」标签，仅作选题参考 |
+| score_points | text | 默认空串 | 得分点：【basic x】【core y】【advanced z】三段加权合计 1.0，评分 Prompt 素材 |
+| follow_up_triggers | text | 默认空串 | 追问触发条件：L1 关键词触发 / L2 深入 / L3 极限 / 降级策略 |
+| reference_answer | text | 默认空串 | 参考答案 |
+| note | text | 默认空串 | 备注（高频考点、追问方向等选题参考） |
+| interview_stage | varchar(16) | not null | 面试阶段：开场热身(1) / 核心考察(2) / 深度考察(3) / 收尾交流(4) |
+| stage_order | int | not null | 阶段顺序 1~4 |
+| suggested_minutes | int | 默认 0 | 建议用时(分钟)，仅作参考 |
+| alternative_directions | text | 默认空串 | 替代回答方向（追问素材） |
+| excellent_example | text | 默认空串 | 优秀回答范例 |
+
+查询接口：`GET /api/v1/questions`（按岗位/大类/难度/阶段过滤 + 分页，见 [API.md](API.md)）。
+
 ## 四、关键设计决策
 
 1. **岗位表化（替代硬编码枚举）**：岗位数量与清单在开发期会频繁调整，故将岗位从代码枚举下沉到 `positions` 表——注册/开始面试时查库校验（无效岗位 400）、前端岗位大厅读 `GET /positions`、Mock 题库按 code 匹配（缺省回退通用池）。新增/下线岗位只需改数据库记录，代码零改动。启动 seed 幂等（表空才插入，不覆盖已有数据）。
@@ -130,7 +171,8 @@ positions (岗位表，独立无外键)
 5. **出题即落库、作答再回填**：qa_records 在出题时 INSERT、作答时 UPDATE，任何时刻不会出现"有答案无问题"的脏数据，也天然支持为 P2 重建完整对话历史。
 6. **报告一对一 unique 约束**：数据库层面杜绝一场面试两份报告。
 7. **级联删除**（`ondelete=CASCADE` + `delete-orphan`）：删除用户/面试自动清理全部关联数据，无孤儿记录。
-8. **索引最小化**：只在真实查询路径建索引——登录按 username、面试列表按 user_id、报告按 interview_id、状态筛选按 status。不建冗余索引。
+8. **索引最小化**：只在真实查询路径建索引——登录按 username、面试列表按 user_id、报告按 interview_id、状态筛选按 status、题库按 position_code。不建冗余索引。
+9. **题库表化**：题库 xlsx 由导入脚本落库（questions 表），面试官对话逻辑（后端开发 B 负责）按岗位/阶段/难度从库抽题；题库更新只需重跑导入脚本，代码零改动。题干的「岗位软技能考察」元信息在导入时剥离到 `soft_skill_tag` 列，避免暴露给候选人。
 
 ## 五、数据流示例（一场完整面试的落库过程）
 
@@ -148,7 +190,7 @@ POST /interviews/{id}/answers（每次提交答案）
 POST /interviews/{id}/finish（手动结束或达到轮次上限自动触发）
   → 状态机校验  in_progress → finished，写入 finished_at
   → 调用 P3 适配器评估（超时降级 Mock）
-  → reports     INSERT (四个维度分数 + 评语)
+  → reports     INSERT (五个维度分数 + 评语)
 
 GET /reports/growth
   → JOIN interviews × reports，WHERE status=finished，ORDER BY finished_at ASC

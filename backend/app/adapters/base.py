@@ -54,6 +54,9 @@ class HTTPAdapterBase:
             raise RuntimeError(f"{self.name} 返回异常状态码 {exc.response.status_code}") from exc
         except httpx.HTTPError as exc:
             raise RuntimeError(f"{self.name} 网络错误: {exc}") from exc
+        except ValueError as exc:
+            # resp.json() 解析失败（返回了非 JSON 内容）也走 Mock 兜底，保证流程不中断
+            raise RuntimeError(f"{self.name} 返回非 JSON 内容: {exc}") from exc
 
     async def call_or_fallback(
         self,

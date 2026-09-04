@@ -29,6 +29,7 @@ async def get_growth(user: CurrentUser, db: DbSession) -> dict:
             tech_score=report.tech_score,
             logic_score=report.logic_score,
             expression_score=report.expression_score,
+            adaptability_score=report.adaptability_score,
             match_score=report.match_score,
         ).model_dump()
         for interview, report in result.all()

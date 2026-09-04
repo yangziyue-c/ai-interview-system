@@ -29,6 +29,9 @@ requests>=2.31.0
 # 音频上传
 python-multipart>=0.0.9
 
+# 题库导入（scripts/import_question_bank.py 读取 题库/*.xlsx）
+openpyxl>=3.1.0
+
 # 测试
 pytest>=8.0.0
 pytest-asyncio>=0.23.0

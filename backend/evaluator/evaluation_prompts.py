@@ -1,8 +1,11 @@
 """
 AI模拟面试与能力提升软件 - 评估模块 Prompt 配置
 负责：3号 - AI评估 & 报告生成
-版本：v1.1
-更新日期：2026-09-03
+版本：v1.2
+更新日期：2026-09-04
+
+v1.2 变更：评分维度由 4 维扩展为 5 维（新增「应变能力」），
+权重与维度定义源自团队《评估维度.csv》。
 
 使用方式：
     from evaluation_prompts import get_evaluation_prompt, POSITION_CONFIG
@@ -20,61 +23,60 @@ AI模拟面试与能力提升软件 - 评估模块 Prompt 配置
 """
 
 import json
+import sys
+from pathlib import Path
+
+# 本文件可能被 evaluator/app.py 导入，也可能被独立运行（__main__ 自测）：
+# 确保 backend 目录在 sys.path，以便 import app.core 共享契约模块
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+if str(_BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_DIR))
+
+from app.core.evaluation_weights import (  # noqa: E402
+    GENERIC_POSITION as _SHARED_GENERIC,
+    POSITION_CONFIG as _SHARED_POSITION_CONFIG,
+)
 
 # ============================================================
 # 岗位配置
 # ============================================================
-# ⚠️ 权重调整说明：
-# 以下权重为初始推荐值，各维度权重之和应为100%。
-# 如需调整，直接修改下方各岗位的 WEIGHT_* 数值即可。
-# 调整后，Prompt中的评分说明会自动同步。
+# 权重单一事实源在 app/core/evaluation_weights.py（源自团队《评估维度.csv》，
+# 2026-09-04 定稿，5 维：技术水平/逻辑思维/沟通表达/应变能力/岗位匹配度）。
+# 主后端 Mock 评分经该模块的 weights_for() 派生，修改权重只动那一处；
+# tests/test_api.py 的 test_weights_match_csv 机器校验 CSV ↔ 代码一致性。
+# 本文件只在其上叠加 Prompt 专属素材（key_points / position_desc）。
 # ============================================================
 
-POSITION_CONFIG = {
-    # 岗位 code 与主后端数据库 positions 表一一对应，勿单独改动
-    "backend": {
-        "name": "后端开发工程师",
-        "weight_tech": 45,      # 技术正确性权重
-        "weight_logic": 20,     # 逻辑严谨性权重
-        "weight_expression": 10, # 表达沟通权重
-        "weight_match": 25,     # 岗位匹配度权重
-        "key_points": """Java基础（集合/并发/JVM/IO）、Spring生态（IOC/AOP/事务）、
-MySQL数据库（索引/事务隔离/MVCC/分库分表）、微服务架构（服务治理/分布式事务）、
-Redis缓存、消息队列、系统设计（高并发/秒杀）""",
-        "position_desc": "后端开发工程师，要求扎实的Java语言基础，熟悉Spring Boot/Cloud生态，掌握MySQL等关系型数据库，了解分布式系统和微服务架构，具备良好的系统设计能力。"
-    },
-    "frontend": {
-        "name": "前端开发工程师",
-        "weight_tech": 40,
-        "weight_logic": 20,
-        "weight_expression": 15,
-        "weight_match": 25,
-        "key_points": """JavaScript/TypeScript基础（闭包/原型链/异步编程）、CSS布局（BFC/Flex/Grid）、
-Vue.js/React框架原理（响应式/虚拟DOM）、前端性能优化（关键渲染路径/代码分割）、
-前端工程化（Webpack/Vite）、浏览器渲染机制、HTTP缓存""",
-        "position_desc": "前端开发工程师，要求扎实的HTML/CSS/JavaScript基础，熟悉至少一种主流框架（Vue/React），了解前端工程化和性能优化，具备良好的用户体验意识和跨端兼容性处理能力。"
-    },
-    "test_engineer": {
-        "name": "测试开发工程师",
-        "weight_tech": 35,
-        "weight_logic": 20,
-        "weight_expression": 15,
-        "weight_match": 30,
-        "key_points": """测试理论与方法（黑盒/白盒/等价类/边界值）、自动化测试（Selenium/Pytest/Page Object）、
-接口测试（Postman/JMeter）、性能测试（压测指标/瓶颈分析）、安全测试（OWASP Top 10）、
-Bug管理流程、测试用例设计、CI/CD中的质量门禁""",
-        "position_desc": "测试开发工程师，要求掌握软件测试理论和方法，熟悉自动化测试框架和工具，具备接口测试和性能测试经验，了解安全测试基本概念，有良好的质量意识和Bug追踪能力。"
-    }
+_KEY_POINTS = {
+    "backend": """Java基础（集合/并发/JVM）、Spring生态（IOC/AOP/事务）、MySQL数据库（索引/事务隔离/MVCC）、
+Redis与缓存、分布式与微服务架构、系统设计与方案选型、排障Debug、编码与算法、
+项目实践深挖、岗位软技能（故障应急响应意识）""",
+    "frontend": """JavaScript/TypeScript基础（闭包/原型链/异步编程）、CSS布局（BFC/Flex/Grid）、
+Vue.js/React框架原理（响应式/虚拟DOM）、浏览器渲染机制与网络协议、
+前端性能优化（关键渲染路径/代码分割）、前端工程化（Webpack/Vite）与前端安全、
+编码与算法、项目实践深挖、岗位软技能（用户体验意识）""",
+    "test_engineer": """测试理论与方法（黑盒/白盒/等价类/边界值）、测试用例设计、
+接口测试与自动化测试（Pytest/Selenium）、性能测试（压测指标/瓶颈分析）、
+安全测试（OWASP Top 10）、CI/CD与DevOps、Linux/SQL基础、
+编码与算法（测试脚本开发）、项目实践深挖、岗位软技能（质量风险预判）""",
 }
 
-# 通用兜底配置：数据库新增岗位（如预留位启用）但本文件尚无专属配置时使用
+_POSITION_DESCS = {
+    "backend": "后端开发工程师，要求扎实的Java语言基础，熟悉Spring Boot/Cloud生态，掌握MySQL等关系型数据库，了解分布式系统和微服务架构，具备良好的系统设计、问题排查与编码能力。",
+    "frontend": "前端开发工程师，要求扎实的HTML/CSS/JavaScript基础，熟悉至少一种主流框架（Vue/React），了解前端工程化和性能优化，具备良好的用户体验意识和跨端兼容性处理能力。",
+    "test_engineer": "测试开发工程师，要求掌握软件测试理论和方法，熟悉自动化测试框架和工具，具备接口测试和性能测试经验，了解安全测试基本概念，有良好的质量意识和Bug追踪能力。",
+}
+
+POSITION_CONFIG = {
+    code: {**config, "key_points": _KEY_POINTS.get(code, ""), "position_desc": _POSITION_DESCS.get(code, "")}
+    for code, config in _SHARED_POSITION_CONFIG.items()
+}
+
+# 通用兜底配置：数据库新增岗位（如预留位启用）但尚无专属配置时使用
 GENERIC_POSITION = {
-    "weight_tech": 35,
-    "weight_logic": 25,
-    "weight_expression": 20,
-    "weight_match": 20,
+    **_SHARED_GENERIC,
     "key_points": "暂无专属考察点配置，请按岗位通用能力（基础功底、问题分析、实践经验、沟通表达）综合评估",
-    "position_desc": "该岗位暂无专属描述，请按候选人回答的专业性、条理性和与问题本身的契合度进行客观评估。"
+    "position_desc": "该岗位暂无专属描述，请按候选人回答的专业性、条理性和与问题本身的契合度进行客观评估。",
 }
 
 # 无专属优秀范例时的说明（拼入 Prompt）
@@ -165,10 +167,11 @@ def build_position_prompt(position_key, dialogue_text):
     if config is None:
         config = {**GENERIC_POSITION, "name": f"「{position_key}」岗位"}
 
-    # 从配置中提取权重
+    # 从配置中提取权重（5 维：技术/逻辑/表达/应变/匹配）
     wt = config["weight_tech"]
     wl = config["weight_logic"]
     we = config["weight_expression"]
+    wa = config["weight_adaptability"]
     wm = config["weight_match"]
 
     # 获取对应的优秀范例（无专属范例时给说明文字）
@@ -207,7 +210,13 @@ def build_position_prompt(position_key, dialogue_text):
    - 50-69分：表达含糊，用词不够准确，需要反复解释
    - 0-49分：表达困难，无法清晰传达意图
 
-4. match_score（岗位匹配度，权重{wm}%，0-100分）：
+4. adaptability_score（应变能力，权重{wa}%，0-100分）：
+   - 90-100分：面对追问反应敏捷，能迅速调整思路、举一反三，抗压能力强
+   - 70-89分：能跟上追问节奏，补充说明基本到位，偶有迟疑
+   - 50-69分：追问时思路调整缓慢，出现明显卡顿或重复表述
+   - 0-49分：面对追问慌乱无措，答非所问或无法应对
+
+5. match_score（岗位匹配度，权重{wm}%，0-100分）：
    - 90-100分：回答深度契合岗位要求，展现出扎实的岗位核心能力
    - 70-89分：基本符合岗位要求，有相关知识和经验
    - 50-69分：与岗位要求部分匹配，有知识缺口
@@ -231,6 +240,7 @@ def build_position_prompt(position_key, dialogue_text):
     "tech_score": 88.0,
     "logic_score": 83.0,
     "expression_score": 80.0,
+    "adaptability_score": 82.0,
     "match_score": 87.0,
     "summary": "综合评语：概括整体表现，总字数控制在80-120字之间",
     "strengths": ["优点1：具体描述候选人的亮点表现", "优点2", "优点3"],
@@ -246,33 +256,13 @@ def build_position_prompt(position_key, dialogue_text):
 
 
 # ============================================================
-# 岗位题库配比说明（供1号和2号参考）
+# 题库素材说明（供评分 Prompt 参考）
 # ============================================================
 
-"""
-⚠️ 题库抽取建议：
-每个岗位面试抽取 10-15 道题，题型配比建议如下：
-
-后端开发（15题）：
-- 技术知识题：6-7道（Java基础/集合/并发/JVM/Spring/MySQL/Redis）
-- 项目经历深挖：3-4道
-- 场景/系统设计：2-3道
-- 行为面试：1道
-
-前端开发（15题）：
-- 技术知识题：6-7道（JavaScript/CSS/框架原理/性能优化/工程化）
-- 项目经历深挖：3-4道
-- 场景/系统设计：2-3道
-- 行为面试：1道
-
-测试开发（15题）：
-- 技术知识题：6-7道（测试理论/自动化/接口测试/性能测试/安全测试）
-- 项目经历深挖：3-4道
-- 场景/系统设计：2-3道
-- 行为面试：1道
-
-题库现状与得分点/参考答案的评分用法见 docs/QUESTION_BANK_REVIEW.md。
-"""
+# 抽题由后端开发 B（AI专项1）的面试官对话逻辑负责：
+# 从 questions 表按岗位/阶段/难度抽题，约定见 docs/REPORT_TO_P2.md。
+# 评分可用素材（得分点三段加权 / 参考答案 / 追问触发条件 / 优秀回答范例）
+# 见 docs/QUESTION_BANK_REVIEW_V13.md 与 docs/REPORT_TO_P3.md。
 
 
 # ============================================================
@@ -329,4 +319,8 @@ if __name__ == "__main__":
     print("配置摘要（权重可在此调整）")
     print("=" * 60)
     for key, config in POSITION_CONFIG.items():
-        print(f"{config['name']}：技术{config['weight_tech']}% / 逻辑{config['weight_logic']}% / 表达{config['weight_expression']}% / 匹配{config['weight_match']}%")
+        print(
+            f"{config['name']}：技术{config['weight_tech']}% / 逻辑{config['weight_logic']}% / "
+            f"表达{config['weight_expression']}% / 应变{config['weight_adaptability']}% / "
+            f"匹配{config['weight_match']}%"
+        )

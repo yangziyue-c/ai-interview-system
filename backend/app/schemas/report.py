@@ -1,4 +1,8 @@
-"""评估报告 schema"""
+"""评估报告 schema
+
+评分维度（2026-09-04 起 5 维，源自团队《评估维度.csv》）：
+技术水平 / 逻辑思维 / 沟通表达 / 应变能力 / 岗位匹配度
+"""
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
@@ -13,6 +17,7 @@ class ReportOut(BaseModel):
     tech_score: float
     logic_score: float
     expression_score: float
+    adaptability_score: float
     match_score: float
     summary: str
     strengths: list[str]
@@ -31,4 +36,5 @@ class GrowthPoint(BaseModel):
     tech_score: float
     logic_score: float
     expression_score: float
+    adaptability_score: float
     match_score: float

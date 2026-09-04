@@ -15,11 +15,13 @@ class Report(Base):
         ForeignKey("interviews.id", ondelete="CASCADE"), unique=True, index=True
     )
 
-    # 多维度评分（0~100）：技术 / 逻辑 / 表达 / 岗位匹配度
+    # 多维度评分（0~100）：技术 / 逻辑 / 表达 / 应变 / 岗位匹配度
+    # 维度与权重源自团队《评估维度.csv》：技术水平 / 逻辑思维 / 沟通表达 / 应变能力 / 岗位匹配度
     total_score: Mapped[float] = mapped_column(Float, comment="综合得分")
-    tech_score: Mapped[float] = mapped_column(Float, comment="技术能力")
+    tech_score: Mapped[float] = mapped_column(Float, comment="技术水平")
     logic_score: Mapped[float] = mapped_column(Float, comment="逻辑思维")
-    expression_score: Mapped[float] = mapped_column(Float, comment="表达沟通")
+    expression_score: Mapped[float] = mapped_column(Float, comment="沟通表达")
+    adaptability_score: Mapped[float] = mapped_column(Float, comment="应变能力")
     match_score: Mapped[float] = mapped_column(Float, comment="岗位匹配度")
 
     summary: Mapped[str] = mapped_column(Text, comment="综合评语")

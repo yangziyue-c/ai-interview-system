@@ -8,6 +8,8 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
+from app.models import Question
+
 BASE = "/api/v1"
 
 
@@ -189,7 +191,8 @@ class TestInterviewFlow:
         resp = await client.get(f"{BASE}/reports/{interview_id}", headers=headers)
         assert resp.status_code == 200
         report = resp.json()["data"]
-        for key in ("tech_score", "logic_score", "expression_score", "match_score"):
+        # 5 维评分：技术/逻辑/表达/应变/匹配
+        for key in ("tech_score", "logic_score", "expression_score", "adaptability_score", "match_score"):
             assert 0 <= report[key] <= 100
 
     async def test_manual_finish_and_growth(self, client: AsyncClient):
@@ -300,6 +303,145 @@ class TestUpload:
         )
         assert resp.status_code == 400
         assert resp.json()["code"] == 40000
+
+
+class TestQuestionBank:
+    """题库：导入剥离逻辑 + 查询接口契约"""
+
+    @staticmethod
+    def _question(**overrides) -> Question:
+        """测试造数：默认值铺底，只覆盖差异字段"""
+        base = dict(
+            position_code="backend", question_no="tech_001",
+            category="技术知识", sub_category="Java基础", difficulty="easy",
+            question="Java中==和equals()的区别是什么？",
+            score_points="【basic 0.3】……【core 0.5】……【advanced 0.2】……",
+            follow_up_triggers="【L1-触发追问】……",
+            reference_answer="参考答案……", note="高频考点",
+            interview_stage="开场热身", stage_order=1, suggested_minutes=3,
+            alternative_directions="方向1：……", excellent_example="范例……",
+        )
+        return Question(**(base | overrides))
+
+    async def test_strip_soft_skill_tag(self):
+        """题干内嵌的「【岗位软技能考察：X】」应剥离到独立列"""
+        from scripts.import_question_bank import strip_soft_skill_tag
+
+        question = "请做一个简短的自我介绍\n\n【岗位软技能考察：故障应急响应意识】"
+        cleaned, tag = strip_soft_skill_tag(question)
+        assert cleaned == "请做一个简短的自我介绍"
+        assert tag == "故障应急响应意识"
+        # 无标签的题干原样返回
+        cleaned2, tag2 = strip_soft_skill_tag("HashMap 的底层结构是什么？")
+        assert cleaned2 == "HashMap 的底层结构是什么？"
+        assert tag2 == ""
+
+    async def test_question_bank_api(self, client: AsyncClient):
+        """题库接口：鉴权、过滤、分页、详情、非法词表 400（数据由导入脚本写入，此处手工造数验证契约）"""
+        from app.database import async_session
+        from app.models import Question
+
+        _, headers = await _register(client, "qb")
+
+        # 未登录 → 401
+        assert (await client.get(f"{BASE}/questions")).status_code == 401
+
+        # 空库：total=0
+        resp = await client.get(f"{BASE}/questions", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["data"]["total"] == 0
+
+        # 插入 2 条不同岗位的题（测试库，模拟导入结果）
+        async with async_session() as db:
+            db.add_all([
+                self._question(),
+                self._question(
+                    position_code="frontend", sub_category="HTML与CSS", difficulty="medium",
+                    question="CSS中BFC的概念是什么？", interview_stage="核心考察",
+                    stage_order=2, suggested_minutes=5, alternative_directions="", excellent_example="",
+                ),
+            ])
+            await db.commit()
+
+        # 全量列表
+        resp = await client.get(f"{BASE}/questions", headers=headers)
+        assert resp.json()["data"]["total"] == 2
+
+        # 按岗位过滤
+        resp = await client.get(f"{BASE}/questions?position=backend", headers=headers)
+        data = resp.json()["data"]
+        assert data["total"] == 1
+        item = data["items"][0]
+        assert item["position_code"] == "backend"
+        assert item["question_no"] == "tech_001"
+        assert item["category"] == "技术知识"
+
+        # 过滤 + 难度组合
+        resp = await client.get(
+            f"{BASE}/questions?position=frontend&difficulty=medium", headers=headers
+        )
+        assert resp.json()["data"]["total"] == 1
+
+        # 题干模糊搜索
+        resp = await client.get(f"{BASE}/questions?q=equals", headers=headers)
+        assert resp.json()["data"]["total"] == 1
+
+        # 非法词表 → 400（题库改名后应立刻报错，而非静默空集）
+        for bad in (f"{BASE}/questions?category=不存在", f"{BASE}/questions?difficulty=hardcore",
+                    f"{BASE}/questions?stage=破冰环节"):
+            resp = await client.get(bad, headers=headers)
+            assert resp.status_code == 400, bad
+            assert resp.json()["code"] == 40000
+
+        # 详情
+        resp = await client.get(f"{BASE}/questions/{item['id']}", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["data"]["question_no"] == "tech_001"
+
+        # 不存在 → 404
+        resp = await client.get(f"{BASE}/questions/99999", headers=headers)
+        assert resp.status_code == 404
+
+    async def test_weights_match_csv(self):
+        """《评估维度.csv》与代码权重一致：CSV 是团队定稿，代码是执行版，机器校验防漂移"""
+        import csv
+        from pathlib import Path
+
+        from app.core.evaluation_weights import GENERIC_POSITION, POSITION_CONFIG, weights_for
+        from scripts.import_question_bank import POSITION_MAP
+
+        csv_path = Path(__file__).resolve().parents[2] / "评估维度.csv"
+        assert csv_path.exists(), "评估维度.csv 应在仓库根目录"
+        with open(csv_path, encoding="utf-8-sig") as f:
+            rows = list(csv.DictReader(f))
+
+        # CSV 岗位列 → code 的映射从导入脚本的 POSITION_MAP 派生（事实源），
+        # 只做去空格归一（CSV 列名「Java 后端」带空格，题库别名「Java后端」无空格）
+        csv_columns = [c for c in rows[0].keys() if c != "评估维度"]
+        dim_keys = {
+            "技术水平": "weight_tech", "逻辑思维": "weight_logic",
+            "沟通表达": "weight_expression", "应变能力": "weight_adaptability",
+            "岗位匹配度": "weight_match",
+        }
+        for column in csv_columns:
+            code = POSITION_MAP.get(column.replace(" ", ""))
+            assert code is not None, f"CSV 列「{column}」在题库别名 POSITION_MAP 中找不到对应岗位"
+            assert code in POSITION_CONFIG, f"岗位 {code} 无评估权重配置"
+            for row in rows:
+                key = dim_keys.get(row["评估维度"])
+                if key is None:  # 跳过「合计」行
+                    assert row[column] == "100%", f"{column} 的合计行应为 100%"
+                    continue
+                assert POSITION_CONFIG[code][key] == int(row[column].rstrip("%")), (
+                    f"{column} 的「{row['评估维度']}」与代码权重不一致"
+                )
+
+        # Mock 兜底权重派生自同一数据源，抽查换算正确
+        assert weights_for("backend")["tech"] == 0.35
+        assert weights_for("unknown_generic") == {
+            k.removeprefix("weight_"): v / 100
+            for k, v in GENERIC_POSITION.items() if k.startswith("weight_")
+        }
 
 
 class TestHealth:
