@@ -154,3 +154,27 @@ def build_fallback_report(position: str, qa_list: list[dict], summary_prefix: st
         "weaknesses": band["weaknesses"],
         "suggestions": band["suggestions"],
     }
+
+
+# ============================================================
+# 权重完整性校验（加载期执行）
+# total_score = Σ(维度分 × 权重) 依赖「权重和为 100」的百分制标度，
+# 从注释约定提升为机器断言，防止未来新增岗位时权重和漂移
+# ============================================================
+
+_WEIGHT_KEYS = (
+    "weight_tech", "weight_logic", "weight_expression",
+    "weight_adaptability", "weight_match",
+)
+
+
+def _assert_weights_sum_to_100() -> None:
+    for code, cfg in list(POSITION_CONFIG.items()) + [("generic", GENERIC_POSITION)]:
+        total = sum(cfg[k] for k in _WEIGHT_KEYS)
+        assert total == 100, (
+            f"岗位权重和必须为 100（当前 {code} = {total}），"
+            f"请与《评估维度.csv》对齐后修改"
+        )
+
+
+_assert_weights_sum_to_100()

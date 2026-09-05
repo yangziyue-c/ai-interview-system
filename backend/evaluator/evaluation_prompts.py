@@ -32,6 +32,10 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
+# Windows 控制台默认 GBK 编码，__main__ 自测打印 emoji 会抛 UnicodeEncodeError；
+# 与 evaluator/app.py 同款根因修复（被 app.py import 时幂等，无副作用）
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 from app.core.evaluation_weights import (  # noqa: E402
     GENERIC_POSITION as _SHARED_GENERIC,
     POSITION_CONFIG as _SHARED_POSITION_CONFIG,
@@ -176,7 +180,15 @@ def build_position_prompt(position_key, dialogue_text):
 
     # 获取对应的优秀范例（无专属范例时给说明文字）
     examples = EXCELLENT_EXAMPLES.get(position_key, GENERIC_EXAMPLES_NOTE)
-    
+
+    # 输出示例 JSON 的 total 按当前岗位权重现场计算，使示例与第 2 条评分公式
+    # 自洽（避免示例数字成为模型模仿时的反例锚点）
+    example_total = round(
+        88.0 * wt / 100 + 83.0 * wl / 100 + 80.0 * we / 100
+        + 82.0 * wa / 100 + 87.0 * wm / 100,
+        1,
+    )
+
     prompt = f"""你是一位资深的技术面试评估专家，有10年以上的一线互联网公司面试官经验。你精通{config['name']}岗位的能力评估，擅长从候选人的回答中精准识别技术深度、逻辑严谨性和沟通表达能力。
 
 【任务】
@@ -228,7 +240,7 @@ def build_position_prompt(position_key, dialogue_text):
 
 【评分注意事项】
 1. 如果候选人的回答少于20个字，或明显答非所问，该题对应维度直接判为低分（<40分），并在weaknesses中注明"回答质量不足，建议补充相关知识"。
-2. total_score为综合总分，由各维度加权计算得出，不要直接填写平均值。
+2. total_score为综合总分，由各维度按岗位权重加权计算得出：total_score = tech_score×{wt/100} + logic_score×{wl/100} + expression_score×{we/100} + adaptability_score×{wa/100} + match_score×{wm/100}，不要直接填写平均值。
 3. 优缺点和建议要具体、有针对性，避免泛泛而谈。
 4. strengths至少列出2条，weaknesses至少列出1条，suggestions至少列出2条。
 
@@ -236,7 +248,7 @@ def build_position_prompt(position_key, dialogue_text):
 请严格按照以下JSON格式输出评估报告，不要包含任何其他解释性文字或Markdown标记。这是硬性要求，你的回复中只能包含纯JSON数据。
 
 {{
-    "total_score": 84.5,
+    "total_score": {example_total},
     "tech_score": 88.0,
     "logic_score": 83.0,
     "expression_score": 80.0,
@@ -324,3 +336,21 @@ if __name__ == "__main__":
             f"表达{config['weight_expression']}% / 应变{config['weight_adaptability']}% / "
             f"匹配{config['weight_match']}%"
         )
+
+    # 测试通用兜底（数据库新增岗位但尚无专属配置时）
+    print("\n" + "=" * 60)
+    print("测试通用兜底（未知岗位 code：data_scientist）")
+    print("=" * 60)
+    generic_prompt = get_evaluation_prompt("data_scientist", test_dialogue)
+    # 真断言：必须命中通用兜底素材；若未来 data_scientist 加入专属配置，
+    # 第一条断言将失败，提醒更新本测试（防兜底分支覆盖率静默归零）
+    assert "「data_scientist」岗位" in generic_prompt, "岗位名未注入通用模板"
+    assert "暂无专属考察点配置" in generic_prompt, "通用兜底未生效：data_scientist 可能已加入专属配置，请更新本测试"
+    print("通用模板生成成功（前300字符）：")
+    print(generic_prompt[:300] + "...")
+
+    print("\n" + "=" * 60)
+    print("✅ 所有测试通过！")
+    print("已配置岗位：", list(POSITION_CONFIG.keys()))
+    print("动态岗位兜底：已启用（遇到未知岗位自动生成通用配置）")
+    print("=" * 60)

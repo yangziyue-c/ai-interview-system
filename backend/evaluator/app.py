@@ -24,7 +24,7 @@ from datetime import datetime
 
 # 导入Prompt配置
 from evaluation_prompts import get_evaluation_prompt, POSITION_CONFIG
-from app.core.evaluation_weights import build_fallback_report
+from app.core.evaluation_weights import build_fallback_report, weights_for
 
 app = Flask(__name__)
 CORS(app)
@@ -72,6 +72,7 @@ def evaluate():
     返回：P3格式的评估报告
     """
     qa_list: list = []  # 提前初始化：JSON 解析失败等异常发生在赋值前时，兜底分支引用安全
+    position = ""  # 同上：except 分支 get_default_report(qa_list, position) 需要引用
     try:
         data = request.get_json()
 
@@ -181,15 +182,23 @@ def call_llm_for_evaluation(prompt):
         content = clean_json_content(content)
         report = json.loads(content)
         
-        # 校验补齐：键缺失 / 值为 null / 分数字段非数值 → 补默认值
+        # 校验补齐：键缺失 / 值为 null / 分数非 0~100 数值（bool/Infinity/NaN 均非法）→ 补默认值
         # （下游 merge_report 与主后端直接消费，此处保证契约完整）
         if not isinstance(report, dict):
             print(f"⚠️ 大模型返回非对象 JSON（{type(report).__name__}），使用默认报告")
             return get_default_report()
         for field, default in _REPORT_FIELDS.items():
             value = report.get(field)
-            if value is None or (field in _SCORE_FIELDS and not isinstance(value, (int, float))):
-                print(f"⚠️ 大模型返回字段缺失或非数值：{field}，使用默认值")
+            if field in _SCORE_FIELDS:
+                is_valid = (
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and 0 <= value <= 100  # NaN/±inf 比较均为 False，一并拦截
+                )
+            else:
+                is_valid = value is not None
+            if not is_valid:
+                print(f"⚠️ 大模型返回字段缺失或越界：{field}，使用默认值")
                 report[field] = default
 
         return report
@@ -209,14 +218,16 @@ def analyze_expression_simulate(qa_list):
     表达分析 - 模拟版本
     后续可升级为真实ASR（讯飞/阿里云/百度等）
     """
+    # avg_len 口径与共享契约 build_fallback_report（evaluation_weights.py）一致：
+    # 空答跳过、长度按 strip 后字符累计，避免代码块换行缩进使篇幅虚高
     total_chars = 0
     total_answers = 0
     for qa in qa_list:
         answer = qa.get('answer', '')
-        total_chars += len(answer)
         if answer.strip():
+            total_chars += len(answer.strip())
             total_answers += 1
-    
+
     avg_len = total_chars / max(total_answers, 1)
     
     if avg_len > 50:
@@ -247,13 +258,17 @@ def analyze_expression_simulate(qa_list):
 
 
 def merge_report(llm_report, expr_result, position):
-    """合并大模型评估结果和语音分析结果"""
+    """合并大模型评估结果和语音分析结果（5 维）
+
+    表达分以语音分析为准（模拟档位）；total_score 不信任 LLM 心算值，
+    用最终 5 维按岗位权重重新计算（与共享契约 build_fallback_report 同口径），
+    保证报告内部恒满足 total_score = Σ(维度分 × 权重)。
+    """
     # 最终表达分：使用语音分析的结果
     final_expression = expr_result.get('expression_score', 75)
 
-    # 字段完整性由 call_llm_for_evaluation 的 required_fields 校验保证，这里直接取值
+    # 字段完整性由 call_llm_for_evaluation 的契约校验保证，这里直接取值
     report = {
-        "total_score": llm_report['total_score'],
         "tech_score": llm_report['tech_score'],
         "logic_score": llm_report['logic_score'],
         "expression_score": final_expression,
@@ -265,7 +280,16 @@ def merge_report(llm_report, expr_result, position):
         "suggestions": llm_report['suggestions'],
         "_speech_details": expr_result.get('speech_details', {})
     }
-
+    # 权重单一事实源 app/core/evaluation_weights.py，未知岗位自动用通用权重兜底
+    w = weights_for(position)
+    report["total_score"] = round(
+        report["tech_score"] * w["tech"]
+        + report["logic_score"] * w["logic"]
+        + report["expression_score"] * w["expression"]
+        + report["adaptability_score"] * w["adaptability"]
+        + report["match_score"] * w["match"],
+        1,
+    )
     return report
 
 

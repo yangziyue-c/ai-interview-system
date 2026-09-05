@@ -27,8 +27,8 @@
 约定：评估报告生成较慢，单独给 30 秒预算（其余适配器仍 15 秒）；
 超时 / 非 2xx / 未配置 URL 时，后端自动使用内置 Mock 评分兜底，
 保证报告必然生成、流程不中断。
-本适配器对 P3 返回做 5 维契约归一化：任何分数键缺失或非数值时整体回退 Mock，
-业务层拿到的结果字段永远齐全且可 float()。
+本适配器对 P3 返回做 5 维契约归一化：任何分数键缺失、非数值或越出 0~100 时整体回退 Mock，
+业务层拿到的结果字段永远齐全、落在 0~100 区间且可 float()。
 
 P3 服务本体在 backend/evaluator/（独立 Flask 进程，端口 8002），由 start.py 自动拉起。
 """
@@ -54,10 +54,17 @@ def _mock_evaluate(position: str, qa_list: list[dict]) -> dict:
 
 
 def _is_valid_score_report(result: dict) -> bool:
-    """5 维分数键齐全且均为数值（bool 视为非法，防御 LLM 输出畸形值）"""
+    """5 维分数键齐全且均为 0~100 数值
+
+    bool 视为非法；Infinity/NaN 经比较运算天然不满足 0 <= v <= 100 一并拦截。
+    """
     for field in _SCORE_FIELDS:
         value = result.get(field)
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not (0 <= value <= 100)
+        ):
             return False
     return True
 
