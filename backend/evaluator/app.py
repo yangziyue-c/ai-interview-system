@@ -102,11 +102,11 @@ def evaluate():
         # 4. 调用大模型生成评估报告
         report = call_llm_for_evaluation(prompt)
         
-        # 5. 补充表达分析（语音特征）
-        expression_result = analyze_expression_simulate(qa_list)
-        
-        # 6. 合并报告
-        final_report = merge_report(report, expression_result, position)
+        # 5. 模拟语音特征附加信息（不参与表达评分，见 analyze_expression_simulate 说明）
+        speech_result = analyze_expression_simulate(qa_list)
+
+        # 6. 合并报告（表达分以 LLM 评估为准，total 按岗位权重确定性重算）
+        final_report = merge_report(report, speech_result, position)
         
         print(f"[{datetime.now().strftime('%H:%M:%S')}] 评估完成 - 总分：{final_report.get('total_score', 'N/A')}")
         
@@ -215,8 +215,13 @@ def call_llm_for_evaluation(prompt):
 
 def analyze_expression_simulate(qa_list):
     """
-    表达分析 - 模拟版本
-    后续可升级为真实ASR（讯飞/阿里云/百度等）
+    表达附加信息 - 模拟版本（真实 ASR 接入前的占位）
+
+    只产出语音特征的模拟参考（语速/流畅度/自信度，simulated=True 供前端识别），
+    不再产出/覆盖表达分：表达分以 LLM 按对话文本评估为准——评分标准奖励
+    「语言简洁精准」，而按回答字数的启发式与它方向相反（精炼作答会被误判低分），
+    故移除覆盖逻辑。接入真实 ASR 后，再由语音特征替代 LLM 文本评估
+    （届时在 merge_report 恢复覆盖）。
     """
     # avg_len 口径与共享契约 build_fallback_report（evaluation_weights.py）一致：
     # 空答跳过、长度按 strip 后字符累计，避免代码块换行缩进使篇幅虚高
@@ -229,25 +234,22 @@ def analyze_expression_simulate(qa_list):
             total_answers += 1
 
     avg_len = total_chars / max(total_answers, 1)
-    
+
     if avg_len > 50:
-        expr_score = 82
         speed = "正常"
         fluency = "良好"
         confidence = "自信"
     elif avg_len > 20:
-        expr_score = 70
         speed = "正常"
         fluency = "一般"
         confidence = "一般"
     else:
-        expr_score = 55
         speed = "偏慢"
         fluency = "一般"
         confidence = "略显紧张"
-    
+
     return {
-        "expression_score": expr_score,
+        "simulated": True,  # 模拟参考值，非真实语音分析结果
         "speech_details": {
             "speed": speed,
             "fluency": fluency,
@@ -258,20 +260,19 @@ def analyze_expression_simulate(qa_list):
 
 
 def merge_report(llm_report, expr_result, position):
-    """合并大模型评估结果和语音分析结果（5 维）
+    """合并大模型评估结果与语音分析附加信息（5 维）
 
-    表达分以语音分析为准（模拟档位）；total_score 不信任 LLM 心算值，
+    表达分以 LLM 文本评估为准（不再被模拟语音分覆盖——按字数的启发式与
+    「简洁精准」评分标准方向相反，见 analyze_expression_simulate 说明；
+    接入真实 ASR 后恢复语音覆盖）。total_score 不信任 LLM 心算值，
     用最终 5 维按岗位权重重新计算（与共享契约 build_fallback_report 同口径），
     保证报告内部恒满足 total_score = Σ(维度分 × 权重)。
     """
-    # 最终表达分：使用语音分析的结果
-    final_expression = expr_result.get('expression_score', 75)
-
     # 字段完整性由 call_llm_for_evaluation 的契约校验保证，这里直接取值
     report = {
         "tech_score": llm_report['tech_score'],
         "logic_score": llm_report['logic_score'],
-        "expression_score": final_expression,
+        "expression_score": llm_report['expression_score'],
         "adaptability_score": llm_report['adaptability_score'],
         "match_score": llm_report['match_score'],
         "summary": llm_report['summary'],

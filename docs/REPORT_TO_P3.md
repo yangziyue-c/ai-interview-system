@@ -111,6 +111,6 @@ POST {你的服务}/evaluate
 | 其他修复 | 修复了 Windows 控制台 GBK 编码导致 emoji print 崩溃、JSON 解析失败时兜底分支引用未初始化变量的两个 bug |
 
 **你后续可以继续做的方向**（非本次整合范围）：
-1. 用 `qa_list` 里的 `audio_url` 接真实语音分析（讯飞/阿里云 ASR），替换 `analyze_expression_simulate` 模拟值——当前 expression_score 是按回答长度模拟的，答辩时需说明；
+1. 用 `qa_list` 里的 `audio_url` 接真实语音分析（讯飞/阿里云 ASR），替换 `analyze_expression_simulate` 模拟值——当前表达分（expression_score）以 LLM 文本评估为准，语音模拟（`analyze_expression_simulate`）仅产出标注 `simulated=True` 的附加参考信息，不参与评分；接入真实 ASR 后可在 merge 处恢复语音对表达分的覆盖，答辩时需说明；
 2. 把题库得分点/参考答案（见本文档第二节）拼入评分 Prompt，提升评分可解释性；
 3. `_speech_details` 字段主后端暂不落库，如需在报告中展示语音特征，找 P1 加 Report 表字段。
