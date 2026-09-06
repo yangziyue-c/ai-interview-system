@@ -26,7 +26,7 @@ async def list_questions(
     _: CurrentUser,
     db: DbSession,
     position: str | None = Query(default=None, description="岗位 code，如 backend"),
-    category: str | None = Query(default=None, description="大类，如 技术知识/场景与设计/编码与算法/项目深挖/行为面试"),
+    category: str | None = Query(default=None, description="大类，如 技术知识/系统设计题/场景题/编码与算法/项目深挖/行为面试"),
     difficulty: str | None = Query(default=None, description="难度：easy / medium / hard"),
     stage: str | None = Query(default=None, description="面试阶段：开场热身 / 核心考察 / 深度考察 / 收尾交流"),
     q: str | None = Query(default=None, description="题干模糊搜索关键词"),

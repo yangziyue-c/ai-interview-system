@@ -63,6 +63,13 @@ async def init_db() -> None:
             "adaptability_score",
             "ALTER TABLE reports ADD COLUMN adaptability_score FLOAT DEFAULT 0.0",
         )
+        # 题库 V4 新增第 16 列「表达评估要点」（2026-09-06，沟通表达维度评分素材）
+        await conn.run_sync(
+            _ensure_column,
+            "questions",
+            "expression_points",
+            "ALTER TABLE questions ADD COLUMN expression_points TEXT DEFAULT ''",
+        )
         # 历史报告回填：应变分留 0 会让前端雷达图畸变。
         # 自愈式按需回填（非仅在补列当次执行）：MySQL 的 ALTER 隐式提交导致补列与
         # 回填不在同一事务时，任何遗漏都会在下次启动补齐。

@@ -1,4 +1,4 @@
-"""题库导入脚本：把仓库根目录 题库/*.xlsx（v13）导入 questions 表
+"""题库导入脚本：把仓库根目录 题库/*.xlsx（V4，16 列）导入 questions 表
 
 运行方式（必须在 backend 目录下）：
     cd backend
@@ -42,12 +42,17 @@ POSITION_MAP = {
     "软件测试开发": "test_engineer",
 }
 
-# 题库 15 列（列顺序固定，与 xlsx 表头逐字一致，导入前强校验）
+# 题库 16 列（V4 起；列顺序固定，与 xlsx 表头逐字一致，导入前强校验）
 HEADERS = [
     "题目编号", "所属岗位", "大类", "题目分类", "难度等级", "面试问题", "得分点",
     "追问触发条件", "参考答案", "备注", "面试阶段", "建议用时(分钟)", "阶段顺序",
-    "替代回答方向", "优秀回答范例",
+    "替代回答方向", "优秀回答范例", "表达评估要点",
 ]
+
+# 暂缓入库的文件（按文件名包含判断）：
+# - 算法工程师面试题库：岗位待《评估维度.csv》补权重列后与 POSITION_MAP/positions 一并启用
+# - 岗位知识点知识库_RAG：无「面试题库」sheet，由专门的知识库入库方案处理（暂留题库文件夹）
+EXCLUDED_FILES = ("算法工程师面试题库", "岗位知识点知识库")
 
 # 受控词表（与 app/models/question.py 的常量一致）
 _VOCABULARY = (
@@ -104,6 +109,9 @@ async def import_bank() -> dict:
         }
 
         for xlsx_file in xlsx_files:
+            if any(tag in xlsx_file.name for tag in EXCLUDED_FILES):
+                print(f"⏭️ 跳过（暂缓入库）：{xlsx_file.name}")
+                continue
             wb = load_workbook(xlsx_file, data_only=True, read_only=True)
             if "面试题库" not in wb.sheetnames:
                 print(f"⚠️ 跳过 {xlsx_file.name}：缺少「面试题库」sheet")
@@ -164,6 +172,7 @@ async def import_bank() -> dict:
                     suggested_minutes=_int(data.get("建议用时(分钟)")),
                     alternative_directions=_text(data.get("替代回答方向")),
                     excellent_example=_text(data.get("优秀回答范例")),
+                    expression_points=_text(data.get("表达评估要点")),
                 )
 
                 key = (position_code, question_no)

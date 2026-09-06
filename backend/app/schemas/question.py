@@ -22,3 +22,4 @@ class QuestionOut(BaseModel):
     suggested_minutes: int
     alternative_directions: str
     excellent_example: str
+    expression_points: str
