@@ -47,7 +47,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 - 1 个用户 → N 场面试
 - 1 场面试 → N 条问答记录 + 1 份评估报告（严格一对一）
 - 岗位由 positions 表动态维护（替代硬编码枚举），预留 5 个岗位位
-- 题库由 questions 表承载（当前 3 岗位 × 150 题），对话逻辑按岗位/阶段/难度抽题
+- 题库由 questions 表承载（V4 换代，已开放 3 岗位共 451 题：backend 151 + frontend 150 + test_engineer 150），对话逻辑按岗位/阶段/难度抽题
 
 模型代码见 [backend/app/models/](backend/app/models/)。
 
@@ -62,7 +62,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | password_hash | varchar(256) | not null | bcrypt 哈希，不存明文 |
 | nickname | varchar(64) | 默认空串 | 展示昵称 |
 | student_id | varchar(32) | nullable | 学号（可选，个人中心展示用） |
-| target_position | varchar(16) | 默认 backend | 目标岗位：backend / frontend |
+| target_position | varchar(32) | 默认 backend | 目标岗位 code（动态，见 positions 表） |
 | created_at | datetime | server_default=now() | 注册时间，由数据库生成 |
 
 ### 2. interviews —— 面试会话表（核心）
@@ -138,20 +138,22 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 ### 6. questions —— 面试题库表（独立无外键）
 
 数据由 [import_question_bank.py](backend/scripts/import_question_bank.py) 从仓库根目录
-`题库/*.xlsx`（v13 格式，3 岗位 × 150 题）导入，幂等可重跑。
+`题库/*.xlsx`（**V4 格式（2026-09-06 换代）**，已开放岗位共 451 题）导入，幂等可重跑。
+V4 相比 v13 的变化：大类由 5 类拆为 6 类（「场景与设计」拆为「系统设计题」+「场景题」）、
+新增第 16 列 `expression_points`（表达评估要点，供沟通表达维度评分）。
 
 | 字段 | 类型 | 约束 | 说明 |
 | :--- | :--- | :--- | :--- |
 | id | int | 主键自增 | |
 | position_code | varchar(32) | index | 岗位 code，与 positions 表对齐 |
 | question_no | varchar(32) | unique(position_code, question_no) | 题库编号（tech_001 / scene_012 / code_003 / project_001 / behavior_001），跨岗位可重复 |
-| category | varchar(32) | not null | 大类：技术知识 / 场景与设计 / 编码与算法 / 项目深挖 / 行为面试 |
+| category | varchar(32) | not null | 大类：技术知识 / 系统设计题 / 场景题 / 编码与算法 / 项目深挖 / 行为面试 |
 | sub_category | varchar(64) | 默认空串 | 题目分类（如 Java基础 / 排障Debug） |
 | difficulty | varchar(16) | not null | 难度：easy / medium / hard |
 | question | text | not null | 题干（已剥离软技能标签，可直接读给候选人） |
 | soft_skill_tag | varchar(64) | 默认空串 | 从题干剥离的「岗位软技能考察」标签，仅作选题参考 |
 | score_points | text | 默认空串 | 得分点：【basic x】【core y】【advanced z】三段加权合计 1.0，评分 Prompt 素材 |
-| follow_up_triggers | text | 默认空串 | 追问触发条件：L1 关键词触发 / L2 深入 / L3 极限 / 降级策略 |
+| follow_up_triggers | text | 默认空串 | 追问触发条件：L1 关键词触发 / L2 递进 / L3 极限 / 降级策略 |
 | reference_answer | text | 默认空串 | 参考答案 |
 | note | text | 默认空串 | 备注（高频考点、追问方向等选题参考） |
 | interview_stage | varchar(16) | not null | 面试阶段：开场热身(1) / 核心考察(2) / 深度考察(3) / 收尾交流(4) |
@@ -159,6 +161,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | suggested_minutes | int | 默认 0 | 建议用时(分钟)，仅作参考 |
 | alternative_directions | text | 默认空串 | 替代回答方向（追问素材） |
 | excellent_example | text | 默认空串 | 优秀回答范例 |
+| expression_points | text | 默认空串 | 表达评估要点（V4 新增第 16 列，沟通表达维度评分素材） |
 
 查询接口：`GET /api/v1/questions`（按岗位/大类/难度/阶段过滤 + 分页，见 [API.md](API.md)）。
 

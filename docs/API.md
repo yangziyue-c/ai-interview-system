@@ -263,8 +263,9 @@ GET /reports/growth
 ## 5. 题库
 
 题库数据来自 `questions` 表（由 `backend/scripts/import_question_bank.py` 从
-`题库/*.xlsx` 导入，当前 3 岗位 × 150 题）。主要供后端开发 B（AI专项1）的
-面试官对话逻辑（选题/追问）使用。
+`题库/*.xlsx` 导入。**题库 V4（2026-09-06 换代）**：3 个已开放岗位共 451 题
+——backend 151 + frontend 150 + test_engineer 150；另有算法工程师等岗位题库
+待开放后导入）。主要供面试官对话逻辑（选题/追问）与评估逻辑（评分素材）使用。
 
 ### 5.1 题库列表（过滤 + 分页）
 
@@ -277,7 +278,7 @@ GET /questions?position=backend&category=技术知识&difficulty=easy&stage=开�
 | 参数 | 说明 |
 | :--- | :--- |
 | position | 岗位 code（backend / frontend / test_engineer） |
-| category | 大类：技术知识 / 场景与设计 / 编码与算法 / 项目深挖 / 行为面试 |
+| category | 大类（受控词表，V4 拆分为 6 类）：技术知识 / 系统设计题 / 场景题 / 编码与算法 / 项目深挖 / 行为面试 |
 | difficulty | 难度：easy / medium / hard |
 | stage | 面试阶段：开场热身 / 核心考察 / 深度考察 / 收尾交流 |
 | q | 题干模糊搜索关键词 |
@@ -287,7 +288,7 @@ GET /questions?position=backend&category=技术知识&difficulty=easy&stage=开�
 
 ```json
 { "code": 0, "message": "ok", "data": {
-  "total": 450,
+  "total": 451,
   "items": [
     {
       "id": 1,
@@ -299,14 +300,15 @@ GET /questions?position=backend&category=技术知识&difficulty=easy&stage=开�
       "question": "Java中==和equals()的区别是什么？",
       "soft_skill_tag": "",
       "score_points": "【basic 0.3】……【core 0.5】……【advanced 0.2】……",
-      "follow_up_triggers": "【L1-触发追问】……【L2-深入追问】……【L3-极限追问】……【降级策略】……",
+      "follow_up_triggers": "【L1-触发追问】……【L2-递进追问】……【L3-极限追问】……【降级策略】……",
       "reference_answer": "完整参考答案……",
       "note": "高频考点，equals与hashCode契约是必追问点",
       "interview_stage": "开场热身",
       "stage_order": 1,
       "suggested_minutes": 3,
       "alternative_directions": "方向1：……方向2：……",
-      "excellent_example": "优秀回答范例……"
+      "excellent_example": "优秀回答范例……",
+      "expression_points": "表达评估要点（V4 新增，沟通表达维度评分素材）……"
     }
   ]
 } }
@@ -359,6 +361,10 @@ GET /health                { "code": 0, "message": "ok", "data": { "status": "he
 在 `backend/.env` 中配置 URL 后自动生效；未配置或调用失败（含 15 秒超时）时后端自动降级为内置 Mock。
 
 ### P2：AI 面试官
+
+> **2026-09-06 起出题已由题库策略原生完成**（`backend/interviewer/`，最高优先级）：
+> 面试官算法已落地主项目，`AI_INTERVIEWER_URL` 仅为**扩展位**——只在题库策略
+> 未命中（如岗位在题库无题）时才会被调用。以下契约供扩展位服务对接：
 
 ```
 POST {AI_INTERVIEWER_URL}/generate

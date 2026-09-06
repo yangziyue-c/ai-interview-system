@@ -43,7 +43,8 @@ POST {你的服务}/generate
 
 ## 二、题库 v13 新格式（已入库，直接查库/API，无需解析 xlsx）
 
-题库同学已交付 v13 个性化内容版（入库 451 题：backend 151 + frontend 150 + test_engineer 150），
+题库同学已交付题库文件（`题库/*.xlsx`，**V4 换代版**：已开放岗位共 451 题——
+backend 151 + frontend 150 + test_engineer 150），
 P1 已将其导入 `questions` 表（导入脚本：`backend/scripts/import_question_bank.py`，幂等可重跑）。
 **你不需要自己解析 xlsx**，通过题库 API 查库即可：
 
@@ -55,13 +56,14 @@ GET /api/v1/questions?position=backend&category=技术知识&difficulty=easy&sta
 > （如 username=`p2_service`），拿 token 后请求头带 `Authorization: Bearer <token>`。
 > 接口字段与过滤参数完整说明见 [API.md](API.md) 第 5 章。
 
-表结构（15 列 + 1 个剥离列，与 xlsx 对应）：
+表结构（V4：xlsx 16 列 + 导入剥离的 1 个软技能标签列；V4 相比 v13：
+大类由 5 类拆为 6 类、新增第 16 列 `expression_points` 表达评估要点）：
 
 | 字段 | 说明 | 对你的用途 |
 | :--- | :--- | :--- |
 | position_code | backend / frontend / test_engineer | 选题过滤（首要条件） |
 | question_no | tech_001 / scene_012 / code_003 / project_001 / behavior_001 | 唯一标识（岗位内唯一） |
-| category | 技术知识 / 场景与设计 / 编码与算法 / 项目深挖 / 行为面试 | 检索维度 |
+| category | 技术知识 / 系统设计题 / 场景题 / 编码与算法 / 项目深挖 / 行为面试 | 检索维度 |
 | sub_category | 如 Java基础、排障Debug、测试用例设计 | 检索维度 |
 | difficulty | easy / medium / hard | 选题策略（见下） |
 | question | 题干（**已剥离软技能标签**，可直接读给候选人） | 出题文本 |
@@ -75,6 +77,7 @@ GET /api/v1/questions?position=backend&category=技术知识&difficulty=easy&sta
 | suggested_minutes | 3~12 | 仅参考，与后端轮次无关 |
 | alternative_directions | 替代回答方向（如"方向1：从XX角度展开……"） | 追问素材 |
 | excellent_example | 优秀回答范例 | 可作评分对照 |
+| expression_points | 表达评估要点（V4 新增） | 评分素材（给 P3），选题无关 |
 
 ### 追问触发条件（重点，v13 升级为四层结构）
 
