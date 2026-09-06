@@ -10,6 +10,8 @@ os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_interview.db"
 os.environ["REDIS_URL"] = ""
 os.environ["AI_INTERVIEWER_URL"] = ""
 os.environ["AI_EVALUATOR_URL"] = ""
+# 测试必须禁用大模型直连（本机 .env 若配置了 LLM_API_KEY，空库测试会误调真实大模型）
+os.environ["LLM_API_KEY"] = ""
 
 # 每次测试会话开始时清空旧测试库，保证用例可重复执行
 pathlib.Path("test_interview.db").unlink(missing_ok=True)

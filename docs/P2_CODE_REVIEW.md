@@ -3,6 +3,10 @@
 > 审查时间：2026-09-04。审查对象：`interviewwaibao/` 目录交付的初步模拟面试算法。
 > 接入契约与选题约定见 [REPORT_TO_P2.md](REPORT_TO_P2.md)，本文档只讲**代码问题与怎么改**。
 >
+> **2026-09-06 注**：审查对象 `interviewwaibao/` 已随算法原生落地被删除（git 历史
+> commit 3bcfb26 可查），本文档保留为审查记录；算法的执行版与修改指南见
+> [backend/interviewer/README.md](../backend/interviewer/README.md)。
+>
 > **总体结论**：策略骨架正确（题库驱动开场/追问/收尾 + 触发条件解析），
 > 但代码残缺、只实现了 L1、存在多处 bug，当前**无法直接运行**。逐条整改后即可接入。
 
@@ -181,9 +185,14 @@ GET /api/v1/questions?position=backend&difficulty=easy&stage=开场热身&limit=
 
 ## 三、验收自测清单
 
+> **2026-09-06 更新**：算法已原生落地主项目 `backend/interviewer/question_bank.py`
+> （你的修正版策略 + 真实题库 451 行全量验证后的加固版，详见
+> backend/interviewer/README.md）。以下清单适用于外部独立服务的场景，外部服务
+> 现为扩展位（题库策略未命中时才被调用）。
+
 1. 本地起服务，`POST /generate`（`round=1, is_follow_up=false`）→ 返回开场热身 + easy 题
 2. `round=2` 带 history（候选人回答含"hashCode"）→ 返回 L1 对应追问
 3. 同一锚点连续追问 → 依次走 L2、L3，第 4 次追问自动换新题
 4. `round=6/7` → 收尾交流题
-5. 联调：`backend/.env` 配 `AI_INTERVIEWER_URL` → 主服务完整面试流程走通（7 轮后自动出报告）
-6. 主项目侧回归：`cd backend && pytest`（不配 URL 时走内置 Mock，11 个用例应全绿——你的服务不影响主流程）
+5. 主后端完整面试 7 轮走通并自动出报告（出题由题库策略驱动，无需外部服务）
+6. 主项目侧回归：`cd backend && pytest`（58 个用例全绿）

@@ -22,7 +22,7 @@ git push origin main && git push gitee main
 - **运行环境**：conda 环境 `ai_interview`（Python 3.12）。注意：本机 `conda run` 有插件 bug，直接调用环境内 python.exe；环境真实位置用 `conda env list` 查询（可能在用户目录 `.conda/envs`，不要按 base/envs 猜路径）
 - **服务端口**：8001（8000 被本机 Godot AI 工具的 godot_ai MCP 服务占用，勿改回）
 - **启动方式**：双击 `backend/start.bat`（纯 ASCII 引导器，主逻辑在 `backend/start.py`）；手动方式 `cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8001`
-- **测试**：`cd backend && <ai_interview的python.exe> -m pytest`（11 个用例，测试库 test_interview.db）
+- **测试**：`cd backend && <ai_interview的python.exe> -m pytest`（58 个用例，测试库 test_interview.db）
 - **内网穿透**：Sakura Frp Web 隧道 + 自动 HTTPS，访问必须 https://（http 被 501 拦截），详见 docs/DEPLOY.md
 
 ## 文件编码铁律（踩过血的坑）

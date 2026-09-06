@@ -18,11 +18,23 @@ class Base(DeclarativeBase):
 
 engine_kwargs: dict = {"echo": settings.SQL_ECHO}
 if settings.DATABASE_URL.startswith("sqlite"):
-    # SQLite 需要检查同一线程，异步场景下禁用
-    engine_kwargs["connect_args"] = {"check_same_thread": False}
+    # SQLite 需要检查同一线程，异步场景下禁用；busy_timeout 让并发写等待而非立刻报锁
+    engine_kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
 
 engine = create_async_engine(settings.DATABASE_URL, **engine_kwargs)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+if settings.DATABASE_URL.startswith("sqlite"):
+    # 每个连接启用 WAL + busy_timeout：WAL 下读不阻塞写，配合 timeout 让
+    # 并发写（两场面试同时提交答案）等待锁释放而非抛 database is locked
+    from sqlalchemy import event
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragma(dbapi_conn, _record) -> None:
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
 
 
 def _ensure_column(conn, table: str, column: str, ddl: str) -> bool:

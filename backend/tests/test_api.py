@@ -9,6 +9,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.models import Question
+from tests.helpers import make_question
 
 BASE = "/api/v1"
 
@@ -306,22 +307,7 @@ class TestUpload:
 
 
 class TestQuestionBank:
-    """题库：导入剥离逻辑 + 查询接口契约"""
-
-    @staticmethod
-    def _question(**overrides) -> Question:
-        """测试造数：默认值铺底，只覆盖差异字段"""
-        base = dict(
-            position_code="backend", question_no="tech_001",
-            category="技术知识", sub_category="Java基础", difficulty="easy",
-            question="Java中==和equals()的区别是什么？",
-            score_points="【basic 0.3】……【core 0.5】……【advanced 0.2】……",
-            follow_up_triggers="【L1-触发追问】……",
-            reference_answer="参考答案……", note="高频考点",
-            interview_stage="开场热身", stage_order=1, suggested_minutes=3,
-            alternative_directions="方向1：……", excellent_example="范例……",
-        )
-        return Question(**(base | overrides))
+    """题库：导入剥离逻辑 + 查询接口契约（造数用 tests.conftest.make_question）"""
 
     async def test_strip_soft_skill_tag(self):
         """题干内嵌的「【岗位软技能考察：X】」应剥离到独立列"""
@@ -354,11 +340,11 @@ class TestQuestionBank:
         # 插入 2 条不同岗位的题（测试库，模拟导入结果）
         async with async_session() as db:
             db.add_all([
-                self._question(),
-                self._question(
+                make_question(),
+                make_question(
                     position_code="frontend", sub_category="HTML与CSS", difficulty="medium",
                     question="CSS中BFC的概念是什么？", interview_stage="核心考察",
-                    stage_order=2, suggested_minutes=5, alternative_directions="", excellent_example="",
+                    stage_order=2, suggested_minutes=5,
                 ),
             ])
             await db.commit()
@@ -373,7 +359,7 @@ class TestQuestionBank:
         assert data["total"] == 1
         item = data["items"][0]
         assert item["position_code"] == "backend"
-        assert item["question_no"] == "tech_001"
+        assert item["question_no"].startswith("tech_001")
         assert item["category"] == "技术知识"
 
         # 过滤 + 难度组合
@@ -396,7 +382,7 @@ class TestQuestionBank:
         # 详情
         resp = await client.get(f"{BASE}/questions/{item['id']}", headers=headers)
         assert resp.status_code == 200
-        assert resp.json()["data"]["question_no"] == "tech_001"
+        assert resp.json()["data"]["question_no"] == item["question_no"]
 
         # 不存在 → 404
         resp = await client.get(f"{BASE}/questions/99999", headers=headers)

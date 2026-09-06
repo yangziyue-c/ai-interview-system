@@ -14,6 +14,9 @@ a.md
 # 数据库文件
 *.db
 *.sqlite3
+# SQLite WAL 模式伴随文件（运行时产物）
+*.db-shm
+*.db-wal
 
 # 上传的音频（不入库，目录保留）
 backend/uploads/*
