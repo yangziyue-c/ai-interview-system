@@ -13,8 +13,15 @@ import sys
 from pathlib import Path
 
 # Windows 控制台默认 GBK 编码，print 含 emoji/生僻字会抛 UnicodeEncodeError；
-# 统一把 stdout 重配置为 UTF-8（根因修复，勿改为删除 emoji 的绕过写法）
-sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+# 统一把 stdout 重配置为 UTF-8（根因修复，勿改为删除 emoji 的绕过写法）。
+# line_buffering=True：重定向到日志文件时 print 及时落盘，否则排障时看不到错误输出
+sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+
+# 显式把 backend/ 加入 sys.path 后再 import app 包（谁依赖谁负责，勿依赖兄弟模块的副作用）：
+# 本目录存在同名 app.py，backend 不在 sys.path 时 `import app` 会命中自身报 "not a package"
+_BACKEND_DIR = str(Path(__file__).resolve().parent.parent)
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -24,6 +31,7 @@ from datetime import datetime
 
 # 导入Prompt配置
 from evaluation_prompts import get_evaluation_prompt, POSITION_CONFIG
+from app.config import Settings
 from app.core.evaluation_weights import build_fallback_report, weights_for
 
 app = Flask(__name__)
@@ -37,29 +45,23 @@ CORS(app)
 EVALUATOR_PORT = 8002
 
 
-def _load_api_key() -> str:
-    """从环境变量 / backend/.env 读取 DeepSeek API Key
+# .env 解析单一来源：一个 Settings 实例同时供给 API Key 与模型名，
+# 复用主后端 app.config 的同一读取机制（环境变量 > .env > 默认值），避免两套解析语义漂移。
+# 显式传绝对 env_file：不依赖进程 CWD（否则非 backend 目录启动时配置静默回退默认值）
+_SETTINGS = Settings(_env_file=str(Path(__file__).resolve().parent.parent / ".env"))
 
-    协作约定：API Key 严禁硬编码提交（见 docs/COLLABORATION.md）。
-    读取顺序：环境变量 DEEPSEEK_API_KEY > LLM_API_KEY > backend/.env 的 LLM_API_KEY
-    （与主后端共享同一个 Key，填入 backend/.env 的 LLM_API_KEY 即可）。
-    """
-    key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("LLM_API_KEY")
-    if key:
-        return key
-    env_file = Path(__file__).resolve().parent.parent / ".env"
-    if env_file.exists():
-        for line in env_file.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line.startswith("LLM_API_KEY="):
-                return line.split("=", 1)[1].strip().strip('"').strip("'")
-    return ""
-
-
-DEEPSEEK_API_KEY = _load_api_key()
+# 协作约定：API Key 严禁硬编码提交（见 docs/COLLABORATION.md）。
+# 读取顺序：环境变量 DEEPSEEK_API_KEY > LLM_API_KEY > backend/.env 的 LLM_API_KEY
+DEEPSEEK_API_KEY = (
+    os.environ.get("DEEPSEEK_API_KEY")
+    or os.environ.get("LLM_API_KEY")
+    or _SETTINGS.LLM_API_KEY
+)
 DEEPSEEK_API_URL = os.environ.get(
     "DEEPSEEK_API_URL", "https://api.deepseek.com/v1/chat/completions"
 )
+# 模型名单一来源：与主后端共用同一 backend/.env 的 LLM_MODEL
+DEEPSEEK_MODEL = _SETTINGS.LLM_MODEL
 
 # ============================================================
 # 核心评估接口
@@ -159,7 +161,7 @@ def call_llm_for_evaluation(prompt):
                 "Content-Type": "application/json"
             },
             json={
-                "model": "deepseek-chat",
+                "model": DEEPSEEK_MODEL,
                 "messages": [
                     {"role": "system", "content": "你是一位客观严谨的技术面试评估专家，只输出JSON格式数据，不包含任何其他文字。"},
                     {"role": "user", "content": prompt}
@@ -305,12 +307,6 @@ def clean_json_content(text):
         text = text[:-3]
     return text.strip()
 
-
-def get_default_value(field):
-    """获取默认字段值（由单一契约字典 _REPORT_FIELDS 派生）"""
-    return _REPORT_FIELDS.get(field, 'N/A')
-
-
 def get_default_report(qa_list=None, position=""):
     """降级默认报告：按平均回答篇幅分档（分档口径与主后端 Mock 共用）
 
@@ -330,7 +326,8 @@ def health():
         "status": "healthy",
         "service": "AI Evaluator",
         "supported_positions": list(POSITION_CONFIG.keys()),
-        "api_key_configured": bool(DEEPSEEK_API_KEY)
+        "api_key_configured": bool(DEEPSEEK_API_KEY),
+        "llm_model": DEEPSEEK_MODEL
     })
 
 
