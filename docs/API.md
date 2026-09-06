@@ -267,6 +267,9 @@ GET /reports/growth
 ——backend 151 + frontend 150 + test_engineer 150；另有算法工程师等岗位题库
 待开放后导入）。主要供面试官对话逻辑（选题/追问）与评估逻辑（评分素材）使用。
 
+> Excel 文件的 16 列规范、受控词表、导入命令与排障给 P5 同学的完整手册见
+> [docs/reports/REPORT_TO_P5.md](reports/REPORT_TO_P5.md)（改 xlsx 后重跑导入即生效，后端零改动）。
+
 ### 5.1 题库列表（过滤 + 分页）
 
 ```

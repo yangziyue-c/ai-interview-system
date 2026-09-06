@@ -14,11 +14,13 @@ AI 模拟面试训练系统（FastAPI 异步 + SQLAlchemy 2.0，5 人小组项�
 | P2 | 面试官出题算法 | `backend/interviewer/question_bank.py`（已原生落地） |
 | P3 | AI 评估服务 | `backend/evaluator/`（独立 Flask 进程，端口 8002） |
 | P4 | 前端 | `frontend/`（构建产物拷 `backend/static/` 同端口挂载） |
-| P5 | 题库 | `题库/*.xlsx`（V4 版） |
+| P5 | 题库 | `题库/*.xlsx`（V4 版）→ `questions` 表（见 `docs/reports/REPORT_TO_P5.md` 操作手册） |
 
-对接文档在 `docs/reports/REPORT_TO_P2~P4.md`；接口唯一权威 `docs/API.md`。
+对接文档在 `docs/reports/REPORT_TO_P2~P5.md`；接口唯一权威 `docs/API.md`。
 **P2 修改算法只动 `backend/interviewer/`**（其 README 有算法速览与踩坑清单），
-P3 只动 `backend/evaluator/`；`backend/app/` 是集成层，别把成员代码塞进来。
+P3 只动 `backend/evaluator/`，P5 只产 `题库/*.xlsx`（导入命令见其对接文档）；
+`backend/app/` 是集成层，别把成员代码塞进来。
+P1 维护的零依赖**演示前端**在 `frontend_test/`（`start.bat` 自动拉起到 5273，P4 正式前端交付前的整体演示入口；与 P4 的 `frontend/` 互不相干、不抢 5173 联调端口）。
 
 ## 常用命令（conda 环境 ai_interview）
 
@@ -26,7 +28,8 @@ P3 只动 `backend/evaluator/`；`backend/app/` 是集成层，别把成员代�
 > `D:/anaconda3/envs/ai_interview/python.exe`，环境真实位置以 `conda env list` 为准。
 
 ```bash
-# 启动主服务（8001）+ P3 评估服务（8002，start.py 拉起，主服务退出自动关闭）
+# 一键启动：演示前端（5273，frontend_test/）+ P3 评估服务（8002）+ 主服务（8001），
+# 就绪后打印访问指引（本机+局域网地址），Ctrl+C 一并退出
 cd backend && 双击 start.bat        # 或 python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 
 # 测试：必须在 backend/ 目录下跑（pytest.ini 的 asyncio_mode、conftest 的 env 切换都在这里生效）
@@ -80,11 +83,13 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.import_questi
 - **状态机**：面试 status 由 `app/core/state_machine.py` 表驱动（idle→in_progress→finished），
   非法转换抛 409；QA 记录"出题即落库、作答回填"
 - **题库流水线**：`题库/*.xlsx`（V4，16 列含 expression_points）→ `backend/scripts/import_question_bank.py`
-  （幂等重跑；剥离题干内嵌软技能标签到 soft_skill_tag 列）→ questions 表
+  （幂等重跑；剥离题干内嵌软技能标签到 soft_skill_tag 列）→ questions 表；
+  Excel 规范/导入/排障/加岗流程给 P5 的完整手册 = `docs/reports/REPORT_TO_P5.md`
 
 ## 环境与部署铁律（踩过血的坑）
 
-- **端口**：8001=主后端、8002=P3 评估；**8000 被本机 Godot AI MCP 占用，勿改回**
+- **端口**：8001=主后端、8002=P3 评估、5273=演示前端（start.py 自动拉起）；
+  **8000 被本机 Godot AI MCP 占用，勿改回**；5173 是 P4 Vite 联调端口，start.py 不会占用
 - **`backend/start.bat` 必须 CRLF 行尾且纯 ASCII**（无中文注释/echo）——cmd 对 LF-only 或中文 REM
   解析错乱；`.gitattributes` 已设 `*.bat -text`。改后校验：
   `python -c "open('backend/start.bat','rb').read().count(b'\r\n')"` 应等于行数；中文提示放 start.py

@@ -116,6 +116,18 @@ backend 151 + frontend 150 + test_engineer 150），查询 API 见 [API.md](../A
 | 降级报告 | 默认报告按平均回答篇幅分档（58/68/78），不再固定 72 分 |
 | 其他修复 | 修复了 Windows 控制台 GBK 编码导致 emoji print 崩溃、JSON 解析失败时兜底分支引用未初始化变量的两个 bug |
 
+## 五、配置改造（2026-09-07 更新，P1 代改，请知悉）
+
+| 项目 | 改动 | 对你的影响 |
+| :--- | :--- | :--- |
+| 模型名 | 硬编码 `deepseek-chat` → 读 `backend/.env` 的 `LLM_MODEL`（复用主后端 `app.config.Settings`，绝对 env_file 路径，**不依赖进程 CWD**） | 换模型只需改 `.env` 一处；`GET /health` 新增 `llm_model` 字段便于核对当前模型 |
+| sys.path | `evaluator/app.py` 顶部**显式**把 `backend/` 加入 sys.path 后再 `import app.config/app.core` | 不再依赖 `evaluation_prompts.py` 顶部的 sys.path 副作用；以后 import 顺序随便调、兄弟模块可独立清理，不会启动即崩 |
+| 日志 | stdout 追加 `line_buffering=True` | 重定向到日志文件时 print 及时落盘（此前排障看不到错误输出） |
+| 死代码 | 删除无人调用的 `get_default_value()` | 无 |
+
+> 提醒：改 Key/模型后需**重启 8002 进程**生效；`.env` 由 P1 统一维护，冲突先 `git pull`。
+> 自行开发时请保留以上改动（尤其 sys.path 显式声明），勿回退。
+
 **你后续可以继续做的方向**（非本次整合范围）：
 1. 用 `qa_list` 里的 `audio_url` 接真实语音分析（讯飞/阿里云 ASR），替换 `analyze_expression_simulate` 模拟值——当前表达分（expression_score）以 LLM 文本评估为准，语音模拟（`analyze_expression_simulate`）仅产出标注 `simulated=True` 的附加参考信息，不参与评分；接入真实 ASR 后可在 merge 处恢复语音对表达分的覆盖，答辩时需说明；
 2. 把题库得分点/参考答案（见本文档第二节）拼入评分 Prompt，提升评分可解释性；

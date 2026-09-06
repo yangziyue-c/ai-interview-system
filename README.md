@@ -45,15 +45,16 @@ project/
 │   ├── tests/                # 全流程回归测试（60 用例）
 │   ├── requirements.txt
 │   ├── .env.example          # 环境变量模板
-│   └── start.bat             # Windows 一键启动
-├── frontend/                 # 前端（P4 负责）
+│   └── start.bat             # Windows 一键启动（自动拉起演示前端 + P3 + 主后端）
+├── frontend/                 # 正式前端（P4 负责，构建产物拷 backend/static/）
+├── frontend_test/            # 演示前端（P1，零依赖纯 HTML/JS，start.bat 自动拉起到 5273）
 ├── 题库/                      # 岗位化面试题库 xlsx V4（P5 整理，scripts 导入 questions 表）
 ├── docs/
 │   ├── API.md                # 接口文档（唯一权威）
 │   ├── DATABASE.md           # 数据库设计文档
 │   ├── DEPLOY.md             # 内网穿透部署说明
 │   ├── COLLABORATION.md      # Git 协作指南
-│   └── reports/              # 各成员对接文档 REPORT_TO_P2~P4
+│   └── reports/              # 各成员对接文档 REPORT_TO_P2~P5
 └── 评估维度.csv               # 五维评分权重定稿（机器校验与代码一致）
 ```
 
@@ -65,7 +66,10 @@ project/
 1. 自动检测/创建 conda 环境 `ai_interview`（Python 3.12）
 2. 自动安装依赖（清华镜像源）
 3. 自动生成 `.env`
-4. 启动服务
+4. 启动演示前端（frontend_test/ → **5273 端口**）+ P3 评估服务（8002）+ 主后端（8001）
+5. 服务就绪后打印**访问指引**（本机 + 局域网地址与各自用途）；Ctrl+C 一并退出三个服务
+
+> 演示前端端口 5273 特意避开了 5173（P4 联调用的 Vite dev 端口），两边互不冲突。
 
 **方式二：手动启动**
 
@@ -77,13 +81,14 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 ```
 
-启动后：
+启动后（端口约定：8000 被本机 Godot AI MCP 占用，勿改回）：
 
 | 地址 | 说明 |
 | :--- | :--- |
+| http://localhost:5273 | **演示前端**：注册登录 / 模拟面试 / 评估报告 / 个人中心 |
 | http://localhost:8001/docs | Swagger 接口文档（可直接在线调试） |
 | http://localhost:8001/api/v1/health | 健康检查 |
-| http://localhost:8001 | 前端页面（构建产物放入 `backend/static/` 后） |
+| http://localhost:8001 | 正式前端（P4 构建产物放入 `backend/static/` 后同端口访问） |
 
 ### 故障排查：双击 start.bat 报乱码或「xxx 不是内部或外部命令」
 
