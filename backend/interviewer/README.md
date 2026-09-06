@@ -70,8 +70,10 @@ D:/anaconda3/envs/ai_interview/python.exe -m pytest tests/test_question_bank.py 
 
 ## 六、演进历史（供参考）
 
-1. `interviewwaibao/`：P2 初版（无法运行，7 个问题，见 docs/P2_CODE_REVIEW.md；
-   已删除，可在 git 历史 commit 3bcfb26 查阅）
+1. `interviewwaibao/`：P2 初版（无法运行，7 个问题；整改记录见
+   [docs/reports/REPORT_TO_P2.md](../../docs/reports/REPORT_TO_P2.md) 演进史与
+   原 docs/P2_CODE_REVIEW.md（2026-09-06 已删，git 历史可查）；
+   目录已删除，初版代码可在 git 历史 commit 3bcfb26 查阅）
 2. `interviewwaibao (2)/`：P2 修正版（修了 6 条，仍有两处解析 bug 与依赖缺失；
    为**未入库的中间版**，交付审查后即删除，修正内容已体现在本目录）
 3. 本目录：落地执行版——数据源从 pandas 读 xlsx 改为 questions 表（451 题全岗位）、

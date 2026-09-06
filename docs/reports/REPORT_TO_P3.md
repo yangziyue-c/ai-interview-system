@@ -58,7 +58,7 @@ POST {你的服务}/evaluate
 ## 二、题库新格式提供的评分素材（V4，强烈建议使用）
 
 题库已换代 V4（2026-09-06）并导入 `questions` 表（已开放岗位共 451 题：
-backend 151 + frontend 150 + test_engineer 150），查询 API 见 [API.md](API.md) 第 5 章。
+backend 151 + frontend 150 + test_engineer 150），查询 API 见 [API.md](../API.md) 第 5 章。
 其中**三列**对你的评分质量有直接价值：
 
 ### 1. 得分点（带权重）
@@ -96,7 +96,7 @@ backend 151 + frontend 150 + test_engineer 150），查询 API 见 [API.md](API.
 - 评分维度说明：后端数据库按岗位 5 维加权计算 `total_score`
   （权重表见第一节，单一事实源 `backend/app/core/evaluation_weights.py`，
   主后端与评估服务共用，无需双向同步），你返回的 `total_score` 与后端加权结果保持一致即可；
-- 完整接口约定见 [API.md](API.md) 附录「P3：AI 评估」；
+- 完整接口约定见 [API.md](../API.md) 附录「P3：AI 评估」；
 - 联调时后端 Swagger：http://localhost:8001/docs 。
 
 有需要后端配合的字段或格式调整，随时提出。

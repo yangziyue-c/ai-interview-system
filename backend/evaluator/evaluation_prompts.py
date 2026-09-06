@@ -271,10 +271,10 @@ def build_position_prompt(position_key, dialogue_text):
 # 题库素材说明（供评分 Prompt 参考）
 # ============================================================
 
-# 抽题由后端开发 B（AI专项1）的面试官对话逻辑负责：
-# 从 questions 表按岗位/阶段/难度抽题，约定见 docs/REPORT_TO_P2.md。
-# 评分可用素材（得分点三段加权 / 参考答案 / 追问触发条件 / 优秀回答范例）
-# 见 docs/QUESTION_BANK_REVIEW_V13.md 与 docs/REPORT_TO_P3.md。
+# 抽题由主项目题库策略负责（backend/interviewer/question_bank.py，
+# 已落地，原 P2 外部服务为扩展位），约定见 docs/reports/REPORT_TO_P2.md。
+# 评分可用素材（得分点三段加权 / 参考答案 / 追问触发条件 / 优秀回答范例 /
+# V4 新增 expression_points 表达评估要点）见 docs/reports/REPORT_TO_P3.md。
 
 
 # ============================================================

@@ -1,12 +1,12 @@
 """题库接口：题目列表（过滤/分页）与详情
 
 数据来源：questions 表（scripts/import_question_bank.py 从 题库/*.xlsx 导入）。
-主要使用者：后端开发 B（AI专项1）的面试官对话逻辑（选题/追问），
-B 的服务账号登录后携带 Bearer token 调用即可（与全站鉴权一致）。
+主要使用者：面试官对话逻辑（backend/interviewer/question_bank.py 已原生落地，
+外部 AI 服务为扩展位），服务账号登录后携带 Bearer token 调用即可（与全站鉴权一致）。
 
-选题约定（详见 docs/REPORT_TO_P2.md）：
+选题约定（详见 docs/reports/REPORT_TO_P2.md）：
 - 开场题（第 1 轮）：interview_stage=开场热身 且 difficulty=easy
-- 追问（第 2~7 轮）：结合 follow_up_triggers（L1 关键词触发 / L2 深入 / L3 极限 / 降级策略）
+- 追问（第 2~7 轮）：结合 follow_up_triggers（L1 关键词触发 / L2 递进 / L3 极限 / 降级策略）
 """
 from fastapi import APIRouter, Query
 from sqlalchemy import func, select

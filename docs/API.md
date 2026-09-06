@@ -315,7 +315,7 @@ GET /questions?position=backend&category=技术知识&difficulty=easy&stage=开�
 ```
 
 > `question` 已剥离「【岗位软技能考察：X】」元信息（独立存于 `soft_skill_tag`），
-> 可直接读给候选人。选题约定见 [REPORT_TO_P2.md](REPORT_TO_P2.md)。
+> 可直接读给候选人。选题约定见 [REPORT_TO_P2.md](reports/REPORT_TO_P2.md)。
 
 ### 5.2 题库详情
 

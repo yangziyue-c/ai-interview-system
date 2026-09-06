@@ -6,7 +6,7 @@
 >
 > **重大更新（2026-09-06）：你的算法已由 P1 适配落地进主项目，执行版在
 > `backend/interviewer/`（question_bank.py）**——以后修改算法直接改那个目录，
-> 修改指南、踩坑清单与自测方法见 [backend/interviewer/README.md](../backend/interviewer/README.md)。
+> 修改指南、踩坑清单与自测方法见 [backend/interviewer/README.md](../../backend/interviewer/README.md)。
 > 外部独立服务（下文第一节）已降为**扩展位**：仅当题库策略未命中
 > （如新岗位在题库无题）时，主后端才会调用 `AI_INTERVIEWER_URL`。
 
@@ -54,7 +54,7 @@ GET /api/v1/questions?position=backend&category=技术知识&difficulty=easy&sta
 
 > 鉴权与其他接口一致：先 `POST /api/v1/auth/register` 注册一个服务账号
 > （如 username=`p2_service`），拿 token 后请求头带 `Authorization: Bearer <token>`。
-> 接口字段与过滤参数完整说明见 [API.md](API.md) 第 5 章。
+> 接口字段与过滤参数完整说明见 [API.md](../API.md) 第 5 章。
 
 表结构（V4：xlsx 16 列 + 导入剥离的 1 个软技能标签列；V4 相比 v13：
 大类由 5 类拆为 6 类、新增第 16 列 `expression_points` 表达评估要点）：
@@ -120,7 +120,7 @@ GET /api/v1/questions?position=backend&category=技术知识&difficulty=easy&sta
 - **你的算法执行版位置**：`backend/interviewer/question_bank.py`（修改算法只动该目录，
   修改指南与踩坑清单见 backend/interviewer/README.md，测试 `cd backend && pytest` 共 60 个用例）；
 - 题库文件保留在仓库根目录 `题库/`（P5 更新后重跑导入脚本即可同步到库）；
-- 后端完整接口约定见 [API.md](API.md) 附录「P2：AI 面试官」；
+- 后端完整接口约定见 [API.md](../API.md) 附录「P2：AI 面试官」；
 - 联调时后端 Swagger：http://localhost:8001/docs 。
 
 有需要后端配合的字段或格式调整，随时提出。
