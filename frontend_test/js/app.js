@@ -89,7 +89,9 @@ window.App = {
 
     // 渲染视图（render 可能异步拉数据；返回空串表示已在内部跳转，跳过 mount）
     const viewEl = document.getElementById("view");
-    const seq = ++this._renderSeq; // 渲染代际：慢视图返回时若路由已切换，丢弃过期结果
+    // 渲染代际：慢视图返回时若路由已切换，丢弃过期结果。
+    // 注意必须显式从 0 起计数——++undefined 得 NaN，NaN !== NaN 恒真会把每次渲染都丢弃（白屏）
+    const seq = (this._renderSeq = (this._renderSeq || 0) + 1);
     let html;
     try {
       html = await view.render({ code: id, id });
