@@ -4,12 +4,34 @@
 成长曲线、越权访问、非法状态、音频上传、异常兜底格式。
 """
 import uuid
+from collections import defaultdict
 
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy import delete
 
 from app.models import Question
 from tests.helpers import make_question
+
+
+@pytest_asyncio.fixture
+async def _cleanup_made_questions():
+    """用例结束清理本用例造的题
+
+    同文件的 `test_question_bank_api` 断言「空库 total==0」，而 conftest 只在
+    会话开始时删库——造数不清理会让那条断言变成**执行顺序相关**
+    （xdist 分片、命令行指定用例顺序时复现）。
+    make_question 的编号统一是 `JAVA_BACKEND-Q9000_<hex>` 前缀，据此清理。
+    """
+    yield
+    from app.database import async_session
+
+    async with async_session() as db:
+        await db.execute(
+            delete(Question).where(Question.question_no.like("JAVA_BACKEND-Q9000%"))
+        )
+        await db.commit()
 
 BASE = "/api/v1"
 
@@ -309,18 +331,58 @@ class TestUpload:
 class TestQuestionBank:
     """题库：导入剥离逻辑 + 查询接口契约（造数用 tests.conftest.make_question）"""
 
-    async def test_strip_soft_skill_tag(self):
-        """题干内嵌的「【岗位软技能考察：X】」应剥离到独立列"""
-        from scripts.import_question_bank import strip_soft_skill_tag
+    async def test_position_map(self):
+        """岗位映射：V5 岗位全名与 V4 简名都映射到同一 code
 
-        question = "请做一个简短的自我介绍\n\n【岗位软技能考察：故障应急响应意识】"
-        cleaned, tag = strip_soft_skill_tag(question)
-        assert cleaned == "请做一个简短的自我介绍"
-        assert tag == "故障应急响应意识"
-        # 无标签的题干原样返回
-        cleaned2, tag2 = strip_soft_skill_tag("HashMap 的底层结构是什么？")
-        assert cleaned2 == "HashMap 的底层结构是什么？"
-        assert tag2 == ""
+        V5 换代后 xlsx 通道退役，但 POSITION_MAP 仍是岗位命名的单一事实源
+        （test_weights_match_csv 用「CSV 列名去空格」查本表），故保留简名别名。
+        """
+        from scripts.import_question_bank import POSITION_MAP
+
+        assert POSITION_MAP["Java 后端开发工程师"] == "backend"
+        assert POSITION_MAP["Web 前端开发工程师"] == "frontend"
+        assert POSITION_MAP["测试开发工程师"] == "test_engineer"
+        assert POSITION_MAP["算法工程师"] == "algorithm"
+        assert POSITION_MAP["系统设计工程师"] == "system_design"
+        # V4 简名别名（CSV 列名解析依赖）
+        assert POSITION_MAP["Java后端"] == "backend"
+        assert POSITION_MAP["Web前端"] == "frontend"
+        assert POSITION_MAP["软件测试开发"] == "test_engineer"
+
+    async def test_v5_record_mapping(self):
+        """V5 记录（18 字段）→ 表列（19 列）的映射与校验（跳过非法词表/未映射岗位）"""
+        from scripts.import_question_bank import _to_values
+
+        stats = {"skipped": defaultdict(int)}
+        rec = {
+            "题目ID": "JAVA_BACKEND-Q0001", "所属岗位": "Java 后端开发工程师",
+            "题型分类": "技术知识题", "难度等级": "easy", "面试阶段": "开场热身",
+            "核心关键词": "JVM\nJDK", "考点优先级": "高频必考题", "题目内容": "题干",
+            "基础得分点": "基础", "进阶得分点": "进阶",
+            "L1基础追问": "[触发] 条件\n[追问] L1正文",
+            "L2递进追问": "[触发] 条件\n[追问] L2正文",
+            "L3拓展追问": "[触发] 条件\n[追问] L3正文",
+            "降级策略": "引导话术", "建议用时(分)": "5",
+            "适用题型基准": "技术知识题", "单题校准锚点": "[技术水平] x",
+            "关联知识点": "kp-1|名称|建议",
+        }
+        values = _to_values(rec, stats)
+        assert values["position_code"] == "backend"
+        assert values["question_no"] == "JAVA_BACKEND-Q0001"
+        assert values["stage_order"] == 1                  # 由 STAGE_ORDERS 派生
+        assert values["suggested_minutes"] == 5
+        assert values["follow_up_l1"] == "[触发] 条件\n[追问] L1正文"
+        assert not stats["skipped"]
+
+        # 非法词表值 → 跳过并计数
+        bad = dict(rec, 难度等级="hardcore")
+        assert _to_values(bad, stats) is None
+        assert stats["skipped"]["难度等级=hardcore"] == 1
+
+        # 未映射岗位 → 跳过并计数
+        bad2 = dict(rec, 所属岗位="未知岗位")
+        assert _to_values(bad2, stats) is None
+        assert stats["skipped"]["岗位=未知岗位"] == 1
 
     async def test_question_bank_api(self, client: AsyncClient):
         """题库接口：鉴权、过滤、分页、详情、非法词表 400（数据由导入脚本写入，此处手工造数验证契约）"""
@@ -342,7 +404,7 @@ class TestQuestionBank:
             db.add_all([
                 make_question(),
                 make_question(
-                    position_code="frontend", sub_category="HTML与CSS", difficulty="medium",
+                    position_code="frontend", difficulty="medium",
                     question="CSS中BFC的概念是什么？", interview_stage="核心考察",
                     stage_order=2, suggested_minutes=5,
                 ),
@@ -359,8 +421,8 @@ class TestQuestionBank:
         assert data["total"] == 1
         item = data["items"][0]
         assert item["position_code"] == "backend"
-        assert item["question_no"].startswith("tech_001")
-        assert item["category"] == "技术知识"
+        assert item["question_no"].startswith("JAVA_BACKEND")
+        assert item["category"] == "技术知识题"
 
         # 过滤 + 难度组合
         resp = await client.get(
@@ -368,8 +430,8 @@ class TestQuestionBank:
         )
         assert resp.json()["data"]["total"] == 1
 
-        # 题干模糊搜索
-        resp = await client.get(f"{BASE}/questions?q=equals", headers=headers)
+        # 题干模糊搜索（词取自 make_question 的默认题干，仅 backend 那条命中）
+        resp = await client.get(f"{BASE}/questions?q=JVM", headers=headers)
         assert resp.json()["data"]["total"] == 1
 
         # 非法词表 → 400（题库改名后应立刻报错，而非静默空集）
@@ -378,6 +440,12 @@ class TestQuestionBank:
             resp = await client.get(bad, headers=headers)
             assert resp.status_code == 400, bad
             assert resp.json()["code"] == 40000
+        # 合法值（V5 词表）→ 200，防「词表改错方向」把合法值也判为非法
+        for good in (f"{BASE}/questions?category=行为素质题",
+                     f"{BASE}/questions?stage=深度压轴",
+                     f"{BASE}/questions?priority=高频必考题"):
+            resp = await client.get(good, headers=headers)
+            assert resp.status_code == 200, good
 
         # 详情
         resp = await client.get(f"{BASE}/questions/{item['id']}", headers=headers)
@@ -387,6 +455,64 @@ class TestQuestionBank:
         # 不存在 → 404
         resp = await client.get(f"{BASE}/questions/99999", headers=headers)
         assert resp.status_code == 404
+
+    async def test_attach_materials(self, _cleanup_made_questions):
+        """评估素材注入：按题干 + 岗位精确匹配题库；匹配不上则不带 materials
+
+        该素材供 evaluator_new 做「按题评分」（V5 单题校准锚点）。
+        """
+        from app.adapters.ai_evaluator import _attach_materials
+        from app.database import async_session, init_db
+
+        await init_db()  # 本用例不走 client fixture，显式建表（幂等）
+        async with async_session() as db:
+            db.add(make_question(
+                question="唯一题干-素材测试", basic_score_points="基础点",
+                advanced_score_points="进阶层", calibration_anchor="校准锚点",
+            ))
+            await db.commit()
+
+        qa = [
+            {"round": 1, "question": "唯一题干-素材测试", "answer": "x"},
+            {"round": 2, "question": "题库中不存在的题", "answer": "y"},
+        ]
+        out = await _attach_materials("backend", qa)
+
+        assert out[0]["materials"]["basic_score_points"] == "基础点"
+        assert out[0]["materials"]["calibration_anchor"] == "校准锚点"
+        assert "materials" not in out[1]      # 未匹配 → 不带素材（评估退化为按对话评分）
+        assert "materials" not in qa[0]       # 不修改调用方传入的对象
+
+    async def test_attach_materials_position_scoped(self, _cleanup_made_questions):
+        """素材必须按岗位过滤：同题干跨岗位时不得取到别岗的素材
+
+        真实数据里「什么是优先级队列？」同时存在于 algorithm 与 system_design 两岗，
+        只按题干匹配会取到另一岗位的得分点/判分锚点（分数看着正常但口径是错的）。
+        """
+        from app.adapters.ai_evaluator import _attach_materials
+        from app.database import async_session, init_db
+
+        await init_db()
+        stem = f"跨岗位同题干-{uuid.uuid4().hex[:8]}"
+        async with async_session() as db:
+            db.add_all([
+                make_question(position_code="backend", question=stem,
+                              basic_score_points="后端得分点"),
+                make_question(position_code="frontend", question=stem,
+                              basic_score_points="前端得分点"),
+            ])
+            await db.commit()
+
+        qa = [{"round": 1, "question": stem, "answer": "x"}]
+        back = await _attach_materials("backend", qa)
+        front = await _attach_materials("frontend", qa)
+
+        assert back[0]["materials"]["basic_score_points"] == "后端得分点"
+        assert front[0]["materials"]["basic_score_points"] == "前端得分点"
+
+        # 岗位未命中 → 不带素材（而不是拿到别岗的）
+        other = await _attach_materials("test_engineer", qa)
+        assert "materials" not in other[0]
 
     async def test_weights_match_csv(self):
         """《评估维度.csv》与代码权重一致：CSV 是团队定稿，代码是执行版，机器校验防漂移"""

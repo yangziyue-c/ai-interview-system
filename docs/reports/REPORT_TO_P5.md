@@ -1,7 +1,14 @@
-# 致 P5（题库）同学：Excel 题库 → questions 表 操作手册
+# 致 P5（知识库）同学：知识库 → questions 表 操作手册
 
-> 来自 P1（后端）。你在团队中负责整理/维护各岗位面试题库 Excel（仓库根目录 `题库/`，V4 版）。
-> 本文档是 **Excel → 数据库 questions 表的完整操作手册**：xlsx 长什么样、怎么导入、
+> ⚠️ **2026-09-14 起流水线已换代**：数据源由 `题库/*.xlsx`（V4）改为
+> `backend/rag/数据/*-v5.json`（V5，5012 题 / 5 岗位，18 字段）。
+> 本文档第 2 节的 **Excel 16 列规范已降级为 V4 历史**（仅回滚时参考）；
+> V5 字段规范、导入命令与 P1 的 12 处适配改动见
+> [REPORT_TO_P5_V5_PACKAGE_REVIEW.md](REPORT_TO_P5_V5_PACKAGE_REVIEW.md)
+> 与 [REPORT_TEAM_V5_LAYOUT_AND_API.md](REPORT_TEAM_V5_LAYOUT_AND_API.md)。
+
+> 来自 P1（后端）。你在团队中负责整理/维护各岗位面试题库（V5：`backend/rag/数据/`）。
+> 本文档是 **知识库 → 数据库 questions 表的完整操作手册**：数据长什么样、怎么导入、
 > 怎么验证、遇到告警怎么办、新增一个岗位怎么走全流程。
 >
 > 一句话总结你的工作流：**改 Excel → 放 `题库/` → 跑一条导入命令 → 完成**，

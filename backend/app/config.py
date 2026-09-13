@@ -36,8 +36,16 @@ class Settings(BaseSettings):
     AI_EVALUATOR_URL: str = ""
     ADAPTER_TIMEOUT_SECONDS: float = 15.0
 
+    # ---- RAG 语义检索（V5 知识库，backend/rag/，题库策略未命中时的兜底源）----
+    # 默认指向 start.py 拉起的本地服务（8003）；置空字符串可完全禁用该数据源
+    RAG_API_URL: str = "http://localhost:8003"
+    # 单次检索超时：CPU 上 bge-m3 编码 + reranker 精排，通常 1~3 秒
+    RAG_TIMEOUT_SECONDS: float = 5.0
+    # 健康探测结果缓存秒数（RAG 未启用时避免每轮白等超时；取值偏大以摊薄探测开销）
+    RAG_HEALTH_CACHE_SECONDS: float = 120.0
+
     # ---- 大模型直连（题库策略未命中时的兜底源，OpenAI 兼容接口）----
-    # 面试官出题优先级：题库策略（interviewer/）> AI_INTERVIEWER_URL > LLM_API_KEY > Mock
+    # 面试官出题优先级：题库策略（interviewer_new/）> RAG 检索 > AI_INTERVIEWER_URL > LLM_API_KEY > Mock
     # 仅保存在本地 .env，切勿提交到 git
     LLM_BASE_URL: str = ""   # 如 https://api.deepseek.com/v1
     LLM_API_KEY: str = ""    # API Key

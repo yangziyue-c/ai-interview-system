@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
-# 默认 5 个岗位位：3 个已有题库支撑的岗位 + 2 个占位（岗位清单未定，待团队确定后更新）
+# 默认 5 个岗位：V5 知识库换代后全部启用（算法/系统设计两岗由原占位位改名而来，2026-09-14）
 DEFAULT_POSITIONS: list[dict] = [
     {
         "code": "backend",
@@ -40,21 +40,21 @@ DEFAULT_POSITIONS: list[dict] = [
         "sort_order": 3,
     },
     {
-        "code": "pending_a",
-        "name": "岗位待定 A",
-        "description": "预留岗位位，岗位名称与考察方向待团队确定后更新。",
-        "tech_stack": [],
-        "focus": [],
-        "enabled": False,
+        "code": "algorithm",
+        "name": "算法工程师",
+        "description": "负责算法设计与模型落地，考察数据结构与算法、机器学习基础、工程实现与调优能力。",
+        "tech_stack": ["Python", "PyTorch", "NumPy", "SQL", "C++"],
+        "focus": ["数据结构与算法", "机器学习", "模型调优", "工程实现"],
+        "enabled": True,
         "sort_order": 4,
     },
     {
-        "code": "pending_b",
-        "name": "岗位待定 B",
-        "description": "预留岗位位，岗位名称与考察方向待团队确定后更新。",
-        "tech_stack": [],
-        "focus": [],
-        "enabled": False,
+        "code": "system_design",
+        "name": "系统设计工程师",
+        "description": "负责大型系统架构设计，考察高并发/高可用方案、中间件选型、容量规划与技术权衡能力。",
+        "tech_stack": ["Redis", "Kafka", "MySQL", "Docker", "Kubernetes"],
+        "focus": ["高并发架构", "高可用设计", "中间件选型", "容量与性能"],
+        "enabled": True,
         "sort_order": 5,
     },
 ]

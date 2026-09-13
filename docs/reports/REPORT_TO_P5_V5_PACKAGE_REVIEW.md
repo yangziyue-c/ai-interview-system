@@ -1,0 +1,122 @@
+# 给 5 号（知识库）· V5 交付包评审与落地改动说明
+
+> 评审对象：`交付包-1号后端_new/`（2026-09-14 版）
+> 评审与适配人：1 号（后端主程）
+> **结论：数据层质量优秀，路径问题已修复；另有 2 个阻塞项与 2 个缺陷由 1 号在落地时一并修好。**
+> **本副本已迁入 `backend/rag/`，交付包原目录已删除（见文末）。**
+
+---
+
+## 一、本次修复确认（✅ 做得好的地方）
+
+| 项 | 状态 | 证据 |
+|---|---|---|
+| **路径自适应** | ✅ 已修复 | 01~05 五个脚本统一加入 `_pick()`：`_PKG_ROOT = dirname(dirname(abspath(__file__)))`，优先交付包内 `数据/`、`向量库/`，开发机路径作回退。解压即用的设计意图达成。 |
+| **数据与向量库本体** | ✅ 未被误改 | `java-v5.json` md5 `1878e558…`、`chroma.sqlite3` md5 `b43211b9…` 与上一版完全一致 |
+| **主库数据质量** | ✅ 优秀 | 5012 题 / 18 字段**零空值** / 题目 ID 无重复 / 格式 100% 规整（`{PREFIX}-Q{数字}`） |
+| **追问字段格式** | ✅ 优秀 | `[触发] 条件` + `[追问] 文本`，**5012/5012 完全规整**——这是本次算法重做得以大幅简化的前提 |
+| **向量库完整性** | ✅ 自洽 | `embeddings` 表 74011 条 = 说明文档口径；元数据 666,099 行（×9 字段）；向量 1024 维 FLOAT32 无空值 |
+| **词表收敛** | ✅ 合理 | 题型由 V4 的 6 类收敛为 4 类、阶段由 4 个收敛为 3 个，去掉了低频类别 |
+
+---
+
+## 二、1 号在落地时做的改动（12 处）
+
+**原因**：其中 P0 两项会直接导致服务跑不起来，故 1 号未等待反馈、先行修好并记录于此，
+方便 5 号同步回自己的交付包版本。
+
+### P0 阻塞项（不改则服务无法启动）
+
+| # | 文件 | 改动 | 原因 |
+|---|---|---|---|
+| 1 | `05_rag_api_server.py` | `uvicorn.run(..., port=8000)` → `int(os.environ.get("RAG_PORT", "8003"))` | 8000 被本机 Godot AI MCP 占用（项目铁律）；项目约定 8001 主后端 / 8002 评估 / **8003 RAG** |
+| 2 | 五个脚本 | `os.environ["HF_HUB_OFFLINE"] = "1"` → `os.environ.setdefault("HF_HUB_OFFLINE", "0")` | **交付包不含模型文件**（bge-m3 + reranker 共约 4.5GB），成员机器通常也无 HF 缓存；写死 `1` 会在首次启动时抛 `OSError: We couldn't connect to huggingface.co` |
+
+### P1 功能缺陷
+
+| # | 文件 | 改动 | 原因 |
+|---|---|---|---|
+| 3 | `05` | 补 `CORSMiddleware`（`allow_origins=["*"]`） | 原说明文档第 23 行承诺「CORS 已放开，4 号前端也可直接调用」，但代码中**无中间件**，浏览器跨域会被拦 |
+| 4 | 五个脚本 | `_pick()` 全部未命中时 `raise FileNotFoundError(已尝试路径列表)` | 原实现返回 `candidates[0]`（无效路径）→ `chromadb.PersistentClient(path=无效路径)` **静默创建空库**（不抛错）→ 服务正常启动但检索永远无结果，**排查成本极高** |
+
+### P2 改进项
+
+| # | 文件 | 改动 | 原因 |
+|---|---|---|---|
+| 5 | `02`/`03`/`05` | `torch.set_num_threads(8)` → `int(os.environ.get("RAG_THREADS", os.cpu_count() or 8))` | 部署机 28 核，写死 8 浪费算力 |
+| 6 | `05` | 启动打印**实际命中**的 `CHROMA_DIR` / `MAIN_DIR` + `collection_size` | 路径问题一眼可见（配合改动 4 的快速失败） |
+| 7 | `05` | `/rag/search` 包 try/except，失败返回 `{"results": [], "error": "..."}` | 原实现查询异常直接 500，调用方无法降级 |
+| 8 | `05` | `GET /question/{qid}` 未命中返回 **404** | 原为 HTTP 200 + `error` 字段，不符合 REST 语义（无既有调用方，改动无破坏） |
+| 9 | `05` | 新增环境变量覆盖位：`RAG_CHROMA_DIR` / `RAG_MAIN_DIR` / `RAG_PORT` / `RAG_THREADS` | 部署时目录结构可能与交付包不同，原实现只能靠目录结构 |
+| 10 | `代码/README.md` | 补：路径自适应机制、端口说明、模型体积与下载命令、依赖清单、**1 号适配说明表** | 成员才敢放心搬动目录 |
+| 11 | `说明/给1号-后端主程-数据对接说明.md` | 同步：路径改项目内、端口 8003、CORS、依赖与模型下载、`GET /question/{id}` 契约 | 原文仍写 `E:\GitHubRepos\…`、端口 8000、「5 号已封装好直接启动」 |
+| 12 | **新增** `backend/rag/requirements-rag.txt` | RAG 专属依赖清单 + 国内镜像安装命令 | 依赖刻意**不写进** `backend/requirements.txt`：主流程（8001/8002）不依赖它们，写进去会让每个新环境都多下载 2.5GB |
+
+**未改动**：检索核心逻辑（`03` 的双模式检索、`05` 的 `/rag/search` 响应结构）保持原样，
+1 号侧通过适配器接入（见《REPORT_TEAM_V5_LAYOUT_AND_API.md》）。
+
+---
+
+## 三、数据层已知问题（不影响使用，供 5 号参考）
+
+| 项 | 现状 | 影响与建议 |
+|---|---|---|
+| **HNSW 索引少于记录数** | `header.bin` 第 20 字节 = **73706**，`index_metadata.pickle` 的 `total_elements_added` = **73706**，而 sqlite `embeddings` 表 = **74011**（差 **305 条，0.41%**）；同时 `embeddings_queue` 残留 **306 条**未消费记录 | 这是构建进程最后一批写入后被中断留下的尾巴。记录、元数据、向量 BLOB 都在 sqlite 里没丢，只是没进 HNSW 图索引。ChromaDB 下次打开时应会通过 WAL 重放自动补齐；即便不补也只影响 0.41% 的召回。**首次启用前建议**跑一次 `PRAGMA wal_checkpoint(TRUNCATE)`，再用 `04_verify_collection.py` 确认 `count()==74011` |
+| `build_v2_done.json` 未随包提供 | 重建向量库时的断点标记文件缺失 | 仅影响「重建」场景（`02_build_vector_db.py` 会重新生成），使用现成向量库不需要 |
+| 1 组重复题干 | 「什么是优先级队列？」在算法岗与系统设计岗各 1 道 | **属正常**：跨岗位考察同一知识点，ID 不同 |
+| 主库无「参考答案」字段 | V5 只有基础/进阶得分点 | 设计合理（面试场景下得分点比标准答案更有用）；RAG 条目的「参考答案」由 `01` 脚本拼装得到 |
+
+---
+
+## 四、交付包目录已删除（重要）
+
+按 1 号与项目负责人的约定，交付包内容已**完整迁入项目内**并删除原目录：
+
+```
+交付包-1号后端_new/代码/     → backend/rag/代码/
+交付包-1号后端_new/数据/     → backend/rag/数据/
+交付包-1号后端_new/向量库/   → backend/rag/向量库/
+交付包-1号后端_new/说明/     → backend/rag/说明/
+```
+
+迁移前已做校验：文件数逐目录比对（23 个）+ `java-v5.json` / `chroma.sqlite3` md5 比对，全部一致。
+
+> **后续如 5 号要更新知识库**：请重新提供新的交付包，或直接把更新后的 `数据/`、`向量库/`
+> 覆盖到 `backend/rag/` 对应目录（**注意保留 `代码/` 下 1 号的 12 处改动**，
+> 或按下表同步到新版本代码）。
+
+---
+
+## 五、验收清单（5 号修复/更新后可自测）
+
+```bash
+cd backend/rag/代码
+
+# 1. 依赖（约 2.5GB，走国内镜像）
+python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+python -m pip install chromadb sentence-transformers -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 2. 首次启动需下载模型（约 4.5GB，走 hf-mirror）
+set HF_ENDPOINT=https://hf-mirror.com
+python 05_rag_api_server.py          # 应打印实际命中的向量库/主库路径 + collection size: 74011
+curl http://localhost:8003/health    # {"status":"ok","collection_size":74011}
+
+# 3. 检索可用
+curl -X POST http://localhost:8003/rag/search -H "Content-Type: application/json" \
+     -d '{"query":"Redis 缓存穿透怎么办","mode":"select","top":3}'
+
+# 4. 主库接口
+curl http://localhost:8003/question/JAVA_BACKEND-Q0001   # 返回 18 字段完整记录
+
+# 5. 路径失效时应明确报错（而非静默建空库）
+mv 向量库 向量库_bak && python 05_rag_api_server.py      # 应抛 FileNotFoundError
+mv 向量库_bak 向量库
+```
+
+---
+
+## 六、致谢
+
+V5 主库的**结构化改造**（把 V4 挤在一段文本里的四层追问拆成独立字段）是本项目本次换代
+最有价值的一项工作——它让下游算法直接删掉了 119 行格式兼容正则，追问链触达率从 66% 提升到 100%。
+追问字段格式能做到 **5012/5012 完全规整**，也说明数据生产端做了扎实的自检。

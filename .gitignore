@@ -14,6 +14,8 @@ a.md
 # 数据库文件
 *.db
 *.sqlite3
+# 数据库备份（重建/迁移前的手工备份，不入库）
+*.db.bak*
 # SQLite WAL 模式伴随文件（运行时产物）
 *.db-shm
 *.db-wal
@@ -25,6 +27,11 @@ backend/uploads/*
 # 前端构建产物（由各成员本地构建，不入库）
 frontend/node_modules/
 frontend/dist/
+
+# RAG 向量库（674MB，可由 rag/数据/*-rag-v2.jsonl 重建，不入库）
+backend/rag/向量库/
+# RAG 检索中间数据（85MB，仅重建向量库时需要；主库 *-v5.json 共 16MB 正常入库）
+backend/rag/数据/*-rag-v2.jsonl
 
 # 测试与缓存
 .pytest_cache/

@@ -1,0 +1,20 @@
+# RAG 语义检索服务专属依赖（约 2.5GB）
+#
+# 与主项目 backend/requirements.txt 刻意分离：
+#   主流程（8001 主后端 / 8002 评估）不依赖本文件里的任何包，
+#   装上 torch 会让每个新环境多下载 2.5GB，故按需安装。
+#
+# ★ 推荐安装方式（两步，走国内镜像；直连 PyPI 官方源在国内极慢）：
+#   1) torch 走 CPU 专用索引 —— 命中 CPU 轮子而非默认 CUDA 版，省约 2GB
+#      python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   2) 其余走清华镜像 —— 已装好的 torch 不会被升级（sentence-transformers 只要求 >=1.11）
+#      python -m pip install chromadb sentence-transformers -i https://pypi.tuna.tsinghua.edu.cn/simple
+#
+# 首次启动服务还需下载两个模型（约 4.5GB，同样走国内镜像）：
+#   set HF_ENDPOINT=https://hf-mirror.com
+#   python -c "from sentence_transformers import SentenceTransformer as S; S('BAAI/bge-m3'); S('BAAI/bge-reranker-v2-m3')"
+
+# 依赖清单（亦可用 `pip install -r` 一次性安装，但会走 PyPI 官方源，慢）
+torch
+chromadb
+sentence-transformers

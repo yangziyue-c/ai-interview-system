@@ -5,14 +5,14 @@
 > 题目从已入库的面试题库（`questions` 表）中抽取；追问按题库的「追问触发条件」生成。
 >
 > **重大更新（2026-09-06）：你的算法已由 P1 适配落地进主项目，执行版在
-> `backend/interviewer/`（question_bank.py）**——以后修改算法直接改那个目录，
-> 修改指南、踩坑清单与自测方法见 [backend/interviewer/README.md](../../backend/interviewer/README.md)。
+> `backend/interviewer_new/`（question_bank.py）**——以后修改算法直接改那个目录，
+> 修改指南、踩坑清单与自测方法见 [backend/interviewer_new/README.md](../../backend/interviewer_new/README.md)。
 > 外部独立服务（下文第一节）已降为**扩展位**：仅当题库策略未命中
 > （如新岗位在题库无题）时，主后端才会调用 `AI_INTERVIEWER_URL`。
 
 ## 一、后端对接接口（扩展位，接口不变）
 
-> 2026-09-06 起：出题已由主项目内的题库策略（`backend/interviewer/`）直接完成，
+> 2026-09-06 起：出题已由主项目内的题库策略（`backend/interviewer_new/`）直接完成，
 > 外部服务仅在题库策略未命中时被调用。以下契约不变，供扩展位服务对接：
 
 后端调用你的服务（配置 `backend/.env` 的 `AI_INTERVIEWER_URL` 后生效）：
@@ -117,8 +117,8 @@ GET /api/v1/questions?position=backend&category=技术知识&difficulty=easy&sta
 
 ## 四、其他约定
 
-- **你的算法执行版位置**：`backend/interviewer/question_bank.py`（修改算法只动该目录，
-  修改指南与踩坑清单见 backend/interviewer/README.md，测试 `cd backend && pytest` 共 60 个用例）；
+- **你的算法执行版位置**：`backend/interviewer_new/question_bank.py`（修改算法只动该目录，
+  修改指南与踩坑清单见 backend/interviewer_new/README.md，测试 `cd backend && pytest` 共 66 个用例）；
 - 题库文件保留在仓库根目录 `题库/`（P5 更新后重跑导入脚本即可同步到库）；
 - 后端完整接口约定见 [API.md](../API.md) 附录「P2：AI 面试官」；
 - 联调时后端 Swagger：http://localhost:8001/docs 。

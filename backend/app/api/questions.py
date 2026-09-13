@@ -1,12 +1,14 @@
 """题库接口：题目列表（过滤/分页）与详情
 
-数据来源：questions 表（scripts/import_question_bank.py 从 题库/*.xlsx 导入）。
-主要使用者：面试官对话逻辑（backend/interviewer/question_bank.py 已原生落地，
-外部 AI 服务为扩展位），服务账号登录后携带 Bearer token 调用即可（与全站鉴权一致）。
+数据来源：questions 表（scripts/import_question_bank.py 从
+backend/rag/数据/*-v5.json 导入，V5 交付包共 5012 题 / 5 岗位）。
+主要使用者：面试官算法（backend/interviewer_new/，外部 AI 服务为扩展位），
+服务账号登录后携带 Bearer token 调用即可（与全站鉴权一致）。
 
-选题约定（详见 docs/reports/REPORT_TO_P2.md）：
+选题约定（详见 docs/reports/REPORT_TO_P2_INTERVIEWER_NEW.md）：
 - 开场题（第 1 轮）：interview_stage=开场热身 且 difficulty=easy
-- 追问（第 2~7 轮）：结合 follow_up_triggers（L1 关键词触发 / L2 递进 / L3 极限 / 降级策略）
+- 追问（第 2~7 轮）：直接读 follow_up_l1 / follow_up_l2 / follow_up_l3，
+  考生答不出时用 fallback_strategy（V5 已结构化，无需解析文本）
 """
 from fastapi import APIRouter, Query
 from sqlalchemy import func, select
@@ -21,14 +23,15 @@ from app.utils.response import ok
 router = APIRouter()
 
 
-@router.get("", response_model=dict, summary="题库列表（按岗位/大类/难度/阶段过滤，分页）")
+@router.get("", response_model=dict, summary="题库列表（按岗位/题型/难度/阶段/优先级过滤，分页）")
 async def list_questions(
     _: CurrentUser,
     db: DbSession,
     position: str | None = Query(default=None, description="岗位 code，如 backend"),
-    category: str | None = Query(default=None, description="大类，如 技术知识/系统设计题/场景题/编码与算法/项目深挖/行为面试"),
+    category: str | None = Query(default=None, description="题型：技术知识题 / 场景应用题 / 项目经历题 / 行为素质题"),
     difficulty: str | None = Query(default=None, description="难度：easy / medium / hard"),
-    stage: str | None = Query(default=None, description="面试阶段：开场热身 / 核心考察 / 深度考察 / 收尾交流"),
+    stage: str | None = Query(default=None, description="面试阶段：开场热身 / 核心考察 / 深度压轴"),
+    priority: str | None = Query(default=None, description="考点优先级：常规题 / 高频必考题 / 拓展题"),
     q: str | None = Query(default=None, description="题干模糊搜索关键词"),
     limit: int = Query(default=20, ge=1, le=100, description="每页条数"),
     offset: int = Query(default=0, ge=0, description="偏移量"),
@@ -52,6 +55,9 @@ async def list_questions(
         conditions.append(Question.difficulty == difficulty)
     if stage:
         conditions.append(Question.interview_stage == stage)
+    if priority:
+        # 考点优先级不做受控词表强校验：它只是可选筛选维度，非法值返回空集即可
+        conditions.append(Question.exam_priority == priority)
     if q:
         # autoescape 转义 %/_，避免用户输入被当作 LIKE 通配符
         conditions.append(Question.question.contains(q, autoescape=True))

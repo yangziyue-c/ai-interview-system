@@ -41,13 +41,13 @@ positions (岗位表，独立无外键)
   启动时自动 seed 5 个岗位位，enabled 控制上/下线
 
 questions (题库表，独立无外键，按 position_code 关联岗位)
-  由 scripts/import_question_bank.py 从 题库/*.xlsx 导入，供面试官对话逻辑抽题
+  由 scripts/import_question_bank.py 从 backend/rag/数据/*-v5.json 导入，供面试官算法抽题
 ```
 
 - 1 个用户 → N 场面试
 - 1 场面试 → N 条问答记录 + 1 份评估报告（严格一对一）
 - 岗位由 positions 表动态维护（替代硬编码枚举），预留 5 个岗位位
-- 题库由 questions 表承载（V4 换代，已开放 3 岗位共 451 题：backend 151 + frontend 150 + test_engineer 150），对话逻辑按岗位/阶段/难度抽题
+- 题库由 questions 表承载（**V5 换代，5 岗位共 5012 题**：backend 2146 + frontend 734 + test_engineer 667 + algorithm 655 + system_design 810），算法按岗位/阶段/难度抽题
 
 模型代码见 [backend/app/models/](backend/app/models/)。
 
@@ -133,39 +133,44 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | sort_order | int | 默认 0 | 岗位大厅展示顺序 |
 | created_at | datetime | server_default=now() | |
 
-启动时若表为空，自动 seed 5 个岗位位（3 个已开放 + 2 个占位待定，见 [position.py](backend/app/models/position.py) 的 `DEFAULT_POSITIONS`）；岗位清单确定后只需更新数据库记录，无需改代码。
+启动时若表为空，自动 seed 5 个岗位（**V5 换代后全部启用**：backend / frontend / test_engineer / algorithm / system_design，见 [position.py](backend/app/models/position.py) 的 `DEFAULT_POSITIONS`）；老库由 `database.py::_align_positions` 幂等对齐（占位岗位位改名 + 缺失岗位补插），岗位清单调整只需更新数据库记录，无需改代码。
 
 ### 6. questions —— 面试题库表（独立无外键）
 
-数据由 [import_question_bank.py](backend/scripts/import_question_bank.py) 从仓库根目录
-`题库/*.xlsx`（**V4 格式（2026-09-06 换代）**，已开放岗位共 451 题）导入，幂等可重跑。
-V4 相比 v13 的变化：大类由 5 类拆为 6 类（「场景与设计」拆为「系统设计题」+「场景题」）、
-新增第 16 列 `expression_points`（表达评估要点，供沟通表达维度评分）。
-xlsx 的 16 列规范/受控词表/导入命令/排障与新增岗位流程：给 P5 的完整手册见
+数据由 [import_question_bank.py](backend/scripts/import_question_bank.py) 从
+`backend/rag/数据/*-v5.json`（**V5 格式（2026-09-14 换代）**，5 岗位共 **5012 题**）导入，
+幂等可重跑。V5 相比 V4 的变化：题型由 6 类收敛为 4 类、面试阶段由 4 个收敛为 3 个
+（新增「深度压轴」、去掉「收尾交流」）、三级追问由一整段混合文本拆成 L1/L2/L3 **三个独立字段**、
+新增单题校准锚点与关联知识点。字段规范/导入命令/加岗流程见
 [docs/reports/REPORT_TO_P5.md](reports/REPORT_TO_P5.md)。
+
+> ⚠️ **表结构换代涉及删列，无法自动迁移**：老库须执行一次
+> `python -m scripts.import_question_bank --rebuild --yes`（会自动 `VACUUM INTO` 备份）。
+> 忘了跑会由 `database.py::_warn_questions_schema` 在启动时打 ERROR 日志提示。
 
 | 字段 | 类型 | 约束 | 说明 |
 | :--- | :--- | :--- | :--- |
 | id | int | 主键自增 | |
 | position_code | varchar(32) | index | 岗位 code，与 positions 表对齐 |
-| question_no | varchar(32) | unique(position_code, question_no) | 题库编号（tech_001 / scene_012 / code_003 / project_001 / behavior_001），跨岗位可重复 |
-| category | varchar(32) | not null | 大类：技术知识 / 系统设计题 / 场景题 / 编码与算法 / 项目深挖 / 行为面试 |
-| sub_category | varchar(64) | 默认空串 | 题目分类（如 Java基础 / 排障Debug） |
+| question_no | varchar(32) | unique(position_code, question_no) | **V5 原题 ID**（如 `JAVA_BACKEND-Q0001`），与 RAG 向量库元数据「原题ID」同键 |
+| category | varchar(32) | not null | 题型：技术知识题 / 场景应用题 / 项目经历题 / 行为素质题 |
 | difficulty | varchar(16) | not null | 难度：easy / medium / hard |
-| question | text | not null | 题干（已剥离软技能标签，可直接读给候选人） |
-| soft_skill_tag | varchar(64) | 默认空串 | 从题干剥离的「岗位软技能考察」标签，仅作选题参考 |
-| score_points | text | 默认空串 | 得分点：【basic x】【core y】【advanced z】三段加权合计 1.0，评分 Prompt 素材 |
-| follow_up_triggers | text | 默认空串 | 追问触发条件：L1 关键词触发 / L2 递进 / L3 极限 / 降级策略 |
-| reference_answer | text | 默认空串 | 参考答案 |
-| note | text | 默认空串 | 备注（高频考点、追问方向等选题参考） |
-| interview_stage | varchar(16) | not null | 面试阶段：开场热身(1) / 核心考察(2) / 深度考察(3) / 收尾交流(4) |
-| stage_order | int | not null | 阶段顺序 1~4 |
-| suggested_minutes | int | 默认 0 | 建议用时(分钟)，仅作参考 |
-| alternative_directions | text | 默认空串 | 替代回答方向（追问素材） |
-| excellent_example | text | 默认空串 | 优秀回答范例 |
-| expression_points | text | 默认空串 | 表达评估要点（V4 新增第 16 列，沟通表达维度评分素材） |
+| question | text | not null | 题干（可直接读给候选人） |
+| interview_stage | varchar(16) | not null | 面试阶段：开场热身(1) / 核心考察(2) / 深度压轴(3) |
+| stage_order | int | not null | 阶段顺序 1~3（V5 无该列，导入时按阶段派生） |
+| suggested_minutes | int | 默认 0 | 建议用时(分钟) |
+| keywords | text | 默认空串 | 核心关键词（换行分隔） |
+| exam_priority | varchar(16) | 默认空串 | 考点优先级：常规题 / 高频必考题 / 拓展题 |
+| basic_score_points | text | 默认空串 | 基础得分点 |
+| advanced_score_points | text | 默认空串 | 进阶得分点 |
+| follow_up_l1 | text | 默认空串 | L1 基础追问（原文含 `[触发]` / `[追问]` 标记行） |
+| follow_up_l2 | text | 默认空串 | L2 递进追问 |
+| follow_up_l3 | text | 默认空串 | L3 拓展追问（31% 的题为 3 行，首行是难度元信息） |
+| fallback_strategy | text | 默认空串 | 降级策略（考生答不出时的引导话术） |
+| calibration_anchor | text | 默认空串 | **单题校准锚点**（[技术水平]/[岗位匹配度] 判分标准，评估素材） |
+| related_knowledge | text | 默认空串 | 关联知识点（`{ID}\|{名称}\|{学习建议}` 多行） |
 
-查询接口：`GET /api/v1/questions`（按岗位/大类/难度/阶段过滤 + 分页，见 [API.md](API.md)）。
+查询接口：`GET /api/v1/questions`（按岗位/题型/难度/阶段/优先级过滤 + 分页，见 [API.md](API.md)）。
 
 ## 四、关键设计决策
 
@@ -177,7 +182,7 @@ xlsx 的 16 列规范/受控词表/导入命令/排障与新增岗位流程：�
 6. **报告一对一 unique 约束**：数据库层面杜绝一场面试两份报告。
 7. **级联删除**（`ondelete=CASCADE` + `delete-orphan`）：删除用户/面试自动清理全部关联数据，无孤儿记录。
 8. **索引最小化**：只在真实查询路径建索引——登录按 username、面试列表按 user_id、报告按 interview_id、状态筛选按 status、题库按 position_code。不建冗余索引。
-9. **题库表化**：题库 xlsx 由导入脚本落库（questions 表），面试官对话逻辑（后端开发 B 负责）按岗位/阶段/难度从库抽题；题库更新只需重跑导入脚本，代码零改动。题干的「岗位软技能考察」元信息在导入时剥离到 `soft_skill_tag` 列，避免暴露给候选人。
+9. **题库表化（V5）**：题库 json（`backend/rag/数据/*-v5.json`）由导入脚本落库（questions 表），面试官算法（`backend/interviewer_new/`）按岗位/阶段/难度从库抽题；题库更新只需重跑导入脚本，代码零改动。**V5 的关键改进是把三级追问拆成独立列**——V4 时代下游要用 119 行正则从一段混合文本里挖结构化信息，现在直接读字段即可（详见 [REPORT_TO_P2_INTERVIEWER_NEW.md](reports/REPORT_TO_P2_INTERVIEWER_NEW.md)）。
 
 ## 五、数据流示例（一场完整面试的落库过程）
 

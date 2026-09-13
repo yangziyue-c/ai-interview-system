@@ -263,62 +263,69 @@ GET /reports/growth
 ## 5. 题库
 
 题库数据来自 `questions` 表（由 `backend/scripts/import_question_bank.py` 从
-`题库/*.xlsx` 导入。**题库 V4（2026-09-06 换代）**：3 个已开放岗位共 451 题
-——backend 151 + frontend 150 + test_engineer 150；另有算法工程师等岗位题库
-待开放后导入）。主要供面试官对话逻辑（选题/追问）与评估逻辑（评分素材）使用。
+`backend/rag/数据/*-v5.json` 导入。**题库 V5（2026-09-14 换代）**：5 个岗位共 **5012 题**
+——backend 2146 + frontend 734 + test_engineer 667 + algorithm 655 + system_design 810）。
+主要供面试官算法（选题/追问）与评估服务（单题评分素材）使用。
 
-> Excel 文件的 16 列规范、受控词表、导入命令与排障给 P5 同学的完整手册见
-> [docs/reports/REPORT_TO_P5.md](reports/REPORT_TO_P5.md)（改 xlsx 后重跑导入即生效，后端零改动）。
+> 18 字段规范、导入命令与排障见 [docs/reports/REPORT_TO_P5.md](reports/REPORT_TO_P5.md)；
+> 字段变更对照与目录归属见
+> [docs/reports/REPORT_TEAM_V5_LAYOUT_AND_API.md](reports/REPORT_TEAM_V5_LAYOUT_AND_API.md)。
 
 ### 5.1 题库列表（过滤 + 分页）
 
 ```
-GET /questions?position=backend&category=技术知识&difficulty=easy&stage=开场热身&q=HashMap&limit=20&offset=0
+GET /questions?position=backend&category=技术知识题&difficulty=easy&stage=开场热身&q=JVM&limit=20&offset=0
 ```
 
 全部查询参数可选：
 
 | 参数 | 说明 |
 | :--- | :--- |
-| position | 岗位 code（backend / frontend / test_engineer） |
-| category | 大类（受控词表，V4 拆分为 6 类）：技术知识 / 系统设计题 / 场景题 / 编码与算法 / 项目深挖 / 行为面试 |
+| position | 岗位 code（backend / frontend / test_engineer / algorithm / system_design） |
+| category | 题型（受控词表，V5 共 4 类）：技术知识题 / 场景应用题 / 项目经历题 / 行为素质题 |
 | difficulty | 难度：easy / medium / hard |
-| stage | 面试阶段：开场热身 / 核心考察 / 深度考察 / 收尾交流 |
+| stage | 面试阶段：开场热身 / 核心考察 / 深度压轴 |
+| priority | 考点优先级（V5 新增，不做受控校验）：常规题 / 高频必考题 / 拓展题 |
 | q | 题干模糊搜索关键词 |
 | limit / offset | 分页（limit 默认 20，最大 100） |
+
+> `category` / `difficulty` / `stage` 走受控词表校验，非法值返回 **400**（`code=40000`），
+> 避免题库改名后静默返回空集。
 
 返回：
 
 ```json
 { "code": 0, "message": "ok", "data": {
-  "total": 451,
+  "total": 5012,
   "items": [
     {
       "id": 1,
       "position_code": "backend",
-      "question_no": "tech_001",
-      "category": "技术知识",
-      "sub_category": "Java基础",
+      "question_no": "JAVA_BACKEND-Q0001",
+      "category": "技术知识题",
       "difficulty": "easy",
-      "question": "Java中==和equals()的区别是什么？",
-      "soft_skill_tag": "",
-      "score_points": "【basic 0.3】……【core 0.5】……【advanced 0.2】……",
-      "follow_up_triggers": "【L1-触发追问】……【L2-递进追问】……【L3-极限追问】……【降级策略】……",
-      "reference_answer": "完整参考答案……",
-      "note": "高频考点，equals与hashCode契约是必追问点",
+      "question": "JVM、JDK、JRE 三者有什么区别和联系？",
       "interview_stage": "开场热身",
       "stage_order": 1,
-      "suggested_minutes": 3,
-      "alternative_directions": "方向1：……方向2：……",
-      "excellent_example": "优秀回答范例……",
-      "expression_points": "表达评估要点（V4 新增，沟通表达维度评分素材）……"
+      "suggested_minutes": 2,
+      "keywords": "JVM\nJDK\nJRE",
+      "exam_priority": "高频必考题",
+      "basic_score_points": "JVM 是运行字节码的虚拟机……",
+      "advanced_score_points": "JDK 包含 JRE 和开发工具……",
+      "follow_up_l1": "[触发] 答出基础得分点时触发\n[追问] 你提到了JVM，能具体说说它的定义吗？",
+      "follow_up_l2": "[触发] 基础得分点全对时触发\n[追问] JVM 的底层实现原理是什么？",
+      "follow_up_l3": "[触发] 考生展示工程经验时触发\n[追问] 在实际项目中你用过 JVM 吗？",
+      "fallback_strategy": "如果候选人一时答不上来，先引导聚焦核心概念……",
+      "calibration_anchor": "[技术水平] 能准确阐述核心概念与原理边界……\n[岗位匹配度] ……",
+      "related_knowledge": "java-backend-kp-3180|JVM入门与体系结构|理解JVM运行时数据区……"
     }
   ]
 } }
 ```
 
-> `question` 已剥离「【岗位软技能考察：X】」元信息（独立存于 `soft_skill_tag`），
-> 可直接读给候选人。选题约定见 [REPORT_TO_P2.md](reports/REPORT_TO_P2.md)。
+> `question_no` 是 **V5 原题 ID**，与 RAG 向量库元数据的「原题ID」同键，可双向回查。
+> 三级追问字段的原文含 `[触发]` / `[追问]` 标记行，解析由 `backend/interviewer_new/`
+> 负责（见 [REPORT_TO_P2_INTERVIEWER_NEW.md](reports/REPORT_TO_P2_INTERVIEWER_NEW.md)）。
 
 ### 5.2 题库详情
 
@@ -327,6 +334,36 @@ GET /questions/{question_id}
 ```
 
 返回单题全量字段（结构同 5.1 的 item）。
+
+> 该接口也是评估侧取「单题校准锚点」素材的入口（`calibration_anchor` /
+> `basic_score_points` / `advanced_score_points`），见
+> [REPORT_TO_P3_EVALUATOR_NEW.md](reports/REPORT_TO_P3_EVALUATOR_NEW.md)。
+
+### 5.3 RAG 语义检索（透传知识库服务）
+
+```
+POST /rag/search
+```
+
+```json
+{ "query": "Redis 缓存穿透怎么办", "job": "Java 后端开发工程师",
+  "mode": "select", "top": 3, "level": null }
+```
+
+| 参数 | 说明 |
+| :--- | :--- |
+| query | 检索文本：面试问题或考生表述 |
+| job | 岗位全名过滤（可选），如 `Java 后端开发工程师`（注意与 `position` code 不同） |
+| mode | `select`=出题（Top-N 道不同题）/ `expand`=深挖（命中题的全部层级片段） |
+| top | select 模式返回几道题（1~20，默认 3） |
+| level | 层级过滤（可选）：原题 / L1 / L2 / L3 / 语义变体… |
+
+返回 `data`：`{available, mode, results: [{score, 题目, 参考答案, 原题ID, 层级, 岗位, 题型, 难度, 面试阶段, 考点优先级}]}`；
+`mode=expand` 时**响应结构不同**：不含 `results`，而是 `{mode, 原题ID, 命中题目, 全层级片段, 片段数}`（`命中题目` 为单元素数组）。
+
+> **服务不可用时返回 `available: false` + 空结果，而非 500**——调用方可优雅降级。
+> RAG 服务本体是独立进程（8003，`backend/rag/`，由 `start.py` 拉起），首次启动需
+> 下载约 4.5GB 模型；出题链的自动兜底见 `ai_interviewer.py::_generate_via_rag`。
 
 ---
 
@@ -365,9 +402,10 @@ GET /health                { "code": 0, "message": "ok", "data": { "status": "he
 
 ### P2：AI 面试官
 
-> **2026-09-06 起出题已由题库策略原生完成**（`backend/interviewer/`，最高优先级）：
+> **2026-09-14 起出题由题库策略原生完成**（`backend/interviewer_new/`，最高优先级）：
 > 面试官算法已落地主项目，`AI_INTERVIEWER_URL` 仅为**扩展位**——只在题库策略
-> 未命中（如岗位在题库无题）时才会被调用。以下契约供扩展位服务对接：
+> 未命中（如岗位在题库无题）时才会被调用。数据源链为
+> `题库策略 > RAG 语义检索 > 外部服务 > LLM 直连 > 内置 Mock`。以下契约供扩展位服务对接：
 
 ```
 POST {AI_INTERVIEWER_URL}/generate

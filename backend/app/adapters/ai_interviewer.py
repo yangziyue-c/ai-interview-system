@@ -1,10 +1,11 @@
 """P2 适配器：AI 面试官（生成开场题与动态追问）
 
-数据源优先级（2026-09-06 起，题库策略已原生落地）：
-  1. 题库策略（questions 表 451 题，P2 算法落地，见 interviewer/question_bank.py）
-  2. AI_INTERVIEWER_URL（外部 P2 服务的扩展位）
-  3. LLM_API_KEY（直接调 OpenAI 兼容大模型）
-  4. 内置 Mock 题库
+数据源优先级（2026-09-14 起，V5 知识库换代：5012 题 / 5 岗位）：
+  1. 题库策略（questions 表，见 interviewer_new/question_bank.py）
+  2. RAG 语义检索（backend/rag/，8003，题库未命中时的语义兜底，P1 新增）
+  3. AI_INTERVIEWER_URL（外部服务的扩展位）
+  4. LLM_API_KEY（直接调 OpenAI 兼容大模型）
+  5. 内置 Mock 题库
 任一路径失败均逐级降级，流程不中断；网络级（HTTP/LLM）各有 15 秒超时预算，
 逐级串行时最坏叠加（题库未命中 + 外部服务宕机 + LLM 已配置 ≈ 30 秒到 Mock）。
 
@@ -26,13 +27,14 @@ Content-Type: application/json
 约定：15 秒内未返回 / 非 2xx / 未配置 URL 时，后端自动降级，保证面试流程不中断。
 """
 import logging
+import time
 
 import httpx
 
 from app.adapters.base import AdapterTimeoutError, HTTPAdapterBase
 from app.config import settings
 from app.database import async_session
-from interviewer import question_bank
+from interviewer_new import question_bank
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +70,23 @@ _LLM_SYSTEM_PROMPT = (
     "只输出下一个面试问题的文本本身，不要输出任何解释、前缀或多余字符。"
 )
 
-_POSITION_LABELS = {"backend": "后端开发工程师", "frontend": "前端开发工程师", "test_engineer": "测试开发工程师"}
+_POSITION_LABELS = {
+    "backend": "后端开发工程师",
+    "frontend": "前端开发工程师",
+    "test_engineer": "测试开发工程师",
+    "algorithm": "算法工程师",
+    "system_design": "系统设计工程师",
+}
+
+# RAG 向量库的岗位过滤值 = V5 交付包的岗位全名（与上面的展示名**不同**，勿混用：
+# backend 是「Java 后端开发工程师」而非「后端开发工程师」，传错会过滤出空集）
+_RAG_JOB_LABELS = {
+    "backend": "Java 后端开发工程师",
+    "frontend": "Web 前端开发工程师",
+    "test_engineer": "测试开发工程师",
+    "algorithm": "算法工程师",
+    "system_design": "系统设计工程师",
+}
 
 
 class AIInterviewerAdapter(HTTPAdapterBase):
@@ -79,13 +97,16 @@ class AIInterviewerAdapter(HTTPAdapterBase):
 
     def __init__(self) -> None:
         super().__init__(settings.AI_INTERVIEWER_URL, "P2-AI面试官")
+        # RAG 健康探测缓存（探测本身有 1 秒超时，缓存避免每轮白等）
+        self._rag_available = False
+        self._rag_checked_at = float("-inf")  # 首次调用立即探测
 
     # ---------------- 数据源实现（统一签名 async -> str | None，None = 落下一级） ----------------
 
     async def _generate_via_bank(
         self, position: str, round_no: int, history: list[dict], is_follow_up: bool
     ) -> str | None:
-        """题库策略（最高优先级）：策略决策在 interviewer/question_bank.py 的 pick_next
+        """题库策略（最高优先级）：策略决策在 interviewer_new/question_bank.py 的 pick_next
 
         自开短会话（只读）：刻意不复用请求级会话——请求会话里可能有未提交的
         脏写（答案/轮次），会话内 SELECT 会触发 autoflush 把写锁提前到出题全程
@@ -101,6 +122,72 @@ class AIInterviewerAdapter(HTTPAdapterBase):
         except Exception as exc:  # noqa: BLE001 - 题库异常不阻断面试，落下一级数据源
             logger.warning("题库策略出题失败(%s)，降级", exc, exc_info=True)
             return None
+
+    async def _rag_ready(self) -> bool:
+        """RAG 服务健康探测（结果按 RAG_HEALTH_CACHE_SECONDS 缓存）
+
+        未启用时每轮都去连会白等超时；缓存后最坏一个窗口才重试一次。
+        探测超时取 0.5 秒：Windows 上「端口无监听」不会快速 RST，会耗满整个超时
+        （实测 1s 超时单次耗时 1.0~1.2s），RAG 没起时这个代价要乘以面试轮数。
+        """
+        if not settings.RAG_API_URL:
+            return False
+        now = time.monotonic()
+        if now - self._rag_checked_at < settings.RAG_HEALTH_CACHE_SECONDS:
+            return self._rag_available
+        self._rag_checked_at = now
+        try:
+            async with httpx.AsyncClient(timeout=0.5) as client:
+                resp = await client.get(f"{settings.RAG_API_URL}/health")
+                self._rag_available = resp.status_code == 200
+        except Exception:  # noqa: BLE001 - 探测失败即视为不可用
+            self._rag_available = False
+        return self._rag_available
+
+    async def _generate_via_rag(self, position: str, history: list[dict]) -> str | None:
+        """RAG 语义选题（P1 新增，插在题库策略之下）：仅在题库策略未命中时生效
+
+        用最后一条候选人回答（冷启动用岗位名）做语义召回，取 Top-N 道不同题，
+        返回首个本场未问过的题干。未配置 / 服务未就绪 / 超时 / 结果全重复 → None。
+
+        签名刻意不含 round_no / is_follow_up：语义召回只关心「考生说了什么」
+        与「岗位是什么」，轮次由调用方（题库策略）负责；收了不用的参数会让读者
+        误以为 RAG 分支有轮次语义。
+
+        注：V5 题库覆盖 5 个岗位共 5012 题，题库策略极少返回 None，因此这一级
+        多数场次不会被调用——它的价值是「题库缺失时的语义兜底」；主动使用的
+        入口见 `POST /api/v1/rag/search`（透传 RAG 服务）。
+        """
+        if not await self._rag_ready():
+            return None
+        job = _RAG_JOB_LABELS.get(position)
+        if not job:
+            # 未知岗位 fail-closed：宁可跳过 RAG，也不能不带岗位过滤地全库检索
+            # （那会把别的岗位的题读给候选人，且题干不在本题库 → 追问链断）
+            logger.info("岗位 %s 未登记 RAG 全名，跳过 RAG 源", position)
+            return None
+        query = (question_bank.last_candidate_answer(history)
+                 or _POSITION_LABELS.get(position, position))
+        asked = {(m.get("content") or "").strip()
+                 for m in history if m.get("role") == "interviewer"}
+        try:
+            async with httpx.AsyncClient(timeout=settings.RAG_TIMEOUT_SECONDS) as client:
+                resp = await client.post(
+                    f"{settings.RAG_API_URL}/rag/search",
+                    json={"query": query, "job": job,
+                          # level="原题"：向量库里「原题」只占约 7%，其余是语义变体/
+                          # 追问/得分点等改写片段——拿那些当题干会出现「你提到了X…」
+                          # 这类无上下文的句子，且文本与题库不一致会导致锚点丢失
+                          "mode": "select", "top": 3, "level": "原题"},
+                )
+                resp.raise_for_status()
+                for item in (resp.json().get("results") or []):
+                    text = str(item.get("题目") or "").strip()
+                    if text and text not in asked:
+                        return text
+        except Exception as exc:  # noqa: BLE001 - 任何失败都落下一级
+            logger.info("RAG 语义选题不可用(%s)，降级下一级", exc)
+        return None
 
     async def _generate_via_http(self, payload: dict) -> str | None:
         """外部 P2 服务（扩展位）：失败/契约不符返回 None（落下一级）"""
@@ -186,10 +273,11 @@ class AIInterviewerAdapter(HTTPAdapterBase):
                 return SHORT_ANSWER_FOLLOW_UP
             return FOLLOW_UP_QUESTIONS[(round_no - 2) % len(FOLLOW_UP_QUESTIONS)]
 
-        # 数据源链：题库策略 → 外部 P2 → LLM 直连 → 内置 Mock
+        # 数据源链：题库策略 → RAG 语义检索 → 外部服务 → LLM 直连 → 内置 Mock
         # 每级实现内自行捕获异常并返回 None（None = 落下一级），首个非空即返回
         for source in (
             lambda: self._generate_via_bank(position, round_no, history, is_follow_up),
+            lambda: self._generate_via_rag(position, history),
             lambda: self._generate_via_http(payload),
             lambda: self._generate_via_llm(payload),
             _mock,

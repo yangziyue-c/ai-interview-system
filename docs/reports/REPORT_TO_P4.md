@@ -1,5 +1,11 @@
 # 致 P4（前端）同学：页面需求与接口权威说明
 
+> ⚠️ **2026-09-14 起题库换代到 V5**：岗位增至 **5 个**（新增算法工程师、系统设计工程师）、
+> 题库题型/阶段受控词表有变、新增 `POST /api/v1/rag/search` 语义检索接口。
+> 前端**无需改代码**（岗位列表走 `GET /positions`），但建议验证 5 张岗位卡片的布局。
+> 变更详情见 [REPORT_TEAM_V5_LAYOUT_AND_API.md](REPORT_TEAM_V5_LAYOUT_AND_API.md) 第 4.4 节；
+> 接口字段以 [docs/API.md](../API.md) 为唯一权威。
+
 > 来自 P1（后端）。本文档由 `frontend-spec.md`（页面需求部分）+ `FRONTEND_HANDOFF.md`
 > （接口勘误与权威）**合并而成（2026-09-06）**——原 frontend-spec 的接口部分
 > 与后端实际实现大量不符，已作废；开发/联调以本文档第 2 节与 [API.md](../API.md)
