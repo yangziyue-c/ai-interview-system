@@ -4,9 +4,18 @@
 > **重要分工变化（2026-09-04）**：面试官对话逻辑由你负责，**出题不再走 AI 生成**，
 > 题目从已入库的面试题库（`questions` 表）中抽取；追问按题库的「追问触发条件」生成。
 >
-> **重大更新（2026-09-06）：你的算法已由 P1 适配落地进主项目，执行版在
-> `backend/interviewer_new/`（question_bank.py）**——以后修改算法直接改那个目录，
-> 修改指南、踩坑清单与自测方法见 [backend/interviewer_new/README.md](../../backend/interviewer_new/README.md)。
+> ⚠️ **2026-09-14 起题库已换代到 V5**（`backend/rag/数据/*-v5.json`，5012 题 / 5 岗位）：
+> V4 的追问素材挤在一个字段里，原算法的 119 行解析层整体失效、L1 触发命中率仅 66%、
+> 收尾题池因 V5 无「收尾交流」阶段而必然为空。1 号据此做了适配实现，
+> **最新说明（含教程）见 [REPORT_TO_P2_INTERVIEWER_NEW.md](REPORT_TO_P2_INTERVIEWER_NEW.md)**
+> （为什么改 / 为什么这么改 / 具体怎么用 / **教程：之后怎么改**）。
+> 算法速览与与旧版差异见 [backend/interviewer_new/README.md](../../backend/interviewer_new/README.md)。
+>
+> 🧭 **`backend/interviewer_new/` 是「示范代码」，可在此基础上修改。**
+> 它有一组单元测试（`tests/test_question_bank.py`）与效果回归脚本
+> （`scripts/simulate_interview.py`）可当基线；只要 `pick_next` 的签名不变，
+> 集成层（`app/adapters/ai_interviewer.py`）一行都不用动，**也可以整个推翻重写**。
+>
 > 外部独立服务（下文第一节）已降为**扩展位**：仅当题库策略未命中
 > （如新岗位在题库无题）时，主后端才会调用 `AI_INTERVIEWER_URL`。
 
@@ -36,12 +45,19 @@ POST {你的服务}/generate
 期望返回：`{ "question": "你下一题的题目文本" }`
 
 **重要变化：岗位不再只有 backend / frontend 两个枚举。**
-后端已改为岗位表动态维护（预留 5 个岗位位），岗位清单可能调整。你收到的
-`position` 永远是岗位 **code**（当前可能值：`backend` / `frontend` / `test_engineer`），
-**请按 code 过滤题库，不要写死岗位列表**。约定 15 秒内未返回 / 非 2xx / 未配置 URL 时，
-后端自动降级为内置 Mock 题库，保证流程不中断——你的服务可以放心迭代。
+后端已改为岗位表动态维护，**2026-09-14 起开放 5 个**：
+`backend` / `frontend` / `test_engineer` / `algorithm` / `system_design`（清单可能调整）。
+你收到的 `position` 永远是岗位 **code**，**请按 code 过滤题库，不要写死岗位列表**。
+约定 15 秒内未返回 / 非 2xx / 未配置 URL 时，后端自动降级为内置 Mock 题库，
+保证流程不中断——你的服务可以放心迭代。
 
-## 二、题库 v13 新格式（已入库，直接查库/API，无需解析 xlsx）
+## 二、题库格式（⚠️ 本节为 **V4 口径**，V5 已换代——见开头的换代说明）
+
+> **V5 现状速览**：**5012 题 / 5 岗位**（backend 2146 + frontend 734 + test_engineer 667 +
+> algorithm 655 + system_design 810），**19 列**；追问已拆成 `follow_up_l1` / `l2` / `l3`
+> 三个独立字段且**格式 100% 规整**——**不再需要任何文本解析**（V4 那 119 行解析层已整体作废）。
+> 字段规范与算法适配见 [REPORT_TO_P2_INTERVIEWER_NEW.md](REPORT_TO_P2_INTERVIEWER_NEW.md)；
+> 数据生产口径见 [REPORT_TO_P5.md](REPORT_TO_P5.md)。**以下 V4 内容仅作回滚参考。**
 
 题库同学已交付题库文件（`题库/*.xlsx`，**V4 换代版**：已开放岗位共 451 题——
 backend 151 + frontend 150 + test_engineer 150），
@@ -103,7 +119,10 @@ GET /api/v1/questions?position=backend&category=技术知识&difficulty=easy&sta
 命中"若提到 X"则用对应追问；均未命中则用"若回答笼统/缺乏细节"兜底；再没有时
 按 L2/L3/降级策略随候选人水平递进。
 
-## 三、抽题策略约定（开场 vs 追问 vs 收尾）
+## 三、抽题策略约定（⚠️ V4 口径；V5 的执行版已落在 `backend/interviewer_new/`）
+
+> **V5 的关键差异**：收尾题**不再按 `interview_stage=收尾交流` 取**（V5 只有 3 个阶段，
+> 没有「收尾交流」），改为按 **`category=行为素质题`** 建池。核心节奏（1 开场 + 6 追问 = 7 轮）不变。
 
 后端流程：**1 道开场题（round=1）+ 6 道追问（round=2~7），共 7 轮**。
 
@@ -117,9 +136,11 @@ GET /api/v1/questions?position=backend&category=技术知识&difficulty=easy&sta
 
 ## 四、其他约定
 
-- **你的算法执行版位置**：`backend/interviewer_new/question_bank.py`（修改算法只动该目录，
-  修改指南与踩坑清单见 backend/interviewer_new/README.md，测试 `cd backend && pytest` 共 66 个用例）；
-- 题库文件保留在仓库根目录 `题库/`（P5 更新后重跑导入脚本即可同步到库）；
+- **你的算法执行版位置**：`backend/interviewer_new/question_bank.py`（**示范代码，可在此基础上修改**；
+  修改算法只动该目录，修改指南与踩坑清单见 backend/interviewer_new/README.md
+  与 [REPORT_TO_P2_INTERVIEWER_NEW.md](REPORT_TO_P2_INTERVIEWER_NEW.md) 第四节的教程；
+  测试 `cd backend && pytest` 共 68 个用例）；
+- 题库数据源已换代：现为 `backend/rag/数据/*-v5.json`（仓库根 `题库/` 的 V4 xlsx **已于 2026-09-14 删除**，需要回看时从 Git 历史取）；
 - 后端完整接口约定见 [API.md](../API.md) 附录「P2：AI 面试官」；
 - 联调时后端 Swagger：http://localhost:8001/docs 。
 

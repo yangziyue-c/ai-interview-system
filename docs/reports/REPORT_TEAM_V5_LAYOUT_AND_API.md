@@ -37,15 +37,15 @@
 |---|---|---|---|
 | `backend/app/` | **1 号** | 可改 | 集成层：模型 / API / schema / 适配器 / 配置 |
 | `backend/scripts/`、`backend/tests/` | **1 号** | 可改 | 导入脚本、仿真脚本、测试 |
-| `backend/interviewer_new/` | **2 号** | 可改 | 面试官算法（V5 版），1 号建、已移交 2 号 |
+| `backend/interviewer_new/` | **2 号** | 可改 | 面试官算法（V5 版）。**⚠️ 1 号写的是「示范代码」——主体是 2 号，可照改**（详见 `REPORT_TO_P2_INTERVIEWER_NEW.md` 开头） |
 | `backend/interviewer/` | 2 号（旧版） | **冻结** | V4 数据源版，不再被任何代码引用；确认新版稳定后可删 |
-| `backend/evaluator_new/` | **3 号** | 3 号可改，他人只读 | 评估服务**增强版**（Flask，8002，`start.py` 已切到此版） |
+| `backend/evaluator_new/` | **3 号** | 3 号可改，他人只读 | 评估服务**增强版**（Flask，8002，`start.py` 已切到此版）。**⚠️ 同为「示范代码」——评分主体是 3 号**（详见 `REPORT_TO_P3_EVALUATOR_NEW.md` 开头） |
 | `backend/evaluator/` | 3 号（原版） | 留档 | 评估服务原版；确认新版稳定后可删，或把 `start.py` 切回 |
-| `frontend/` | **4 号** | 4 号可改，他人只读 | 正式前端（Vite） |
-| `frontend_test/` | **1 号** | 可改 | 零依赖演示前端（5273） |
+| `frontend/` | **4 号** | 4 号可改，他人只读 | 正式前端（Vite）——**前端形态由 4 号决定** |
+| `frontend_test/` | **1 号** | 可改 | 零依赖演示前端（5273）。**⚠️ 前端的「演示代码」，不是正式前端**；P4 交付后由 1 号停用/删除（详见 `REPORT_TO_P4.md` 第 7 节） |
 | `backend/rag/代码/` | 5 号交付 → **1 号适配** | 谨慎 | RAG 服务代码；5 号更新交付包时**必须保留 1 号的 12 处改动** |
 | `backend/rag/数据/`、`vector_db/`、`说明/` | **5 号** | 只读 | 大文件（向量库 674MB）已 git 忽略；⚠️ `vector_db/` **必须保持纯 ASCII 名**（chromadb 打不开含非 ASCII 的绝对路径） |
-| `题库/` | **5 号** | 只读 | V4 xlsx 历史（已退出流水线） |
+| ~~`题库/`~~ | — | **已于 2026-09-14 删除** | V4 xlsx 历史；已被 `backend/rag/数据/*-v5.json` 取代，本体删除、需要时从 Git 历史取 |
 | `docs/`、`CLAUDE.md`、`README.md` | **1 号** | 关键改动请先在群里说 | 项目文档 |
 
 ---

@@ -29,8 +29,8 @@ requests>=2.31.0
 # 音频上传
 python-multipart>=0.0.9
 
-# 题库导入（scripts/import_question_bank.py 读取 题库/*.xlsx）
-openpyxl>=3.1.0
+# （V4 时代的 openpyxl 已随 xlsx 题库流水线一并移除：
+#   导入脚本现读 backend/rag/数据/*-v5.json，全仓库无 openpyxl 引用）
 
 # 测试
 pytest>=8.0.0

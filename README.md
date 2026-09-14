@@ -1,7 +1,7 @@
 # AI 模拟面试与能力提升系统
 
-面向计算机专业学生的 AI 模拟面试训练系统，覆盖 **后端开发工程师**、**前端开发工程师**、
-**测试开发工程师** 三个岗位：
+面向计算机专业学生的 AI 模拟面试训练系统，覆盖 **5 个技术岗位**：后端开发、前端开发、
+测试开发、算法工程师、系统设计工程师：
 
 - 🤖 **岗位化面试对话**：题库策略出题（**V5 知识库已入库 5012 题 / 5 岗位**）——开场热身/核心考察/深度压轴
   三阶段 + 锚点追问链（L1→L2→L3→降级引导，按考生回答质量动态分流）动态追问，支持语音/文本
@@ -43,13 +43,12 @@ project/
 │   ├── scripts/              # 题库导入（import_question_bank.py）+ 面试流程仿真（simulate_interview.py）
 │   ├── static/               # 前端 dist 挂载目录（P4 构建产物放这里）
 │   ├── uploads/              # 面试录音文件
-│   ├── tests/                # 全流程回归测试（66 用例）
+│   ├── tests/                # 全流程回归测试（68 用例）
 │   ├── requirements.txt
 │   ├── .env.example          # 环境变量模板
 │   └── start.bat             # Windows 一键启动（自动拉起 RAG + 评估 + 演示前端 + 主后端）
 ├── frontend/                 # 正式前端（P4 负责，构建产物拷 backend/static/）
 ├── frontend_test/            # 演示前端（P1，零依赖纯 HTML/JS，start.bat 自动拉起到 5273）
-├── 题库/                      # 岗位化面试题库 xlsx V4（P5 历史交付，已退出流水线）
 ├── docs/
 │   ├── API.md                # 接口文档（唯一权威）
 │   ├── DATABASE.md           # 数据库设计文档
@@ -174,7 +173,7 @@ idle → in_progress → finished（终态）
 
 ```bash
 cd backend
-D:/anaconda3/envs/ai_interview/python.exe -m pytest    # 66 个用例全绿（测试库 test_interview.db，不污染开发库）
+D:/anaconda3/envs/ai_interview/python.exe -m pytest    # 68 个用例全绿（测试库 test_interview.db，不污染开发库）
 ```
 
 > 本机 `conda run` 有插件 bug，请直接调用 ai_interview 环境内的 python.exe
