@@ -3,9 +3,29 @@
 > ⚠️ **2026-09-14 起流水线已换代**：数据源由 `题库/*.xlsx`（V4）改为
 > `backend/rag/数据/*-v5.json`（V5，5012 题 / 5 岗位，18 字段）。
 > 本文档第 2 节的 **Excel 16 列规范已降级为 V4 历史**（仅回滚时参考）；
-> V5 字段规范、导入命令与 P1 的 12 处适配改动见
+> V5 字段规范、导入命令与 P1 的 13 处适配改动见
 > [REPORT_TO_P5_V5_PACKAGE_REVIEW.md](REPORT_TO_P5_V5_PACKAGE_REVIEW.md)
 > 与 [REPORT_TEAM_V5_LAYOUT_AND_API.md](REPORT_TEAM_V5_LAYOUT_AND_API.md)。
+
+> 🚨 **向量库路径铁律（2026-09-14 实测，交付新知识库前务必看）**
+>
+> **向量库目录必须用纯 ASCII 名**（项目内现名 `backend/rag/vector_db/`，**禁止中文名**）。
+> chromadb **打不开「含非 ASCII 字符的绝对路径」**：实测 10/10 失败并报
+> `Error loading hnsw index`——这个报错会把人引向"索引损坏/版本不兼容"，
+> 而真正的原因只是路径字符串里有中文。
+>
+> **两个方向都受灾**：
+> - **读取侧**：`PersistentClient(path="…/向量库/chroma_db_v2")` 直接打不开；
+> - **构建侧**：用中文绝对路径跑 `02_build_vector_db.py`，日志一切正常
+>   （连 `col.count()` 都如实返回 74011，因为它读的是 SQLite 记录数而不是 HNSW 图索引），
+>   但**产出的库缺 HNSW 索引文件**，事后完全无法打开。
+>
+> **代价**：P1 曾据此误判为「chromadb 版本不兼容」，白跑过一次 **6 小时**的全量重建。
+> 完整排查过程、对照实验与修复方案见
+> [REPORT_TO_P5_V5_PACKAGE_REVIEW.md](REPORT_TO_P5_V5_PACKAGE_REVIEW.md) **第六节**。
+>
+> **对你的要求**：交付/更新知识库时，**直接把向量库目录命名为 `vector_db/`**
+> （或任何纯 ASCII 名），别等出问题再回头查。脚本已做旧名自动升级，但不如命名时就避开。
 
 > 来自 P1（后端）。你在团队中负责整理/维护各岗位面试题库（V5：`backend/rag/数据/`）。
 > 本文档是 **知识库 → 数据库 questions 表的完整操作手册**：数据长什么样、怎么导入、

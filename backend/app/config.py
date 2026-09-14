@@ -39,8 +39,10 @@ class Settings(BaseSettings):
     # ---- RAG 语义检索（V5 知识库，backend/rag/，题库策略未命中时的兜底源）----
     # 默认指向 start.py 拉起的本地服务（8003）；置空字符串可完全禁用该数据源
     RAG_API_URL: str = "http://localhost:8003"
-    # 单次检索超时：CPU 上 bge-m3 编码 + reranker 精排，通常 1~3 秒
-    RAG_TIMEOUT_SECONDS: float = 5.0
+    # 单次检索超时：CPU 上 bge-m3 编码 + Top-20 候选 reranker 精排，**实测约 20~30 秒**
+    # （瓶颈是 reranker：20 个 (query, doc) 对逐条打分；向量召回本身仅需 0.1 秒）。
+    # 取 60 秒留 2 倍余量——宁可等，也不要误判「RAG 不可用」而白白降级到下一级数据源。
+    RAG_TIMEOUT_SECONDS: float = 60.0
     # 健康探测结果缓存秒数（RAG 未启用时避免每轮白等超时；取值偏大以摊薄探测开销）
     RAG_HEALTH_CACHE_SECONDS: float = 120.0
 

@@ -49,16 +49,27 @@ def _pick(*candidates):
             return c
     raise FileNotFoundError(
         "路径不存在，已尝试：\n  " + "\n  ".join(candidates)
-        + "\n请确认交付包结构完整（向量库/、数据/ 与本脚本所在目录同级）。"
+        + "\n请确认交付包结构完整（vector_db/、数据/ 与本脚本所在目录同级）。"
     )
 BASE = _pick(os.path.join(_PKG_ROOT, "数据"),
              r"C:\Users\litao\WorkBuddy\2026-09-10-21-25-17\ai-interview-data\v5")
 FILES = ["java-rag-v2.jsonl", "web-rag-v2.jsonl", "test-rag-v2.jsonl",
          "algorithm-rag-v2.jsonl", "system-design-rag-v2.jsonl"]
-OUT_DIR = _pick(os.path.join(_PKG_ROOT, "向量库"), _PKG_ROOT)   # 写断点文件的位置（向量库目录优先）
+
+# ★ 向量库目录名必须是纯 ASCII：chromadb 打不开「含非 ASCII 字符的绝对路径」，
+#   且**构建侧同样受影响**（实测产出物缺 HNSW 索引文件、事后无法打开）。
+#   旧交付包目录名为「向量库/」，此处自动升级。
+VECTOR_DIR = os.path.join(_PKG_ROOT, "vector_db")
+_LEGACY_VECTOR_DIR = os.path.join(_PKG_ROOT, "向量库")
+if not os.path.exists(VECTOR_DIR) and os.path.exists(_LEGACY_VECTOR_DIR):
+    print("[init] 旧目录名「向量库」→ vector_db（chromadb 不支持含中文的绝对路径）",
+          flush=True)
+    os.rename(_LEGACY_VECTOR_DIR, VECTOR_DIR)
+
+OUT_DIR = VECTOR_DIR                                  # 写断点文件的位置（由 makedirs 创建）
 # 向量库**输出目录**：构建/重建时它本就不存在，故不走 _pick 的存在性校验
-# （chromadb.PersistentClient 会自动创建；父目录「向量库/」由下方 makedirs 保证）
-CHROMA_DIR = os.path.join(_PKG_ROOT, "向量库", "chroma_db_v2")
+# （chromadb.PersistentClient 会自动创建；父目录 vector_db/ 由下方 makedirs 保证）
+CHROMA_DIR = os.path.join(VECTOR_DIR, "chroma_db_v2")
 COLLECTION = "a11_interview_kb_v5v2"                 # collection 名
 EMBED_MODEL = "BAAI/bge-m3"
 MAX_SEQ = 512

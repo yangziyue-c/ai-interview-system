@@ -29,7 +29,8 @@ frontend/node_modules/
 frontend/dist/
 
 # RAG 向量库（674MB，可由 rag/数据/*-rag-v2.jsonl 重建，不入库）
-backend/rag/向量库/
+# 目录名必须纯 ASCII：chromadb 打不开含非 ASCII 的绝对路径（详见 rag/代码/README.md）
+backend/rag/vector_db/
 # RAG 检索中间数据（85MB，仅重建向量库时需要；主库 *-v5.json 共 16MB 正常入库）
 backend/rag/数据/*-rag-v2.jsonl
 

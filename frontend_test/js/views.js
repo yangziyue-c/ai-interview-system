@@ -318,6 +318,15 @@ Views.interview = {
     }
 
     const iv = state.interview;
+
+    // 刷新 / 深链进入对话室时岗位列表可能还是空的（顶部标题要用它转中文名）；
+    // 加载失败不阻塞对话渲染，仅标题降级为岗位 code
+    try {
+      await Helpers.ensurePositions();
+    } catch (e) {
+      /* 降级：posName 会原样返回 code */
+    }
+
     const total = App.TOTAL_ROUNDS;
     const canVoice = Voice.supported.stt || Voice.supported.rec;
 
@@ -349,7 +358,6 @@ Views.interview = {
     const input = document.getElementById("answer-input");
     const btnSend = document.getElementById("btn-send");
     const pill = document.getElementById("round-pill");
-    const sessionId = Number(id); // 会话身份：慢响应返回时校验是否仍在本场面试
     let busy = false; // 提交答案期间禁发
 
     const scrollBottom = () => (list.scrollTop = list.scrollHeight);
@@ -426,7 +434,6 @@ Views.interview = {
           state.interview = data.interview;
           state.currentReport = data.report;
           state.reports[id] = data.report;
-          state.currentReportPos = null; // 本场报告以 interview.position 为准
           App.toast("面试已完成，正在查看报告 🎉", "ok");
           App.goto("#/report/" + id);
         } else {
@@ -472,7 +479,6 @@ Views.interview = {
         const data = await Api.finishInterview(id);
         if (!document.contains(list)) return;
         state.interview = data.interview;
-        state.currentReportPos = null; // 本场报告以 interview.position 为准
         App.toast("面试已结束，正在生成报告", "ok");
         App.goto("#/report/" + id);
       } catch (err) {
@@ -526,6 +532,14 @@ Views.report = {
     }
     state.currentReport = report;
 
+    // 刷新 / 深链进入报告页时岗位列表还是空的，而本页要靠它把岗位 code 转成中文名
+    // （否则只显示 "algorithm" 这类 code）。加载失败不阻塞报告渲染，仅岗位名降级。
+    try {
+      await Helpers.ensurePositions();
+    } catch (e) {
+      /* 降级：posName 会原样返回 code */
+    }
+
     const listHtml = (title, items, mark, color) =>
       items && items.length
         ? `<div class="card detail-section"><div class="sec-title">${title}</div>
@@ -539,7 +553,7 @@ Views.report = {
       </div>
       <div class="score-hero">
         <div class="score-num">${Number(report.total_score).toFixed(1)}</div>
-        <div class="score-label">综合得分 · ${Helpers.esc(Helpers.posName(state.currentReportPos || state.interview?.position || ""))}</div>
+        <div class="score-label">综合得分 · ${Helpers.esc(Helpers.posName(report.position || state.interview?.position || ""))}</div>
       </div>
       <div class="radar-wrap">
         <div class="sec-title">📊 五维能力雷达</div>
@@ -674,8 +688,6 @@ Views.profile = {
         if (item.dataset.status === "in_progress") {
           App.goto("#/interview/" + id);
         } else {
-          // 报告接口不含岗位字段，先记下岗位 code 供报告页展示
-          state.currentReportPos = item.dataset.pos;
           App.goto("#/report/" + id);
         }
       });

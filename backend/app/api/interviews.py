@@ -28,7 +28,7 @@ from app.schemas.interview import (
     StartInterviewOut,
     StartInterviewRequest,
 )
-from app.schemas.report import ReportOut
+from app.schemas.report import report_out
 from app.utils.response import ok
 
 logger = logging.getLogger(__name__)
@@ -170,7 +170,7 @@ async def submit_answer(interview_id: int, req: AnswerRequest, user: CurrentUser
                 finished=True,
                 interview=InterviewOut.model_validate(interview),
                 next_question=None,
-                report=ReportOut.model_validate(report),
+                report=report_out(report, interview),
             ).model_dump(),
             "面试已完成",
         )
@@ -208,7 +208,7 @@ async def finish_interview(interview_id: int, user: CurrentUser, db: DbSession) 
     return ok(
         FinishInterviewOut(
             interview=InterviewOut.model_validate(interview),
-            report=ReportOut.model_validate(report),
+            report=report_out(report, interview),
         ).model_dump(),
         "面试已结束",
     )

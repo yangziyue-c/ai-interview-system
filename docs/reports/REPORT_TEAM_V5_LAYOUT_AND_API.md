@@ -13,7 +13,7 @@
 
 | # | 改动 | 影响面 |
 |---|---|---|
-| 1 | **交付包迁入项目**：`交付包-1号后端_new/` → `backend/rag/`（代码/数据/向量库/说明），原目录已删除 | 5 号 |
+| 1 | **交付包迁入项目**：`交付包-1号后端_new/` → `backend/rag/`（`代码/`、`数据/`、`vector_db/`、`说明/`），原目录已删除 | 5 号 |
 | 2 | **交付包适配 12 处**：端口 8000→8003、解除 `HF_HUB_OFFLINE` 死锁、补 CORS、`_pick()` 失败保护、环境变量支持等 | 5 号 |
 | 3 | **questions 表重构**：18 列（V4）→ **19 列**（V5 字段：基础/进阶得分点、L1/L2/L3、降级策略、校准锚点、知识点、关键词、优先级） | 2/3/4 号 |
 | 4 | **导入脚本重写**：源由 `题库/*.xlsx` 改为 `backend/rag/数据/*-v5.json`，新增 `--rebuild`/`--dry-run` | 5 号 |
@@ -44,7 +44,7 @@
 | `frontend/` | **4 号** | 4 号可改，他人只读 | 正式前端（Vite） |
 | `frontend_test/` | **1 号** | 可改 | 零依赖演示前端（5273） |
 | `backend/rag/代码/` | 5 号交付 → **1 号适配** | 谨慎 | RAG 服务代码；5 号更新交付包时**必须保留 1 号的 12 处改动** |
-| `backend/rag/数据/`、`向量库/`、`说明/` | **5 号** | 只读 | 大文件（向量库 674MB）已 git 忽略 |
+| `backend/rag/数据/`、`vector_db/`、`说明/` | **5 号** | 只读 | 大文件（向量库 674MB）已 git 忽略；⚠️ `vector_db/` **必须保持纯 ASCII 名**（chromadb 打不开含非 ASCII 的绝对路径） |
 | `题库/` | **5 号** | 只读 | V4 xlsx 历史（已退出流水线） |
 | `docs/`、`CLAUDE.md`、`README.md` | **1 号** | 关键改动请先在群里说 | 项目文档 |
 
@@ -67,7 +67,7 @@
 
 ### 4.1 全员通用约定
 
-- **统一响应格式**：`{"code": 0, "message": "success", "data": {...}}`；错误码
+- **统一响应格式**：`{"code": 0, "message": "ok", "data": {...}}`；错误码
   `40000` 参数错 / `40100` 未登录 / `40300` 无权限 / `40400` 不存在 / `40900` 状态冲突 / `50000` 服务端错
 - **鉴权**：除注册登录外，所有接口需 `Authorization: Bearer <token>`
 - **全局前缀**：`/api/v1`
@@ -77,7 +77,7 @@
 
 | 用途 | 接口 / 模块 | 契约 |
 |---|---|---|
-| 面试官算法 | `backend/interviewer_new/question_bank.py` | `pick_next(session, position, round_no, history, is_follow_up) -> str \| None`（None = 未命中，adapter 会降级） |
+| 面试官算法 | `backend/interviewer_new/question_bank.py` | `pick_next(db, position, round_no, history, is_follow_up) -> str \| None`（首参为 `AsyncSession`；None = 未命中，adapter 会降级） |
 | 语义检索（备选） | `POST /api/v1/rag/search` 或直连 `POST http://localhost:8003/rag/search` | `{query, job?, mode: select\|expand, top?, level?}` → `{results: [{score, 题目, 参考答案, 原题ID, 层级, 岗位, 题型, 难度, 面试阶段, 考点优先级}]}`；`mode=expand` 另返回 `全层级片段` |
 | 题目素材 | `GET /api/v1/questions/{id}` | 含 `calibration_anchor`（单题校准锚点）、`basic_score_points` / `advanced_score_points` |
 
@@ -104,7 +104,7 @@
 | 题库浏览 | `GET /api/v1/questions` | 过滤参数：`position` / `category` / `difficulty` / `stage` / **`priority`（新增）** / `q` / `limit` / `offset` |
 | 题库详情 | `GET /api/v1/questions/{id}` | 字段变更见 4.5 |
 | 语义检索（可选） | `POST /api/v1/rag/search` | 透传知识库服务；服务不可用时返回 `available: false` + 空结果（**不会 500**），前端可优雅降级 |
-| 面试流程 | 原有接口不变 | `POST /interviews`、`GET /interviews/{id}/next-question` 等 |
+| 面试流程 | 原有接口不变（**注意：无 `next-question` 接口**） | `POST /interviews`（开始，返回首题 + `interview`）；`POST /interviews/{id}/answers`（提交答案，**下一题在响应的 `data.next_question`**，结束则 `data.finished=true` 并附 `data.report`）；`POST /interviews/{id}/finish`（提前结束并出报告）；`GET /interviews/{id}`（恢复会话，含 `qa_records`） |
 
 **受控词表变更**（`GET /questions` 的过滤值，非法值返回 400）：
 

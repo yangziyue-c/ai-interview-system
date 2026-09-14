@@ -107,6 +107,9 @@ const Api = {
   // 岗位
   positions: () => request("/positions"),
 
+  // 系统运行参数（面试总轮数等，避免前端硬编码）
+  config: () => request("/config"),
+
   // 面试
   startInterview: (position) => request("/interviews", { body: { position } }),
   listInterviews: () => request("/interviews"),

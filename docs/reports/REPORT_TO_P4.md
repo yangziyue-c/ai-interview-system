@@ -2,7 +2,13 @@
 
 > ⚠️ **2026-09-14 起题库换代到 V5**：岗位增至 **5 个**（新增算法工程师、系统设计工程师）、
 > 题库题型/阶段受控词表有变、新增 `POST /api/v1/rag/search` 语义检索接口。
-> 前端**无需改代码**（岗位列表走 `GET /positions`），但建议验证 5 张岗位卡片的布局。
+> 岗位列表走 `GET /positions`，**不硬编码岗位即可正常适配**，故无强制改码；
+> 但建议验证 5 张岗位卡片的布局。
+>
+> **另有 2 处可选增强（同一日新增，见 2.6 / 2.7）**——**不改也能跑**，
+> 但用上可避免两个实际缺陷：报告页刷新后岗位名空白（2.6 `position` 字段）、
+> 轮数硬编码改配置后脱节（2.7 `GET /config`）。**建议一并采纳。**
+>
 > 变更详情见 [REPORT_TEAM_V5_LAYOUT_AND_API.md](REPORT_TEAM_V5_LAYOUT_AND_API.md) 第 4.4 节；
 > 接口字段以 [docs/API.md](../API.md) 为唯一权威。
 
@@ -68,10 +74,10 @@ GET /reports/latest
 GET /positions
 ```
 
-岗位由后端数据库动态维护（当前已开放 backend / frontend / test_engineer 三个，
-预留 5 个岗位位，清单可能调整）。**前端不得硬编码岗位列表**：岗位大厅展示本接口
-返回数据；注册的 `target_position` 与开始面试的 `position` 必须传返回的 `code`；
-岗位中文名由 `name` 字段天然提供。
+岗位由后端数据库动态维护（2026-09-14 起已开放 **5 个**：backend / frontend /
+test_engineer / algorithm / system_design，全部 `enabled=True`；清单可能调整）。
+**前端不得硬编码岗位列表**：岗位大厅展示本接口返回数据；注册的 `target_position`
+与开始面试的 `position` 必须传返回的 `code`；岗位中文名由 `name` 字段天然提供。
 
 ### 2.5 报告评分 5 维（2026-09-04 起，源自《评估维度.csv》）
 
@@ -85,6 +91,33 @@ GET /positions
 
 报告详情与成长曲线均返回 5 维分数，雷达图按 **5 轴**渲染。前端无需计算总分，
 直接展示 `total_score`。
+
+### 2.6 报告带岗位 code（2026-09-14 新增，**报告页务必用它**）
+
+报告响应（`GET /reports/{id}`、`POST /interviews/{id}/answers` 结束时的 `report`、
+`POST /interviews/{id}/finish` 的 `report`）**统一新增 `position` 字段**（岗位 code）。
+
+```json
+{ "code": 0, "data": { "interview_id": 1, "position": "algorithm", "total_score": 84.5, ... } }
+```
+
+> **为什么要加**：报告页要显示岗位名，而此前响应里没有岗位字段，前端只能靠
+> **「从列表页带过来的内存变量」**——一旦用户**刷新页面或直接深链**进报告页，
+> 那个变量就没了，页面上岗位名变成空白。
+>
+> **正确做法**：报告页渲染时直接用 `report.position`（配合 `GET /positions` 把 code
+> 转中文名）；**不要**再用内存变量传岗位 code 这类补丁。若 `GET /positions` 因故失败，
+> 顶多把 code 原样显示出来，不影响报告其余内容。
+
+### 2.7 前端运行参数（2026-09-14 新增，**不要硬编码轮数**）
+
+```
+GET /config     { "code": 0, "data": { "total_rounds": 7, "max_follow_up_rounds": 6 } }
+```
+
+> 「一场面试共几轮」由后端 `.env` 的 `MAX_FOLLOW_UP_ROUNDS` 决定（当前 = 1 开场题 + 6 追问 = 7）。
+> **前端不要把 7 写死**——`total_rounds` 一改，写死的前端就会显示成「第 N / 7 题」而与实际轮数脱节。
+> 建议启动/登录后调一次本接口缓存起来（需登录）。`current_round` 仍从面试响应里取。
 
 ---
 
@@ -161,6 +194,7 @@ Base URL：`http://localhost:8001/api/v1`（联调期）｜统一响应 `{ code,
 | 登录 | `POST /auth/login` | 否 |
 | 当前用户信息 | `GET /auth/me` | 是 |
 | 岗位列表（岗位大厅） | `GET /positions` | 是 |
+| 前端运行参数（总轮数） | `GET /config` | 是 |
 | 开始面试 | `POST /interviews`，body `{"position": "<岗位接口返回的 code>"}` | 是 |
 | 历史面试列表（附分数） | `GET /interviews` | 是 |
 | 面试详情（恢复会话） | `GET /interviews/{interview_id}` | 是 |

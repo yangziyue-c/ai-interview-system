@@ -65,7 +65,8 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
   test_engineer 667 + algorithm 655 + system_design 810），岗位有题即走题库
 - RAG 语义检索为兜底（题库未命中时生效；V5 题库覆盖良好，多数场次不会触发）；
   主动使用入口 = `POST /api/v1/rag/search`（透传，服务不可用时返回 `available:false` 而非 500）
-- 每级失败自动落下一级，流程永不中断；HTTP/LLM 级各 15 秒超时
+- 每级失败自动落下一级，流程永不中断；超时预算分档：**RAG 级 60 秒**（reranker 精排慢，
+  实测单次 20~30 秒），其余 HTTP/LLM 级各 15 秒
 - SQLite 已配 **WAL + busy_timeout**（database.py 事件监听），并发写不会锁库；
   适配器题库查询自开只读短会话，**不要复用请求级会话传 db**（会触发 autoflush 提前锁库）
 - 核心业务规则（interviewer_new/question_bank.py）：1 开场题 + 6 追问共 7 轮（`MAX_FOLLOW_UP_ROUNDS=6`）；
@@ -105,10 +106,19 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
 
 - **端口**：8001=主后端、8002=P3 评估、**8003=RAG 检索**、5273=演示前端（start.py 自动拉起）；
   **8000 被本机 Godot AI MCP 占用，勿改回**；5173 是 P4 Vite 联调端口，start.py 不会占用
-- **RAG 大文件与依赖**：`backend/rag/向量库/`（674MB）、`backend/rag/数据/*-rag-v2.jsonl`（85MB）
+- **RAG 大文件与依赖**：`backend/rag/vector_db/`（674MB）、`backend/rag/数据/*-rag-v2.jsonl`（85MB）
   已 gitignore；RAG 依赖（torch 等约 2.5GB）单独放 `backend/rag/requirements-rag.txt`，
   **不要写进 `backend/requirements.txt`**（会让每个新环境都被强加 2.5GB）；
   模型文件（约 4.5GB）首次启动时自动下载（默认 huggingface.co；网络受限时设 HF_ENDPOINT=https://hf-mirror.com 走镜像）
+- **RAG 向量库目录必须纯 ASCII**（`backend/rag/vector_db/`，**禁止中文名**）：
+  chromadb 打不开「含非 ASCII 字符的**绝对路径**」——实测 10/10 失败并报
+  `Error loading hnsw index`，极易误判成「向量库损坏 / chromadb 版本不兼容」
+  （曾因此白跑一次 6 小时重建）。**构建侧同样受影响**：用中文绝对路径建库会产出
+  缺 HNSW 索引文件的坏库。旧目录名「向量库」已废弃，5 个 RAG 脚本会自动改名升级；
+  任何移动向量库的操作都要保证新路径全 ASCII
+- **RAG 检索是慢接口**：单次 `/rag/search` 含 Top-20 reranker 精排，CPU 上实测
+  **20~30 秒**（向量召回本身仅 0.1 秒，瓶颈全在 reranker）。故 `RAG_TIMEOUT_SECONDS=60`，
+  **不要按普通接口设成个位数秒**——那会让每次检索都被误判为「RAG 不可用」而白白降级
 - **`backend/start.bat` 必须 CRLF 行尾且纯 ASCII**（无中文注释/echo）——cmd 对 LF-only 或中文 REM
   解析错乱；`.gitattributes` 已设 `*.bat -text`。改后校验：
   `python -c "open('backend/start.bat','rb').read().count(b'\r\n')"` 应等于行数；中文提示放 start.py

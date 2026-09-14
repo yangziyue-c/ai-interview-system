@@ -10,13 +10,29 @@ window.state = {
   messages: [], // 对话室消息 [{role: "ai"|"user", text, round, audio_url?}]
   currentReport: null, // 当前查看的报告
   reports: {}, // 报告缓存 {interview_id: ReportOut}（报告生成后不可变）
-  currentReportPos: null, // 从个人中心进入报告页时携带的岗位 code
 };
 
 /* ---------- 应用入口 ---------- */
 window.App = {
-  /** 与后端 config.total_rounds 一致：1 开场题 + 6 追问 */
+  /** 面试总轮数**兜底值**：真实值由后端 `GET /config` 下发（见 loadConfig）。
+   *  保留兜底只为接口未返回时不渲染出空白轮数；不要再改这里来调轮数，
+   *  轮数的事实源是后端 `.env` 的 MAX_FOLLOW_UP_ROUNDS。 */
   TOTAL_ROUNDS: 7,
+  _configLoaded: false,
+
+  /** 拉取后端运行参数（面试总轮数等）；失败静默保留兜底值，下次渲染自动重试 */
+  async loadConfig() {
+    if (this._configLoaded) return;
+    try {
+      const cfg = await Api.config();
+      if (cfg && cfg.total_rounds > 0) {
+        this.TOTAL_ROUNDS = cfg.total_rounds;
+        this._configLoaded = true;
+      }
+    } catch (e) {
+      /* 保留兜底值 */
+    }
+  },
 
   /* ---------- 轻提示 ---------- */
   toast(msg, type) {
@@ -48,7 +64,6 @@ window.App = {
     state.messages = [];
     state.currentReport = null;
     state.reports = {};
-    state.currentReportPos = null;
   },
 
   /* ---------- 从历史列表找进行中的面试（冲突引导用） ---------- */
@@ -72,6 +87,9 @@ window.App = {
     let route = { name, id };
     if (!getToken()) route = { name: "login", id: null };
     else if (!name || name === "login") route = { name: "hall", id: null };
+
+    // 已登录：确保运行参数（面试总轮数）就绪——仅首次真请求，失败保留兜底值
+    if (getToken()) await this.loadConfig();
 
     const table = {
       login: Views.auth,

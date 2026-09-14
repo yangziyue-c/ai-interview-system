@@ -20,7 +20,7 @@
 
 ---
 
-## 二、1 号在落地时做的改动（12 处）
+## 二、1 号在落地时做的改动（13 处）
 
 **原因**：其中 P0 两项会直接导致服务跑不起来，故 1 号未等待反馈、先行修好并记录于此，
 方便 5 号同步回自己的交付包版本。
@@ -51,6 +51,16 @@
 | 10 | `代码/README.md` | 补：路径自适应机制、端口说明、模型体积与下载命令、依赖清单、**1 号适配说明表** | 成员才敢放心搬动目录 |
 | 11 | `说明/给1号-后端主程-数据对接说明.md` | 同步：路径改项目内、端口 8003、CORS、依赖与模型下载、`GET /question/{id}` 契约 | 原文仍写 `E:\GitHubRepos\…`、端口 8000、「5 号已封装好直接启动」 |
 | 12 | **新增** `backend/rag/requirements-rag.txt` | RAG 专属依赖清单 + 国内镜像安装命令 | 依赖刻意**不写进** `backend/requirements.txt`：主流程（8001/8002）不依赖它们，写进去会让每个新环境都多下载 2.5GB |
+
+### P0 阻塞项（2026-09-14 追加，**5 号务必同步回交付包**）
+
+| # | 文件 | 改动 | 原因 |
+|---|---|---|---|
+| 13 | `02`/`03`/`04`/`05` | 向量库目录 `向量库/` → **`vector_db/`**（四个脚本均带自动改名升级）+ 打开前非 ASCII 路径守卫 | **chromadb 无法打开「含非 ASCII 字符的绝对路径」**（见第六节，实测 10/10 失败）。**构建侧同样受灾**：本机用 `backend/rag/向量库/chroma_db_v2` 这个中文绝对路径重建向量库，跑满 6 小时、`col.count()` 也报 74011，但产出的库**缺 HNSW 索引文件**（`data_level0.bin` 等全部没有，只剩 `index_metadata.pickle`），事后完全无法打开 |
+
+> **推荐 P5 在交付包里直接把目录改名为 `vector_db/`**（或任何纯 ASCII 名），
+> 从源头避免成员机器上重演这个问题。脚本已做自动升级，旧名也不会报错，
+> 但**每一次"能跑"都依赖那个自动改名成功**，不如命名时就避开。
 
 **未改动**：检索核心逻辑（`03` 的双模式检索、`05` 的 `/rag/search` 响应结构）保持原样，
 1 号侧通过适配器接入（见《REPORT_TEAM_V5_LAYOUT_AND_API.md》）。
@@ -109,13 +119,84 @@ curl -X POST http://localhost:8003/rag/search -H "Content-Type: application/json
 curl http://localhost:8003/question/JAVA_BACKEND-Q0001   # 返回 18 字段完整记录
 
 # 5. 路径失效时应明确报错（而非静默建空库）
-mv 向量库 向量库_bak && python 05_rag_api_server.py      # 应抛 FileNotFoundError
-mv 向量库_bak 向量库
+mv vector_db vector_db_bak && python 05_rag_api_server.py   # 应抛 FileNotFoundError
+mv vector_db_bak vector_db
+
+# 6. 向量库目录名会被强制校验为纯 ASCII（见第六节）
+RAG_CHROMA_DIR="D:/测试库/chroma_db_v2" python 05_rag_api_server.py   # 应抛 RuntimeError
 ```
 
 ---
 
-## 六、致谢
+## 六、⚠️ chromadb 路径陷阱（2026-09-14 实测，**建议 5 号收进自己的知识库**）
+
+### 6.1 现象
+
+把向量库放在**含中文字符的路径**下（如 `backend/rag/向量库/chroma_db_v2`），
+用**绝对路径**打开它时 100% 失败：
+
+```
+chromadb.errors.InternalError: Error executing plan:
+  Error sending backfill request to compactor:
+    Error constructing hnsw segment reader:
+      Error creating hnsw segment reader:
+        Error loading hnsw index
+```
+
+关键特征——**同一份数据、同一个进程、同一个目录**，只是路径写法不同：
+
+| 传入 `PersistentClient(path=...)` 的写法 | 结果 |
+|---|---|
+| `chroma_db_v2`（相对路径，cwd 在该目录内） | ✅ 10/10 成功 |
+| `d:/.../rag/vector_db/chroma_db_v2`（纯 ASCII 绝对路径） | ✅ 成功 |
+| `d:/.../rag/向量库/chroma_db_v2`（**含中文的绝对路径**） | ❌ **0/10 失败** |
+
+### 6.2 为什么这个 bug 极难定位（1 号踩坑记录）
+
+`Error loading hnsw index` 这个报错**指向完全错误的方向**，1 号据此走了三段弯路：
+
+1. **误判为「chromadb 版本不兼容」** —— 因为交付包是 5 号在另一台机器上构建的，
+   第一反应是 Rust 版与 Python 版 HNSW 格式不同。
+2. **误判为「HNSW 索引未落盘」** —— 用中文绝对路径重建后，`header.bin` 里元素数
+   写着 73706、`data_level0.bin` 大小也精确等于 `73706 × 4236` 字节，
+   **所有静态检查都自洽**，只看文件根本看不出问题。
+3. **最误导的一点**：构建脚本结尾的 `col.count()` 会**如实返回 74011**——
+   因为它读的是 SQLite 里的记录数，**而不是 HNSW 图索引**。于是日志上一切正常
+   （`[done] build complete`），产出的库却是坏的。
+
+**最终定位手段**：把 `同一份库` 复制到纯 ASCII 路径后**立刻正常**；
+再把路径写法做成上表的对照实验，才锁定是「非 ASCII 绝对路径」。
+
+### 6.3 影响范围（不止"打不开"）
+
+| 环节 | 是否受影响 |
+|---|---|
+| **读取**（`PersistentClient` 打开） | ❌ 100% 失败 |
+| **构建**（`02_build_vector_db.py` 写入） | ❌ **同样受灾**：`col.add()` 看着都成功，但 **HNSW 数据文件根本没落盘**，产出目录里只剩一个 `index_metadata.pickle` |
+| SQLite 部分（记录数、元数据、WAL） | ✅ 正常，所以 `count()` 会骗人 |
+| 纯 Python 文件读写（`数据/*-v5.json` 等） | ✅ 正常（只有 chromadb 受影响） |
+
+> 这也解释了为什么交付包在 5 号机器上一切正常——**5 号的开发路径是纯 ASCII
+> （`E:\GitHubRepos\...`）**，问题只有在中文路径下才暴露。
+
+### 6.4 修复
+
+1. **目录改名**：`backend/rag/向量库/` → **`backend/rag/vector_db/`**（纯 ASCII）；
+2. **四个脚本**（`02`/`03`/`04`/`05`）都加了：旧目录名自动升级 + 打开前非 ASCII 守卫
+   （命中时抛 `RuntimeError` 并直接告诉你怎么改，而不是让你看到「索引加载失败」）；
+3. **教训**：给向量库/模型目录命名时**一律用纯 ASCII**，别等出问题再回头查。
+
+### 6.5 附：同批发现的另一个真实缺陷（1 号侧，已在 `backend/app/config.py` 修正）
+
+`RAG_TIMEOUT_SECONDS` 原设 **5 秒**，而一次 `/rag/search`（含 Top-20 reranker 精排）
+在 CPU 上**实测 20~30 秒**（向量召回本身仅 0.1 秒，瓶颈全在 reranker）。
+后果是**每一次检索都超时**，主后端把 RAG 误判为「不可用」而静默降级——
+表面上「有兜底所以不报错」，实际 RAG 这一级**从未真正生效过**。
+已改为 **60 秒**。5 号若在其他机器部署，请一并核对这个预算。
+
+---
+
+## 七、致谢
 
 V5 主库的**结构化改造**（把 V4 挤在一段文本里的四层追问拆成独立字段）是本项目本次换代
 最有价值的一项工作——它让下游算法直接删掉了 119 行格式兼容正则，追问链触达率从 66% 提升到 100%。

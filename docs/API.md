@@ -204,6 +204,7 @@ GET /reports/{interview_id}
   "code": 0, "message": "ok",
   "data": {
     "interview_id": 1,
+    "position": "backend",       // 面试岗位 code（2026-09-14 新增：报告页刷新/深链时显示岗位名）
     "total_score": 84.5,
     "tech_score": 88.0,          // 技术水平
     "logic_score": 83.0,         // 逻辑思维
@@ -221,6 +222,11 @@ GET /reports/{interview_id}
 
 > 评分维度 5 维（2026-09-04 起，源自团队《评估维度.csv》）：技术水平 / 逻辑思维 /
 > 沟通表达 / 应变能力 / 岗位匹配度。`adaptability_score` 为新增字段，前端雷达图按 5 轴渲染。
+>
+> `position` 由接口从所属面试注入（`reports` 表不存该列）。**前端应直接用它显示岗位名**，
+> 不要再靠「从列表页带过来的内存变量」——那样一刷新页面岗位名就没了。
+> 结束面试的两个响应（`POST /interviews/{id}/answers` 的 `report`、
+> `POST /interviews/{id}/finish` 的 `report`）同样带该字段。
 
 ### 4.2 最近一次面试的改进建议（个人中心用）
 
@@ -394,11 +400,27 @@ POST /uploads/audio        Content-Type: multipart/form-data
 GET /health                { "code": 0, "message": "ok", "data": { "status": "healthy" } }
 ```
 
+### 7.2 前端运行参数
+
+```
+GET /config                { "code": 0, "message": "ok", "data": {
+                              "total_rounds": 7,           // 一场面试总轮数（1 开场题 + N 追问）
+                              "max_follow_up_rounds": 6    // 最大追问轮数
+                            } }
+```
+
+> 需登录（与其余业务接口一致）。**前端不要硬编码轮数**——它由后端 `.env` 的
+> `MAX_FOLLOW_UP_ROUNDS` 决定，改配置后本接口自动跟随；硬编码会导致
+> 「第 N / 7 题」的显示与实际轮数静默脱节。
+
 ---
 
 ## 附录：P2 / P3 外部服务接入约定
 
-在 `backend/.env` 中配置 URL 后自动生效；未配置或调用失败（含 15 秒超时）时后端自动降级为内置 Mock。
+在 `backend/.env` 中配置 URL 后自动生效；未配置或调用失败时后端自动降级为内置 Mock。
+**超时预算不同**：P2 面试官 15 秒（`ADAPTER_TIMEOUT_SECONDS`），P3 评估 **30 秒**
+（`ai_evaluator.EVALUATE_TIMEOUT_SECONDS`，评估报告生成较慢故单独放宽；
+评估服务自身内部超时为 25 秒，正是为配合这个 30 秒预算——**勿按 15 秒改动**）。
 
 ### P2：AI 面试官
 
@@ -441,10 +463,18 @@ POST {AI_EVALUATOR_URL}/evaluate
 {
   "position": "backend",
   "qa_list": [
-    { "round": 1, "question": "...", "answer": "...", "audio_url": "/uploads/xxx.mp3" }
+    { "round": 1, "question": "...", "answer": "...", "audio_url": "/uploads/xxx.mp3",
+      "materials": {                    // 可选：主后端按题干从题库自动附加（V5 起）
+        "basic_score_points": "...",    // 基础得分点
+        "advanced_score_points": "...", // 进阶得分点
+        "calibration_anchor": "..."     // 单题校准锚点（该题「答到什么程度算好」）
+      } }
   ]
 }
 ```
+
+> `materials` 用于让评估服务"按题判分"（同一段答案，easy 概念题与 hard 原理题应得不同分）。
+> 它是**向后兼容的可选增强**：旧版评估服务忽略该字段，不传时评分行为与原版逐字一致。
 
 期望返回（5 维评分）：
 
@@ -471,3 +501,8 @@ POST {AI_EVALUATOR_URL}/evaluate
 | backend | 35% | 25% | 10% | 10% | 20% |
 | frontend | 30% | 20% | 15% | 15% | 20% |
 | test_engineer | 25% | 25% | 20% | 15% | 15% |
+| algorithm | 40% | 25% | 10% | 10% | 15% |
+| system_design | 30% | 30% | 15% | 10% | 15% |
+
+> ⚠️ 最后两个岗位（2026-09-14 随 V5 知识库启用）的权重为**临时值**，待团队在
+> 《评估维度.csv》定稿后替换；CSV 与 `POSITION_CONFIG` 两处已同步并标注。

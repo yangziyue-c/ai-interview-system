@@ -6,7 +6,7 @@ from app.api.deps import CurrentUser, DbSession, get_owned_interview
 from app.core.exceptions import ConflictError
 from app.core.state_machine import InterviewStatus
 from app.models import Interview, Report
-from app.schemas.report import GrowthPoint, ReportOut
+from app.schemas.report import GrowthPoint, report_out
 from app.utils.response import ok
 
 router = APIRouter()
@@ -71,4 +71,4 @@ async def get_report(interview_id: int, user: CurrentUser, db: DbSession) -> dic
     report = await db.scalar(select(Report).where(Report.interview_id == interview_id))
     if report is None:
         raise ConflictError("报告生成中或生成失败，请稍后重试")
-    return ok(ReportOut.model_validate(report).model_dump())
+    return ok(report_out(report, interview).model_dump())

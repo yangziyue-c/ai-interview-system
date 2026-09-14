@@ -11,6 +11,7 @@ import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy import delete
 
+from app.config import settings
 from app.models import Question
 from tests.helpers import make_question
 
@@ -198,6 +199,8 @@ class TestInterviewFlow:
                 assert body["report"] is not None
                 assert 0 <= body["report"]["total_score"] <= 100
                 assert body["report"]["strengths"]  # 报告含评语字段
+                # 报告带岗位 code（报告页刷新/深链时前端靠它显示岗位名）
+                assert body["report"]["position"] == "backend"
                 break
             assert body["next_question"], "未结束时应返回下一题"
         assert finished, "达到轮次上限后应自动结束"
@@ -217,6 +220,7 @@ class TestInterviewFlow:
         # 5 维评分：技术/逻辑/表达/应变/匹配
         for key in ("tech_score", "logic_score", "expression_score", "adaptability_score", "match_score"):
             assert 0 <= report[key] <= 100
+        assert report["position"] == "backend"  # 报告直达接口也带岗位 code
 
     async def test_manual_finish_and_growth(self, client: AsyncClient):
         """手动结束 → 报告生成 → 成长曲线含该次面试"""
@@ -235,6 +239,7 @@ class TestInterviewFlow:
         assert resp.status_code == 200
         assert resp.json()["data"]["interview"]["status"] == "finished"
         assert resp.json()["data"]["report"]["interview_id"] == interview_id
+        assert resp.json()["data"]["report"]["position"] == "frontend"  # 主动结束路径同样带岗位
 
         # 成长曲线
         resp = await client.get(f"{BASE}/reports/growth", headers=headers)
@@ -554,6 +559,22 @@ class TestQuestionBank:
             k.removeprefix("weight_"): v / 100
             for k, v in GENERIC_POSITION.items() if k.startswith("weight_")
         }
+
+
+class TestSystemConfig:
+    async def test_config(self, client: AsyncClient):
+        """前端运行参数：面试总轮数由后端下发（前端不得硬编码，改 .env 后自动跟随）"""
+        _, headers = await _register(client, "cfg")
+        resp = await client.get(f"{BASE}/config", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total_rounds"] == settings.total_rounds
+        assert data["max_follow_up_rounds"] == settings.MAX_FOLLOW_UP_ROUNDS
+        assert data["total_rounds"] == 1 + data["max_follow_up_rounds"], "契约：1 开场题 + N 追问"
+
+    async def test_config_requires_auth(self, client: AsyncClient):
+        resp = await client.get(f"{BASE}/config")
+        assert resp.status_code == 401  # 与其余业务接口一致，需登录
 
 
 class TestHealth:

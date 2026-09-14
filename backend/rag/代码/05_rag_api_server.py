@@ -68,12 +68,34 @@ def _pick(*candidates):
             return c
     raise FileNotFoundError(
         "路径不存在，已尝试：\n  " + "\n  ".join(candidates)
-        + "\n请确认交付包结构完整（向量库/、数据/ 与本脚本所在目录同级）。"
+        + "\n请确认交付包结构完整（vector_db/、数据/ 与本脚本所在目录同级）。"
     )
+
+# ★ 向量库目录名必须是纯 ASCII：chromadb 无法打开「含非 ASCII 字符的绝对路径」
+#   （实测 100% 失败，报 Error loading hnsw index，极易误判为索引损坏）。
+#   旧交付包目录名为「向量库/」，此处自动升级，避免按旧文档操作时踩坑。
+VECTOR_DIR = os.path.join(_PKG_ROOT, "vector_db")
+_LEGACY_VECTOR_DIR = os.path.join(_PKG_ROOT, "向量库")
+if not os.path.exists(VECTOR_DIR) and os.path.exists(_LEGACY_VECTOR_DIR):
+    print("[init] 旧目录名「向量库」→ vector_db（chromadb 不支持含中文的绝对路径）",
+          flush=True)
+    os.rename(_LEGACY_VECTOR_DIR, VECTOR_DIR)
+
+
+def _assert_ascii_path(path: str) -> str:
+    """守卫：chromadb 打不开非 ASCII 绝对路径，提前报错而非表现为「索引损坏」"""
+    if not os.path.abspath(path).isascii():
+        raise RuntimeError(
+            f"向量库路径含非 ASCII 字符，chromadb 无法打开：{path}\n"
+            f"  请移动到纯 ASCII 路径（推荐 {VECTOR_DIR}）。")
+    return path
+
+
 # 环境变量可覆盖（部署时目录结构可能不同）
-CHROMA_DIR = os.environ.get("RAG_CHROMA_DIR") or _pick(
-    os.path.join(_PKG_ROOT, "向量库", "chroma_db_v2"),
-    os.path.join(_PKG_ROOT, "chroma_db_v2"))                    # 向量库目录
+CHROMA_DIR = _assert_ascii_path(
+    os.environ.get("RAG_CHROMA_DIR") or _pick(
+        os.path.join(VECTOR_DIR, "chroma_db_v2"),
+        os.path.join(_PKG_ROOT, "chroma_db_v2")))               # 向量库目录
 COLLECTION = "a11_interview_kb_v5v2"
 EMBED_MODEL = "BAAI/bge-m3"
 RERANK_MODEL = "BAAI/bge-reranker-v2-m3"

@@ -58,10 +58,24 @@ def _pick(*candidates):
             return c
     raise FileNotFoundError(
         "路径不存在，已尝试：\n  " + "\n  ".join(candidates)
-        + "\n请确认交付包结构完整（向量库/ 与本脚本所在目录同级）。"
+        + "\n请确认交付包结构完整（vector_db/ 与本脚本所在目录同级）。"
     )
-CHROMA_DIR = _pick(os.path.join(_PKG_ROOT, "向量库", "chroma_db_v2"),
+
+# ★ 向量库目录名必须是纯 ASCII：chromadb 打不开「含非 ASCII 字符的绝对路径」
+#   （实测 100% 失败，报 Error loading hnsw index）。旧名为「向量库/」，此处自动升级。
+VECTOR_DIR = os.path.join(_PKG_ROOT, "vector_db")
+_LEGACY_VECTOR_DIR = os.path.join(_PKG_ROOT, "向量库")
+if not os.path.exists(VECTOR_DIR) and os.path.exists(_LEGACY_VECTOR_DIR):
+    print("[init] 旧目录名「向量库」→ vector_db（chromadb 不支持含中文的绝对路径）",
+          flush=True)
+    os.rename(_LEGACY_VECTOR_DIR, VECTOR_DIR)
+
+CHROMA_DIR = _pick(os.path.join(VECTOR_DIR, "chroma_db_v2"),
                    os.path.join(_PKG_ROOT, "chroma_db_v2"))     # 向量库目录
+if not os.path.abspath(CHROMA_DIR).isascii():
+    raise RuntimeError(
+        f"向量库路径含非 ASCII 字符，chromadb 无法打开：{CHROMA_DIR}\n"
+        f"  请移动到纯 ASCII 路径（推荐 {VECTOR_DIR}）。")
 COLLECTION = "a11_interview_kb_v5v2"
 EMBED_MODEL = "BAAI/bge-m3"
 RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
