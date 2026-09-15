@@ -54,6 +54,7 @@ project/
 │   ├── DATABASE.md           # 数据库设计文档
 │   ├── DEPLOY.md             # 内网穿透部署说明
 │   ├── COLLABORATION.md      # Git 协作指南
+│   ├── submission/           # 竞赛提交材料分册（概要介绍 / 简介 PPT / 详细方案，按模块拆分）
 │   └── reports/              # 各成员对接文档 REPORT_TO_P2~P5
 └── 评估维度.csv               # 五维评分权重定稿（机器校验与代码一致）
 ```
