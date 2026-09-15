@@ -49,7 +49,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 - 岗位由 positions 表动态维护（替代硬编码枚举），预留 5 个岗位位
 - 题库由 questions 表承载（**V5 换代，5 岗位共 5012 题**：backend 2146 + frontend 734 + test_engineer 667 + algorithm 655 + system_design 810），算法按岗位/阶段/难度抽题
 
-模型代码见 [backend/app/models/](backend/app/models/)。
+模型代码见 [backend/app/models/](../backend/app/models/)。
 
 ## 三、表结构详解
 
@@ -62,7 +62,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | password_hash | varchar(256) | not null | bcrypt 哈希，不存明文 |
 | nickname | varchar(64) | 默认空串 | 展示昵称 |
 | student_id | varchar(32) | nullable | 学号（可选，个人中心展示用） |
-| target_position | varchar(32) | 默认 backend | 目标岗位 code（动态，见 positions 表） |
+| target_position | varchar(16) | 默认 backend | 目标岗位 code（动态，见 positions 表） |
 | created_at | datetime | server_default=now() | 注册时间，由数据库生成 |
 
 ### 2. interviews —— 面试会话表（核心）
@@ -100,7 +100,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | tech_score | float | not null | 技术水平（0~100） |
 | logic_score | float | not null | 逻辑思维（0~100） |
 | expression_score | float | not null | 沟通表达（0~100） |
-| adaptability_score | float | 默认 0.0 | 应变能力（0~100，2026-09-04 新增；历史报告启动时自愈式回填，用表达分近似） |
+| adaptability_score | float | not null | 应变能力（0~100，2026-09-04 新增）。模型定义无默认值；老库经 `ALTER TABLE` 补列时带 `DEFAULT 0.0`，启动时把仍为 0 的历史报告用表达分自愈回填 |
 | match_score | float | not null | 岗位匹配度（0~100） |
 | summary | text | not null | 综合评语 |
 | strengths | JSON | 默认 [] | 优势列表（条数不固定） |
@@ -109,7 +109,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | created_at | datetime | server_default=now() | 报告生成时间 |
 
 综合得分按岗位 5 维加权（源自《评估维度.csv》），
-权重单一事实源为 [evaluation_weights.py](backend/app/core/evaluation_weights.py) 的 `POSITION_CONFIG`
+权重单一事实源为 [evaluation_weights.py](../backend/app/core/evaluation_weights.py) 的 `POSITION_CONFIG`
 （主后端 Mock 兜底与评估服务均经 `weights_for()` 派生），
 `tests/test_api.py` 的 `test_weights_match_csv` 机器校验 CSV ↔ 代码一致性：
 
@@ -118,6 +118,8 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | backend | 35% | 25% | 10% | 10% | 20% |
 | frontend | 30% | 20% | 15% | 15% | 20% |
 | test_engineer | 25% | 25% | 20% | 15% | 15% |
+| algorithm | 40% | 25% | 10% | 10% | 15% |
+| system_design | 30% | 30% | 15% | 10% | 15% |
 
 ### 5. positions —— 岗位表（独立无外键）
 
@@ -129,15 +131,15 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | description | text | 默认空串 | 岗位简介 |
 | tech_stack | JSON | 默认 [] | 技术栈列表（前端岗位详情展示） |
 | focus | JSON | 默认 [] | 考察重点列表 |
-| enabled | bool | 默认 true | 是否开放；占位岗位位置 false，不在岗位列表下发 |
+| enabled | bool | 默认 true | 是否开放；为 false 的岗位不在 `/positions` 列表下发 |
 | sort_order | int | 默认 0 | 岗位大厅展示顺序 |
 | created_at | datetime | server_default=now() | |
 
-启动时若表为空，自动 seed 5 个岗位（**V5 换代后全部启用**：backend / frontend / test_engineer / algorithm / system_design，见 [position.py](backend/app/models/position.py) 的 `DEFAULT_POSITIONS`）；老库由 `database.py::_align_positions` 幂等对齐（占位岗位位改名 + 缺失岗位补插），岗位清单调整只需更新数据库记录，无需改代码。
+启动时若表为空，自动 seed 5 个岗位（**V5 换代后全部启用**：backend / frontend / test_engineer / algorithm / system_design，见 [position.py](../backend/app/models/position.py) 的 `DEFAULT_POSITIONS`）；老库由 `database.py::_align_positions` 幂等对齐（占位岗位位改名 + 缺失岗位补插），岗位清单调整只需更新数据库记录，无需改代码。
 
 ### 6. questions —— 面试题库表（独立无外键）
 
-数据由 [import_question_bank.py](backend/scripts/import_question_bank.py) 从
+数据由 [import_question_bank.py](../backend/scripts/import_question_bank.py) 从
 `backend/rag/数据/*-v5.json`（**V5 格式（2026-09-14 换代）**，5 岗位共 **5012 题**）导入，
 幂等可重跑。V5 相比 V4 的变化：题型由 6 类收敛为 4 类、面试阶段由 4 个收敛为 3 个
 （新增「深度压轴」、去掉「收尾交流」）、三级追问由一整段混合文本拆成 L1/L2/L3 **三个独立字段**、
@@ -176,7 +178,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 
 1. **岗位表化（替代硬编码枚举）**：岗位数量与清单在开发期会频繁调整，故将岗位从代码枚举下沉到 `positions` 表——注册/开始面试时查库校验（无效岗位 400）、前端岗位大厅读 `GET /positions`、Mock 题库按 code 匹配（缺省回退通用池）。新增/下线岗位只需改数据库记录，代码零改动。启动 seed 幂等（表空才插入，不覆盖已有数据）。
 2. **双数据库策略**：`DATABASE_URL` 可配置。SQLite 保证演示/开发零依赖成功率；MySQL 体现正式环境技术能力；同一套 ORM 代码，切换零改动。
-3. **状态机与数据库解耦**：`status` 存字符串，状态合法性由代码层状态机保证（[state_machine.py](backend/app/core/state_machine.py)）。转换规则表驱动（`_TRANSITIONS`），非法转换抛 409。新增状态不改表结构，比数据库 ENUM 灵活。
+3. **状态机与数据库解耦**：`status` 存字符串，状态合法性由代码层状态机保证（[state_machine.py](../backend/app/core/state_machine.py)）。转换规则表驱动（`_TRANSITIONS`），非法转换抛 409。新增状态不改表结构，比数据库 ENUM 灵活。
 4. **current_round 指针设计**：会话表只存"进行到第几轮"一个指针，问答明细全在 qa_records，无冗余；轮次上限判断只需比较 `current_round >= 1 + MAX_FOLLOW_UP_ROUNDS`。
 5. **出题即落库、作答再回填**：qa_records 在出题时 INSERT、作答时 UPDATE，任何时刻不会出现"有答案无问题"的脏数据，也天然支持为 P2 重建完整对话历史。
 6. **报告一对一 unique 约束**：数据库层面杜绝一场面试两份报告。
@@ -210,8 +212,8 @@ GET /reports/growth
 
 | 内容 | 位置 |
 | :--- | :--- |
-| ORM 模型 | [backend/app/models/](backend/app/models/) |
-| 引擎与会话 | [backend/app/database.py](backend/app/database.py) |
-| 缓存抽象（Redis/内存） | [backend/app/redis_client.py](backend/app/redis_client.py) |
-| 状态机 | [backend/app/core/state_machine.py](backend/app/core/state_machine.py) |
-| 环境变量模板 | [backend/.env.example](backend/.env.example) |
+| ORM 模型 | [backend/app/models/](../backend/app/models/) |
+| 引擎与会话 | [backend/app/database.py](../backend/app/database.py) |
+| 缓存抽象（Redis/内存） | [backend/app/redis_client.py](../backend/app/redis_client.py) |
+| 状态机 | [backend/app/core/state_machine.py](../backend/app/core/state_machine.py) |
+| 环境变量模板 | [backend/.env.example](../backend/.env.example) |

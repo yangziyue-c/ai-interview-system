@@ -22,9 +22,13 @@ git pull origin main
 git add .
 git commit -m "feat(前端): 完成聊天界面布局"
 
-# 4. 直接推送到 main
-git push origin main
+# 4. 推送到 main（两个远程都推，保持内容一致）
+git push origin main && git push gitee main
 ```
+
+> **关于双远程**：仓库配置了 `origin`（GitHub）与 `gitee`（Gitee）两个远程，内容保持一致。
+> 若你只克隆了一个（从 gitee 克隆时 `origin` 就是 gitee），推自己那一个即可，
+> P1 会在同步时把内容补齐到另一侧。
 
 ### 冲突了怎么办
 

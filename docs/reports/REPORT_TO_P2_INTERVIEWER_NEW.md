@@ -152,7 +152,7 @@ STAGE_DEEP = "深度压轴"
 ```
 backend/interviewer_new/
 ├── __init__.py
-├── question_bank.py     ← 算法本体（约 230 行）
+├── question_bank.py     ← 算法本体（约 270 行）
 └── README.md            ← 算法速览 + 与旧版差异表
 
 调用链：app/api/interviews.py
@@ -185,7 +185,7 @@ backend/interviewer_new/
 ```bash
 cd backend
 <ai_interview 的 python.exe> -m pytest tests/test_question_bank.py -q     # 37 个用例
-<ai_interview 的 python.exe> -m pytest -q                                  # 全量 66 个
+<ai_interview 的 python.exe> -m pytest -q                                  # 全量 68 个
 ```
 
 **效果度量**（改动算法后必跑）：
@@ -247,7 +247,7 @@ cd backend
    ```python
    # 示例：换新题时优先用 RAG 找与考生回答语义相关的题
    from app.adapters.ai_interviewer import get_interviewer_adapter
-   rag_q = await get_interviewer_adapter()._generate_via_rag(position, round_no, history, is_follow_up)
+   rag_q = await get_interviewer_adapter()._generate_via_rag(position, history)
    if rag_q:
        return rag_q
    ```

@@ -14,20 +14,20 @@
 | # | 改动 | 影响面 |
 |---|---|---|
 | 1 | **交付包迁入项目**：`交付包-1号后端_new/` → `backend/rag/`（`代码/`、`数据/`、`vector_db/`、`说明/`），原目录已删除 | 5 号 |
-| 2 | **交付包适配 12 处**：端口 8000→8003、解除 `HF_HUB_OFFLINE` 死锁、补 CORS、`_pick()` 失败保护、环境变量支持等 | 5 号 |
+| 2 | **交付包适配 13 处**：端口 8000→8003、解除 `HF_HUB_OFFLINE` 死锁、补 CORS、`_pick()` 失败保护、环境变量支持、向量库目录改 ASCII 名等 | 5 号 |
 | 3 | **questions 表重构**：18 列（V4）→ **19 列**（V5 字段：基础/进阶得分点、L1/L2/L3、降级策略、校准锚点、知识点、关键词、优先级） | 2/3/4 号 |
 | 4 | **导入脚本重写**：源由 `题库/*.xlsx` 改为 `backend/rag/数据/*-v5.json`，新增 `--rebuild`/`--dry-run` | 5 号 |
 | 5 | **面试官算法重做**：新建 `backend/interviewer_new/`（旧的 `backend/interviewer/` 冻结留档） | **2 号** |
 | 6 | **岗位 3 个 → 5 个**：新增算法工程师、系统设计工程师（原占位位改名，`enabled=True`） | 3/4 号 |
 | 7 | **RAG 服务接入**：`backend/rag/` 起 8003，由 `start.py` 拉起；接进面试出题链第 2 级 + 新增透传接口 | 2/4 号 |
 | 8 | **评估服务增强**：新建 `backend/evaluator_new/`（按题评分：注入 V5 单题校准锚点）；`start.py` 已切到新版 | **3 号** |
-| 9 | 文档与报告更新（含本系列 6 份） | 全员 |
+| 9 | 文档与报告更新（含本系列 8 份） | 全员 |
 
 **对成员的影响一句话版**：
 - **2 号**：算法目录换到 `interviewer_new/`，详见《REPORT_TO_P2_INTERVIEWER_NEW.md》
 - **3 号**：岗位权重增至 5 个（新增两岗为**临时值**，待团队定稿）；评估服务增强版在 `evaluator_new/`，详见《REPORT_TO_P3_EVALUATOR_NEW.md》
 - **4 号**：岗位列表变 5 个（走 `GET /positions`，**前端无需改代码**）；题库接口字段有变
-- **5 号**：交付包 12 处改动见《REPORT_TO_P5_V5_PACKAGE_REVIEW.md》，后续更新请保留这些改动
+- **5 号**：交付包 13 处改动见《REPORT_TO_P5_V5_PACKAGE_REVIEW.md》，后续更新请保留这些改动
 
 ---
 
@@ -43,7 +43,7 @@
 | `backend/evaluator/` | 3 号（原版） | 留档 | 评估服务原版；确认新版稳定后可删，或把 `start.py` 切回 |
 | `frontend/` | **4 号** | 4 号可改，他人只读 | 正式前端（Vite）——**前端形态由 4 号决定** |
 | `frontend_test/` | **1 号** | 可改 | 零依赖演示前端（5273）。**⚠️ 前端的「演示代码」，不是正式前端**；P4 交付后由 1 号停用/删除（详见 `REPORT_TO_P4.md` 第 7 节） |
-| `backend/rag/代码/` | 5 号交付 → **1 号适配** | 谨慎 | RAG 服务代码；5 号更新交付包时**必须保留 1 号的 12 处改动** |
+| `backend/rag/代码/` | 5 号交付 → **1 号适配** | 谨慎 | RAG 服务代码；5 号更新交付包时**必须保留 1 号的 13 处改动** |
 | `backend/rag/数据/`、`vector_db/`、`说明/` | **5 号** | 只读 | 大文件（向量库 674MB）已 git 忽略；⚠️ `vector_db/` **必须保持纯 ASCII 名**（chromadb 打不开含非 ASCII 的绝对路径） |
 | ~~`题库/`~~ | — | **已于 2026-09-14 删除** | V4 xlsx 历史；已被 `backend/rag/数据/*-v5.json` 取代，本体删除、需要时从 Git 历史取 |
 | `docs/`、`CLAUDE.md`、`README.md` | **1 号** | 关键改动请先在群里说 | 项目文档 |
@@ -92,7 +92,7 @@
 | 单题评分素材（备用入口） | `GET /api/v1/questions/{id}` | `calibration_anchor` 给出该题「技术水平 / 岗位匹配度」的判分标准 |
 
 > ⚠️ **算法工程师 / 系统设计工程师两岗的权重是临时值**（技术/逻辑/表达/应变/匹配 = 40/25/10/10/15 与 30/30/15/10/15），
-> 已同步写入 `评估维度.csv` 与 `POSITION_CONFIG`，两处均有「临时，待团队定稿」注释。
+> 已同步写入 `评估维度.csv` 与 `POSITION_CONFIG`；「临时，待团队定稿」的注释位于 `POSITION_CONFIG`（CSV 是纯数据、无注释）。
 > `tests/test_api.py::test_weights_match_csv` 会校验两处一致——**改权重必须同时改 CSV 与代码**。
 > 评估服务目前**不读 questions 表**（只吃对话文本），上表第 2 行是可选增强。
 
@@ -106,14 +106,14 @@
 | 语义检索（可选） | `POST /api/v1/rag/search` | 透传知识库服务；服务不可用时返回 `available: false` + 空结果（**不会 500**），前端可优雅降级 |
 | 面试流程 | 原有接口不变（**注意：无 `next-question` 接口**） | `POST /interviews`（开始，返回首题 + `interview`）；`POST /interviews/{id}/answers`（提交答案，**下一题在响应的 `data.next_question`**，结束则 `data.finished=true` 并附 `data.report`）；`POST /interviews/{id}/finish`（提前结束并出报告）；`GET /interviews/{id}`（恢复会话，含 `qa_records`） |
 
-**受控词表变更**（`GET /questions` 的过滤值，非法值返回 400）：
+**受控词表变更**（`GET /questions` 的过滤值）：
 
-| 维度 | 旧值（V4） | **新值（V5）** |
-|---|---|---|
-| category | 技术知识 / 系统设计题 / 场景题 / 编码与算法 / 项目深挖 / 行为面试 | **技术知识题 / 场景应用题 / 项目经历题 / 行为素质题** |
-| stage | 开场热身 / 核心考察 / 深度考察 / 收尾交流 | **开场热身 / 核心考察 / 深度压轴** |
-| difficulty | easy / medium / hard | 不变 |
-| priority | —（无） | **常规题 / 高频必考题 / 拓展题** |
+| 维度 | 旧值（V4） | **新值（V5）** | 传非法值时 |
+|---|---|---|---|
+| category | 技术知识 / 系统设计题 / 场景题 / 编码与算法 / 项目深挖 / 行为面试 | **技术知识题 / 场景应用题 / 项目经历题 / 行为素质题** | 400 |
+| stage | 开场热身 / 核心考察 / 深度考察 / 收尾交流 | **开场热身 / 核心考察 / 深度压轴** | 400 |
+| difficulty | easy / medium / hard | 不变 | 400 |
+| priority | —（无） | **常规题 / 高频必考题 / 拓展题** | **空集（不做词表校验）** |
 
 ### 4.5 给 5 号（知识库）
 
@@ -122,7 +122,7 @@
 | 导入题库 | `cd backend && python -m scripts.import_question_bank --rebuild --yes` | 读 `backend/rag/数据/*-v5.json`（18 字段），幂等可重跑 |
 | 只看统计不落库 | `... --dry-run` | 输出记录数 / 岗位分布 / 阶段分布 / 校验失败明细 |
 | RAG 服务自测 | `python backend/rag/代码/04_verify_collection.py` | 应报 collection 总条数 74011 |
-| 交付包改动 | 见《REPORT_TO_P5_V5_PACKAGE_REVIEW.md》 | 12 处，更新交付包时请保留 |
+| 交付包改动 | 见《REPORT_TO_P5_V5_PACKAGE_REVIEW.md》 | 13 处，更新交付包时请保留 |
 
 ### 4.6 题库字段变更对照（V4 → V5，19 列）
 
@@ -163,7 +163,7 @@
 
 ```bash
 cd backend
-python -m pytest -q                              # 全量 66 个用例
+python -m pytest -q                              # 全量 68 个用例
 python -m scripts.simulate_interview --rounds 200  # 面试流程仿真（效果度量）
 ```
 

@@ -2,8 +2,10 @@
 
 > 🧭 **先明确一个定位：`backend/evaluator_new/` 是 「示范代码」。**
 >
-> 它是 1 号为了让 V5 的**单题校准锚点**能真正喂进评分而做的**最小侵入参考实现**
-> （相对你的原版，全量改动只有 `build_dialogue_text` 一个函数）——**没有重写评估服务**。
+> 它是 1 号为了让 V5 的**单题校准锚点**能真正喂进评分而做的**最小侵入参考实现**——**没有重写评估服务**。
+> 相对你的原版共三处改动：① `build_dialogue_text` 注入单题素材（主体）；
+> ② `call_llm_for_evaluation` 加 `qa_list`/`position` 参数，修正降级分支的档位口径；
+> ③ `evaluation_prompts.py` 为一处在册却无专属文案的岗位补了通用兜底（详见 2.1）。
 >
 > | 你可以 | 说明 |
 > |---|---|
@@ -57,9 +59,9 @@ POST /evaluate  {"position": "backend", "qa_list": [{round, question, answer}]}
 
 ## 二、为什么这么改（三条设计约束）
 
-### 2.1 只改一处函数，Prompt 模板与评分逻辑零改动
+### 2.1 改动集中在素材注入，另有两处口径修正
 
-**改动仅 `build_dialogue_text()` 一个函数**：把素材拼进对话文本。
+**主体改动是 `build_dialogue_text()` 一个函数**：把素材拼进对话文本。
 
 ```python
 def build_dialogue_text(qa_list):
@@ -74,10 +76,18 @@ def build_dialogue_text(qa_list):
     return dialogue
 ```
 
-**为什么不动 Prompt 模板**（`evaluation_prompts.py` 逐字未改）：
+**为什么不动 Prompt 模板的岗位专属内容**（`evaluation_prompts.py` 仅做了一处通用兜底修复）：
 - 模板里有大量岗位专属的评分细则，是 3 号的核心工作，改它风险高；
 - 素材作为"对话文本的一部分"注入，LLM 同样能读到，**效果等价而侵入最小**；
 - 3 号后续要调整模板时，不受本次改动牵扯。
+
+> **那一处必改的修复**：原实现用 `_KEY_POINTS.get(code, "")` 取岗位考察点，对
+> **本文件没有专属文案、但已在 `evaluation_weights.POSITION_CONFIG` 注册**的岗位
+> （即 V5 新增的 algorithm / system_design）会返回**空串**，Prompt 里会出现
+> 「核心考察点：」后面什么都没有。现改为 `.get(code) or _GENERIC_KEY_POINTS`，
+> 并在文件顶部抽出 `_GENERIC_KEY_POINTS` / `_GENERIC_POSITION_DESC` 两个常量
+> （与既有的 `GENERIC_POSITION` 共用一份，避免两处漂移）。
+> **空串与「未注册」是两回事**——这是本题唯一的逻辑修复，其余模板内容未动。
 
 ### 2.2 依赖倒置：素材由调用方提供，评估服务保持无状态
 
@@ -117,8 +127,9 @@ build_dialogue_text(qa)
 
 ```
 backend/evaluator_new/
-├── app.py                 ← 复制自 evaluator/app.py，仅 build_dialogue_text 增强 + docstring
-└── evaluation_prompts.py  ← 逐字复制，未改
+├── app.py                 ← 复制自 evaluator/app.py。改动：build_dialogue_text 素材注入、
+│                              call_llm_for_evaluation 签名 + 4 处降级分支传参（见 2.1）
+└── evaluation_prompts.py  ← 仅加通用文案兜底（_GENERIC_KEY_POINTS / _GENERIC_POSITION_DESC）
 ```
 
 **由 `start.py` 自动拉起**（已切换）：
@@ -163,8 +174,8 @@ POST http://localhost:8002/evaluate
 
 ```bash
 cd backend
-<ai_interview 的 python.exe> -m pytest tests/test_evaluator_new.py -q    # 6 个用例
-<ai_interview 的 python.exe> -m pytest -q                                # 全量 62 个
+<ai_interview 的 python.exe> -m pytest tests/test_evaluator_new.py -q    # 7 个用例
+<ai_interview 的 python.exe> -m pytest -q                                # 全量 68 个
 ```
 
 **效果验证**（需配置 `LLM_API_KEY`）：
@@ -235,9 +246,10 @@ curl -X POST http://localhost:8002/evaluate -H "Content-Type: application/json" 
 | 请求字段 | `position` + `qa_list` | 相同 **+ 可选 `materials`** |
 | 返回字段 | 5 维分数 + 文本字段 | **相同**（逐字不变） |
 | `build_dialogue_text` | 纯对话 | 有素材时追加「【本题评分参考】」行 |
-| `evaluation_prompts.py` | — | **逐字未改** |
-| 评分逻辑 / 权重 / 兜底 | — | **完全相同** |
-| 无素材时的行为 | — | **与原版逐字一致**（6 个回归用例守护） |
+| `evaluation_prompts.py` | — | 仅加通用文案兜底（无专属文案的在册岗位不再拼出空串） |
+| 评分逻辑 / 权重 | — | **完全相同** |
+| LLM 失败时的兜底 | 无参 `get_default_report()`，按「空答卷」算最低档 | 传 `qa_list`/`position`，按实际答篇幅分档（**修正**） |
+| 无素材时的行为 | — | 正常路径**与原版逐字一致**（6 个回归用例守护）；LLM 失败降级时走上述修正后的档位 |
 
 ---
 

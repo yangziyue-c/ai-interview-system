@@ -90,7 +90,7 @@ GET /auth/me
 GET /positions
 ```
 
-> 岗位由后端数据库动态维护（预留 5 个岗位位，未开放的占位岗位不下发）。
+> 岗位由后端数据库动态维护（当前 5 个岗位全部启用；`enabled=false` 的岗位不下发）。
 > 前端**不得硬编码岗位列表**，注册/开始面试的 position 必须传本接口返回的 `code`。
 
 ```json
@@ -318,9 +318,9 @@ GET /questions?position=backend&category=技术知识题&difficulty=easy&stage=�
       "exam_priority": "高频必考题",
       "basic_score_points": "JVM 是运行字节码的虚拟机……",
       "advanced_score_points": "JDK 包含 JRE 和开发工具……",
-      "follow_up_l1": "[触发] 答出基础得分点时触发\n[追问] 你提到了JVM，能具体说说它的定义吗？",
-      "follow_up_l2": "[触发] 基础得分点全对时触发\n[追问] JVM 的底层实现原理是什么？",
-      "follow_up_l3": "[触发] 考生展示工程经验时触发\n[追问] 在实际项目中你用过 JVM 吗？",
+      "follow_up_l1": "[触发] 答出基础得分点、回答基本正确时触发\n[追问] 你提到了JVM，能具体说说它的定义和核心作用吗？",
+      "follow_up_l2": "[触发] 基础得分点全对且逻辑清晰时触发\n[追问] JVM的底层实现原理是什么？",
+      "follow_up_l3": "[触发] 本题为easy难度，一般不触达L3；若考生表现优异可酌情触发以下追问。\n[触发] 考生答出进阶得分点时触发\n[追问] 在实际项目中你用过JVM吗？遇到过什么坑？怎么解决的？",
       "fallback_strategy": "如果候选人一时答不上来，先引导聚焦核心概念……",
       "calibration_anchor": "[技术水平] 能准确阐述核心概念与原理边界……\n[岗位匹配度] ……",
       "related_knowledge": "java-backend-kp-3180|JVM入门与体系结构|理解JVM运行时数据区……"
@@ -364,7 +364,7 @@ POST /rag/search
 | top | select 模式返回几道题（1~20，默认 3） |
 | level | 层级过滤（可选）：原题 / L1 / L2 / L3 / 语义变体… |
 
-返回 `data`：`{available, mode, results: [{score, 题目, 参考答案, 原题ID, 层级, 岗位, 题型, 难度, 面试阶段, 考点优先级}]}`；
+返回 `data`：`{available, mode, results: [{score, 题目, 参考答案, 原题ID, 题目ID, 层级, 岗位, 题型, 难度, 面试阶段, 考点优先级}]}`；
 `mode=expand` 时**响应结构不同**：不含 `results`，而是 `{mode, 原题ID, 命中题目, 全层级片段, 片段数}`（`命中题目` 为单元素数组）。
 
 > **服务不可用时返回 `available: false` + 空结果，而非 500**——调用方可优雅降级。
@@ -504,5 +504,5 @@ POST {AI_EVALUATOR_URL}/evaluate
 | algorithm | 40% | 25% | 10% | 10% | 15% |
 | system_design | 30% | 30% | 15% | 10% | 15% |
 
-> ⚠️ 最后两个岗位（2026-09-14 随 V5 知识库启用）的权重为**临时值**，待团队在
-> 《评估维度.csv》定稿后替换；CSV 与 `POSITION_CONFIG` 两处已同步并标注。
+> 最后两个岗位（2026-09-14 随 V5 知识库启用）的权重已在《评估维度.csv》与
+> `POSITION_CONFIG` 两处同步一致（`test_weights_match_csv` 机器校验）。**改权重必须同时改两处**。

@@ -9,7 +9,7 @@
 > ⚠️ **向量库目录名必须是纯 ASCII（`vector_db/`；旧名「向量库」已废弃）**：
 > chromadb 打不开「含非 ASCII 字符的**绝对路径**」——实测 10/10 失败并报
 > `Error loading hnsw index`，极易误判为「向量库损坏」；**构建侧同样受影响**
-> （用中文绝对路径建库会产出缺 HNSW 索引文件的坏库）。5 个脚本会自动把旧目录名
+> （用中文绝对路径建库会产出缺 HNSW 索引文件的坏库）。4 个脚本（`02`~`05`）会自动把旧目录名
 > 升级为 `vector_db/`。详见文末「1 号适配说明」第 13 条。
 
 ## 文件清单
@@ -112,7 +112,7 @@ python -c "from sentence_transformers import SentenceTransformer as S; S('BAAI/b
 | # | 文件 | 改动 | 原因 |
 |---|---|---|---|
 | 1 | `05` | 端口 `8000` → `8003`（`RAG_PORT` 可覆盖） | 8000 被本机 Godot AI MCP 占用（项目铁律） |
-| 2 | 五个脚本 | `HF_HUB_OFFLINE` 由写死 `"1"` 改 `setdefault(..., "0")` | 交付包不含模型文件，无本地缓存的机器首次启动直接抛 OSError |
+| 2 | `02`/`03`/`04`/`05` | `HF_HUB_OFFLINE` 由写死 `"1"` 改 `setdefault(..., "0")` | 交付包不含模型文件，无本地缓存的机器首次启动直接抛 OSError（`01` 不加载模型，本就无此行） |
 | 3 | `05` | 补 `CORSMiddleware` | 原说明文档承诺「CORS 已放开」，但代码无中间件 |
 | 4 | 五个脚本 | `_pick()` 全部未命中时 `raise FileNotFoundError` | 原实现返回无效路径 → chromadb **静默创建空库**，表现为「检索永远无结果」而非「路径配错」 |
 | 5 | `02/03/05` | `torch.set_num_threads(8)` → 默认取 CPU 核心数 | 28 核机器上写死 8 会浪费算力 |
