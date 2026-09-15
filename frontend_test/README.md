@@ -1,4 +1,4 @@
-# frontend_test —— AI 模拟面试演示前端
+# frontend_test：AI 模拟面试演示前端
 
 零构建的纯 HTML/CSS/JS 单页前端，用于快速查看项目整体实现。接口全部对照
 [docs/API.md](../docs/API.md) 与 [docs/reports/REPORT_TO_P4.md](../docs/reports/REPORT_TO_P4.md)
@@ -6,7 +6,7 @@
 
 ## 运行方式
 
-**推荐：双击 `backend/start.bat` 一键启动**——启动器会自动拉起演示前端
+**推荐：双击 `backend/start.bat` 一键启动**。启动器会自动拉起演示前端
 （端口 5273，避开 P4 联调用的 5173）+ P3 评估服务（8002）+ 主后端（8001），
 并在完成后打印访问指引（含本机与局域网地址）。
 
@@ -20,7 +20,7 @@ cd backend && 双击 start.bat      # 或 python -m uvicorn app.main:app --host 
 | :--- | :--- | :--- |
 | ① 静态服务器（推荐，跨域已由后端放开） | 本目录下 `python -m http.server 5273` | http://localhost:5273 |
 | ② 同端口挂载（模拟正式部署） | 把本目录所有文件拷入 `backend/static/` | http://localhost:8001 |
-| ③ 直接双击 | 打开 `index.html`（file:// 协议，麦克风可能受限） | —— |
+| ③ 直接双击 | 打开 `index.html`（file:// 协议，麦克风可能受限） | 无 |
 
 > 方式 ①/③ 下前端直连 `http://<同一主机>:8001/api/v1`（后端 CORS 已 `allow_origins: ["*"]`，
 > 局域网手机访问时自动指向所访问主机的 8001）；方式 ② 及任何同端口/隧道部署自动改用
@@ -33,7 +33,7 @@ cd backend && 双击 start.bat      # 或 python -m uvicorn app.main:app --host 
 - **岗位大厅**：数据来自 `GET /positions`（未硬编码岗位列表）。
 - **岗位详情**：简介 / 技术栈 / 考察重点 + 「开始面试」按钮。
 - **面试对话室**：AI 左、用户右气泡；顶部「第 N/7 题」与「结束面试」按钮；
-  文本输入（回车发送）；**按住说话**语音输入（Web Speech 转写 + MediaRecorder
+  文本输入（回车发送）；按住说话语音输入（Web Speech 转写 + MediaRecorder
   录 webm 上传 `POST /uploads/audio`，audio_url 随答案提交）；
   提交后按 `finished` 字段判断下一题或跳报告；
   已存在进行中面试（409）自动引导继续；刷新/重新进入可恢复会话。

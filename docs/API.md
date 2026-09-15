@@ -91,7 +91,7 @@ GET /positions
 ```
 
 > 岗位由后端数据库动态维护（当前 5 个岗位全部启用；`enabled=false` 的岗位不下发）。
-> 前端**不得硬编码岗位列表**，注册/开始面试的 position 必须传本接口返回的 `code`。
+> 前端不得硬编码岗位列表，注册/开始面试的 position 必须传本接口返回的 `code`。
 
 ```json
 { "code": 0, "message": "ok", "data": [
@@ -223,8 +223,8 @@ GET /reports/{interview_id}
 > 评分维度 5 维（2026-09-04 起，源自团队《评估维度.csv》）：技术水平 / 逻辑思维 /
 > 沟通表达 / 应变能力 / 岗位匹配度。`adaptability_score` 为新增字段，前端雷达图按 5 轴渲染。
 >
-> `position` 由接口从所属面试注入（`reports` 表不存该列）。**前端应直接用它显示岗位名**，
-> 不要再靠「从列表页带过来的内存变量」——那样一刷新页面岗位名就没了。
+> `position` 由接口从所属面试注入（`reports` 表不存该列）。前端应直接用它显示岗位名，
+> 不要再靠「从列表页带过来的内存变量」，那样一刷新页面岗位名就没了。
 > 结束面试的两个响应（`POST /interviews/{id}/answers` 的 `report`、
 > `POST /interviews/{id}/finish` 的 `report`）同样带该字段。
 
@@ -269,8 +269,8 @@ GET /reports/growth
 ## 5. 题库
 
 题库数据来自 `questions` 表（由 `backend/scripts/import_question_bank.py` 从
-`backend/rag/数据/*-v5.json` 导入。**题库 V5（2026-09-14 换代）**：5 个岗位共 **5012 题**
-——backend 2146 + frontend 734 + test_engineer 667 + algorithm 655 + system_design 810）。
+`backend/rag/数据/*-v5.json` 导入。题库 V5（2026-09-14 换代）：5 个岗位共 5012 题，
+backend 2146 + frontend 734 + test_engineer 667 + algorithm 655 + system_design 810）。
 主要供面试官算法（选题/追问）与评估服务（单题评分素材）使用。
 
 > 18 字段规范、导入命令与排障见 [docs/reports/REPORT_TO_P5.md](reports/REPORT_TO_P5.md)；
@@ -295,7 +295,7 @@ GET /questions?position=backend&category=技术知识题&difficulty=easy&stage=�
 | q | 题干模糊搜索关键词 |
 | limit / offset | 分页（limit 默认 20，最大 100） |
 
-> `category` / `difficulty` / `stage` 走受控词表校验，非法值返回 **400**（`code=40000`），
+> `category` / `difficulty` / `stage` 走受控词表校验，非法值返回 400（`code=40000`），
 > 避免题库改名后静默返回空集。
 
 返回：
@@ -329,7 +329,7 @@ GET /questions?position=backend&category=技术知识题&difficulty=easy&stage=�
 } }
 ```
 
-> `question_no` 是 **V5 原题 ID**，与 RAG 向量库元数据的「原题ID」同键，可双向回查。
+> `question_no` 是 V5 原题 ID，与 RAG 向量库元数据的「原题ID」同键，可双向回查。
 > 三级追问字段的原文含 `[触发]` / `[追问]` 标记行，解析由 `backend/interviewer_new/`
 > 负责（见 [REPORT_TO_P2_INTERVIEWER_NEW.md](reports/REPORT_TO_P2_INTERVIEWER_NEW.md)）。
 
@@ -365,9 +365,9 @@ POST /rag/search
 | level | 层级过滤（可选）：原题 / L1 / L2 / L3 / 语义变体… |
 
 返回 `data`：`{available, mode, results: [{score, 题目, 参考答案, 原题ID, 题目ID, 层级, 岗位, 题型, 难度, 面试阶段, 考点优先级}]}`；
-`mode=expand` 时**响应结构不同**：不含 `results`，而是 `{mode, 原题ID, 命中题目, 全层级片段, 片段数}`（`命中题目` 为单元素数组）。
+`mode=expand` 时响应结构不同：不含 `results`，而是 `{mode, 原题ID, 命中题目, 全层级片段, 片段数}`（`命中题目` 为单元素数组）。
 
-> **服务不可用时返回 `available: false` + 空结果，而非 500**——调用方可优雅降级。
+> 服务不可用时返回 `available: false` + 空结果，而非 500，调用方可据此降级。
 > RAG 服务本体是独立进程（8003，`backend/rag/`，由 `start.py` 拉起），首次启动需
 > 下载约 4.5GB 模型；出题链的自动兜底见 `ai_interviewer.py::_generate_via_rag`。
 
@@ -409,7 +409,7 @@ GET /config                { "code": 0, "message": "ok", "data": {
                             } }
 ```
 
-> 需登录（与其余业务接口一致）。**前端不要硬编码轮数**——它由后端 `.env` 的
+> 需登录（与其余业务接口一致）。前端不要硬编码轮数，它由后端 `.env` 的
 > `MAX_FOLLOW_UP_ROUNDS` 决定，改配置后本接口自动跟随；硬编码会导致
 > 「第 N / 7 题」的显示与实际轮数静默脱节。
 
@@ -418,14 +418,14 @@ GET /config                { "code": 0, "message": "ok", "data": {
 ## 附录：P2 / P3 外部服务接入约定
 
 在 `backend/.env` 中配置 URL 后自动生效；未配置或调用失败时后端自动降级为内置 Mock。
-**超时预算不同**：P2 面试官 15 秒（`ADAPTER_TIMEOUT_SECONDS`），P3 评估 **30 秒**
+**超时预算不同**：P2 面试官 15 秒（`ADAPTER_TIMEOUT_SECONDS`），P3 评估 30 秒
 （`ai_evaluator.EVALUATE_TIMEOUT_SECONDS`，评估报告生成较慢故单独放宽；
-评估服务自身内部超时为 25 秒，正是为配合这个 30 秒预算——**勿按 15 秒改动**）。
+评估服务自身内部超时为 25 秒，正是为配合这个 30 秒预算，不要按 15 秒改动）。
 
 ### P2：AI 面试官
 
-> **2026-09-14 起出题由题库策略原生完成**（`backend/interviewer_new/`，最高优先级）：
-> 面试官算法已落地主项目，`AI_INTERVIEWER_URL` 仅为**扩展位**——只在题库策略
+> 2026-09-14 起出题由题库策略原生完成（`backend/interviewer_new/`，最高优先级）：
+> 面试官算法已落地主项目，`AI_INTERVIEWER_URL` 仅为扩展位，只在题库策略
 > 未命中（如岗位在题库无题）时才会被调用。数据源链为
 > `题库策略 > RAG 语义检索 > 外部服务 > LLM 直连 > 内置 Mock`。以下契约供扩展位服务对接：
 
@@ -474,7 +474,7 @@ POST {AI_EVALUATOR_URL}/evaluate
 ```
 
 > `materials` 用于让评估服务"按题判分"（同一段答案，easy 概念题与 hard 原理题应得不同分）。
-> 它是**向后兼容的可选增强**：旧版评估服务忽略该字段，不传时评分行为与原版逐字一致。
+> 它是向后兼容的可选增强：旧版评估服务忽略该字段，不传时评分行为与原版逐字一致。
 
 期望返回（5 维评分）：
 
@@ -505,4 +505,4 @@ POST {AI_EVALUATOR_URL}/evaluate
 | system_design | 30% | 30% | 15% | 10% | 15% |
 
 > 最后两个岗位（2026-09-14 随 V5 知识库启用）的权重已在《评估维度.csv》与
-> `POSITION_CONFIG` 两处同步一致（`test_weights_match_csv` 机器校验）。**改权重必须同时改两处**。
+> `POSITION_CONFIG` 两处同步一致（`test_weights_match_csv` 机器校验）。改权重必须同时改两处。

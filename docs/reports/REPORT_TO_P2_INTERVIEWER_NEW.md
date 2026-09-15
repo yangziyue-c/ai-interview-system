@@ -1,8 +1,8 @@
 # 给 2 号（AI 专项）· 面试官算法 V5 适配说明（含示范代码）
 
-> 🧭 **先明确一个定位：`backend/interviewer_new/` 是「示范代码」，可在此基础上修改。** 
+> 先明确一个定位：`backend/interviewer_new/` 是「示范代码」，可在此基础上修改。
 >
-> 它是 1 号在 V5 换代时为了**让集成链路先跑通**而写的一版适配实现。
+> 它是 1 号在 V5 换代时为跑通集成链路而写的一版适配实现。
 >
 > | 你可以 | 说明 |
 > |---|---|
@@ -14,10 +14,10 @@
 ---
 
 > 背景：知识库由 V4（`题库/*.xlsx`，451 题）换代到 V5（`backend/rag/数据/*-v5.json`，5012 题 / 5 岗位）。
-> 数据结构变了，原算法（`backend/interviewer/question_bank.py`）**无法直接跑在新数据上**，
-> 1 号据此做了一版**适配实现**，落在 **`backend/interviewer_new/`**。
+> 数据结构变了，原算法（`backend/interviewer/question_bank.py`）无法直接跑在新数据上，
+> 1 号据此做了一版适配实现，落在 `backend/interviewer_new/`。
 >
-> 本文回答四件事：**为什么改 / 为什么这么改 / 具体怎么用 / 之后怎么拓展**。
+> 本文回答四件事：为什么改 / 为什么这么改 / 具体怎么用 / 之后怎么拓展。
 
 ---
 
@@ -31,13 +31,13 @@
 | 格式 | `【L1-触发追问】① 若提到"hashCode" → 追问：…` 自由文本，实测有 6 种措辞变体 | `[触发] 条件` + `[追问] 文本`，**100% 规整**（5012/5012 实测） |
 
 旧算法为此写了 119 行正则兼容层（`_SECTION_MARKERS`、`_L1_TRIGGER_RE`、`_split_arrow`、
-`_parse_l1_part` 及 5 个前缀正则）。V5 把这些信息**前置到数据生产端**了，这层代码全部作废。
+`_parse_l1_part` 及 5 个前缀正则）。V5 把这些信息前置到数据生产端了，这层代码全部作废。
 
 ### 硬伤 2：L1 触发机制在新数据下命中率仅约 66%
 
 旧算法的 L1 靠**关键词子串匹配**：`keyword.lower() in answer.lower()`。
 
-但 V5 的 L1 触发条件**全是描述式**（实测 **0/5012** 是关键词式）：
+但 V5 的 L1 触发条件全是描述式（实测 0/5012 是关键词式）：
 
 ```
 [触发] 回答缺乏细节时触发          ← 442 条，最高频
@@ -45,18 +45,18 @@
 [触发] 候选人回答偏笼统时触发
 ```
 
-**后果（最严重）**：匹配永不命中 →
-- 考生答得好 → `candidates` 为空 → **直接换新题**，追问链根本不启动
+**后果**：匹配全部落空 →
+- 考生答得好 → `candidates` 为空 → 直接换新题，追问链根本不启动
 - 面试退化成「连问 7 道互不相关的题」，深度考察能力丧失
 
-### 硬伤 3：V5 没有「收尾交流」阶段，收尾题池必然为空
+### 硬伤 3：V5 没有「收尾交流」阶段，收尾题池取不到题
 
 V5 只有 3 个阶段：`开场热身`(1782) / `核心考察`(2800) / `深度压轴`(430)。
 
-旧算法在 round 6/7 强制选 `interview_stage="收尾交流"` 的题（V4 有 45 道）→ **V5 池空** →
-`pick_next` 返回 `None` → 面试**降级到 Mock 通用模板**。
+旧算法在 round 6/7 强制选 `interview_stage="收尾交流"` 的题（V4 有 45 道）→ V5 池空 →
+`pick_next` 返回 `None` → 面试降级到 Mock 通用模板。
 
-> 注：旧算法当初花大力气修的就是「收尾题永不出现」（0/2700 场模拟），
+> 注：旧算法专门修复的就是「收尾题永不出现」（0/2700 场模拟），
 > 换数据后这个修复会以另一种形式失效。
 
 ---
@@ -65,7 +65,7 @@ V5 只有 3 个阶段：`开场热身`(1782) / `核心考察`(2800) / `深度压
 
 ### 2.1 保留：决策骨架原样不动
 
-旧算法的**决策逻辑**是经过两轮审查 + 2700 场模拟验证的，与数据格式无关，全部保留：
+旧算法的决策逻辑是经过两轮审查 + 2700 场模拟验证的，与数据格式无关，全部保留：
 
 | 机制 | 说明 |
 |---|---|
@@ -77,7 +77,7 @@ V5 只有 3 个阶段：`开场热身`(1782) / `核心考察`(2800) / `深度压
 | 追问去重范围 | 仅本锚点链内（跨题共享的降级话术不互相排挤） |
 | `avoid_hard` | 连续露怯者换新题时跳过深度压轴 |
 
-**接口签名也保持不变**，`app/adapters/ai_interviewer.py` 只改了 import 路径：
+接口签名也保持不变，`app/adapters/ai_interviewer.py` 只改了 import 路径：
 
 ```python
 pick_next(session, position, round_no, history, is_follow_up) -> str | None
@@ -95,7 +95,7 @@ def extract_follow_up_text(field: str) -> str:
     return lines[-1][len("[追问]"):].strip() if lines else ""
 ```
 
-> **为什么取「最后一个」而不是「第一个」**：V5 的 L3 字段有 **31.1%**（1558/5012）的题是这样：
+> **为什么取「最后一个」而不是「第一个」**：V5 的 L3 字段有 31.1%（1558/5012）的题是这样：
 > ```
 > [触发] 本题为easy难度，一般不触达L3；若考生表现优异可酌情触发以下追问。   ← 元信息
 > [触发] 考生答出进阶得分点时触发                                      ← 真触发条件
@@ -114,9 +114,9 @@ if follow_count == 0:
 ```
 
 > **依据**：V5 的 L1 触发条件措辞虽多（"回答缺乏细节""答出基本思路""回答偏笼统"…），
-> 但**语义高度一致**——都是「答了，但不完美，需要往下挖」。因此用统一的笼统判定分流：
+> 但语义高度一致：都是「答了，但不完美，需要往下挖」。因此用统一的笼统判定分流：
 > 真答不出（露怯）才降级，其余一律进入 L1。
-> **效果**：追问链触达率 **66% → 100%**（200 场 × 5 岗位仿真实测）。
+> **效果**：追问链触达率 66% → 100%（200 场 × 5 岗位仿真实测）。
 
 **③ 收尾题池改按题型选**（替代按阶段选）
 
@@ -127,12 +127,12 @@ def pick_closing_question(questions, asked):
     return random.choice(pool) if pool else None
 ```
 
-> **依据**：V4 的 45 道收尾题 **100% 是「行为面试」类**；V5 对应的是「行为素质题」（每岗 65~214 道），
+> **依据**：V4 的 45 道收尾题 100% 是「行为面试」类；V5 对应的是「行为素质题」（每岗 65~214 道），
 > 题干形如「请分享一次你…的经历」，定位完全一致。不限定阶段以扩大题池。
 
 ### 2.3 一个刻意的不改动
 
-`QUESTION_STAGES` 词表改成了 V5 的 3 个值，但新算法**按名引用**而非顺序解包：
+`QUESTION_STAGES` 词表改成了 V5 的 3 个值，但新算法按名引用而非顺序解包：
 
 ```python
 STAGE_OPENING = "开场热身"    # 而不是 STAGE_OPENING, STAGE_CORE, ... = QUESTION_STAGES
@@ -140,7 +140,7 @@ STAGE_CORE = "核心考察"
 STAGE_DEEP = "深度压轴"
 ```
 
-**原因**：顺序解包在词表增删值时会**静默错位**（旧算法的脆弱点）。按名引用则报错可见。
+**原因**：顺序解包在词表增删值时会静默错位（旧算法的脆弱点）。按名引用则报错可见。
 `tests/test_question_bank.py::TestPositionConstants` 有断言守护两处一致。
 
 ---
@@ -169,7 +169,7 @@ backend/interviewer_new/
 
 ### 3.2 字段依赖（改动时务必对照）
 
-`questions_of_position` 用 `load_only` 只投影 8 列（其余是长文本，全量加载会浪费数 MB）：
+`questions_of_position` 用 `load_only` 只投影 8 列（其余是长文本，全量加载会多读数 MB）：
 
 | 列 | 用途 |
 |---|---|
@@ -203,9 +203,9 @@ cd backend
 
 ## 四、教程：之后怎么改
 
-> **这一节是给你的动手教程**——按"改动成本从低到高"排列，每个改法都写明
-> **改哪里 + 测试怎么写**，照着做即可；改完跑一遍 `pytest tests/test_question_bank.py`
-> 与 `python -m scripts.simulate_interview --rounds 200` 就能确认没退化。
+> 这一节是给你的动手教程，按"改动成本从低到高"排列，每个改法都写明
+> 改哪里、测试怎么写，按此执行即可；改完跑一遍 `pytest tests/test_question_bank.py`
+> 与 `python -m scripts.simulate_interview --rounds 200` 即可确认无退化。
 
 ### 拓展 1：新增一级追问（L4）
 
@@ -223,23 +223,23 @@ cd backend
    - `max` 判定同步（`follow_count >= 4 → 换新题`）
 3. 测试：`TestPickNextMatrix` 加一个 `test_l4_progression`，构造 `follow_count=3` 的 history 断言返回 L4 文本
 
-> ⚠️ 注意 `MAX_FOLLOW_UP_ROUNDS`(6) 与总轮数的关系：`总轮数 = 1 + MAX_FOLLOW_UP_ROUNDS`。
-> 加一层追问意味着锚点链更长，需评估收尾窗口是否还够（收尾是**按轮次**强制，不是按链长）。
+> 注意 `MAX_FOLLOW_UP_ROUNDS`(6) 与总轮数的关系：`总轮数 = 1 + MAX_FOLLOW_UP_ROUNDS`。
+> 加一层追问意味着锚点链更长，需评估收尾窗口是否还够（收尾是按轮次强制，不是按链长）。
 
 ### 拓展 2：替换笼统判定策略
 
 **场景**：想接入 LLM 判断"回答是否够深入"，而非长度+短语。
 
-1. `question_bank.py` 的 `is_vague_answer` 是**全项目唯一口径**（Mock 追问也复用），
+1. `question_bank.py` 的 `is_vague_answer` 是全项目唯一口径（Mock 追问也复用），
    替换时保持签名 `(text: str) -> bool`，或改成可注入的策略对象
-2. ⚠️ 注意它被两处复用：`ai_interviewer.py` 的 Mock 路径、`simulate_interview.py`
-3. 测试：`TestIsVagueAnswer` 的 4 个用例是**行为契约**（尤其 `test_buhui_negation_not_vague`
+2. 注意还有两处复用它：`ai_interviewer.py` 的 Mock 路径、`simulate_interview.py`
+3. 测试：`TestIsVagueAnswer` 的 4 个用例是行为契约（尤其 `test_buhui_negation_not_vague`
    那条「不会产生脏读」不误判），改判定逻辑后必须全过
 
 ### 拓展 3：让 RAG 参与出题（改变优先级）
 
-**现状**：RAG（`POST /rag/search`）挂在数据源链**第 2 级**，但 V5 题库覆盖 5 岗位共 5012 题，
-题库策略极少返回 `None`，所以这一级多数场次不会被调用——它是「题库缺失时的语义兜底」。
+**现状**：RAG（`POST /rag/search`）挂在数据源链第 2 级，但 V5 题库覆盖 5 岗位共 5012 题，
+题库策略极少返回 `None`，所以多数场次不会走到这一级，它只在题库缺失时提供语义兜底。
 
 **若要让它主动参与出题**（如"根据考生回答动态选相关题"）：
 
@@ -251,7 +251,7 @@ cd backend
    if rag_q:
        return rag_q
    ```
-   ⚠️ 但 `question_bank` 目前是**纯函数 + 无外部依赖**的设计（便于单测），
+   但 `question_bank` 目前是纯函数 + 无外部依赖的设计（便于单测），
    引入网络调用会破坏这一点。**更推荐**：把 RAG 作为 adapter 层的独立数据源
    （见 `_generate_via_rag`），在 `generate_question` 里调整优先级顺序即可，算法层保持纯净。
 2. 测试：`TestQuestionBankFlow` 加一个 mock 掉 RAG 响应的集成用例
@@ -263,15 +263,15 @@ cd backend
    `POSITION_MAP` 加岗位全名 → code
 3. `app/models/position.py` 的 `DEFAULT_POSITIONS` 加岗位（老库由 `_align_positions` 自动补插）
 4. `app/core/evaluation_weights.py` 的 `POSITION_CONFIG` 加权重，
-   `评估维度.csv` 加列——否则 `test_weights_match_csv` 会挂
+   `评估维度.csv` 加列，否则 `test_weights_match_csv` 会挂
 5. `ai_interviewer.py` 的 `_POSITION_LABELS` 与 `_RAG_JOB_LABELS` 各加一行
 6. 验证：`python -m scripts.import_question_bank --rebuild --yes` + `pytest`
 
 ### 拓展 5：调整层级推进策略（按回答质量而非追问次数）
 
-**现状**：层级由"追问了几次"决定（n=0/1/2），简单可靠。
+**现状**：层级只由"追问了几次"决定（n=0/1/2）。
 
-**可探索**：按回答质量动态跳级（如答得特别好时 L1 跳过直接 L2）。
+**可探索**：按回答质量动态跳级（如答案质量高时跳过 L1 直接 L2）。
 
 改法：`_pick_follow_up` 里把 `follow_count` 的映射改成函数：
 
@@ -283,8 +283,8 @@ def _next_level(anchor, answer: str, follow_count: int) -> str:
     ...
 ```
 
-测试：`TestPickNextMatrix` 的矩阵用例正是为这类策略变化准备的——每个决策分支一个用例，
-改策略时**先改测试期望、再改实现**，矩阵会自动告诉你影响了哪些场景。
+测试：`TestPickNextMatrix` 的矩阵用例正是为这类策略变化准备的：每个决策分支一个用例，
+改策略时先改测试期望、再改实现，矩阵会直接标出受影响的场景。
 
 ---
 
@@ -305,5 +305,5 @@ def _next_level(anchor, answer: str, follow_count: int) -> str:
 
 ---
 
-**有疑问或要改算法，直接动 `backend/interviewer_new/`（该目录已移交 2 号）。**
-旧版 `backend/interviewer/` 已冻结留档，不再被任何代码引用，可安全忽略。
+有疑问或要改算法，直接动 `backend/interviewer_new/`（该目录已移交 2 号）。
+旧版 `backend/interviewer/` 已冻结留档，无代码引用它，可安全忽略。

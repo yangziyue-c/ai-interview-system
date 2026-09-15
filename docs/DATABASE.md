@@ -47,13 +47,13 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 - 1 个用户 → N 场面试
 - 1 场面试 → N 条问答记录 + 1 份评估报告（严格一对一）
 - 岗位由 positions 表动态维护（替代硬编码枚举），预留 5 个岗位位
-- 题库由 questions 表承载（**V5 换代，5 岗位共 5012 题**：backend 2146 + frontend 734 + test_engineer 667 + algorithm 655 + system_design 810），算法按岗位/阶段/难度抽题
+- 题库由 questions 表承载（V5 换代，5 岗位共 5012 题：backend 2146 + frontend 734 + test_engineer 667 + algorithm 655 + system_design 810），算法按岗位/阶段/难度抽题
 
 模型代码见 [backend/app/models/](../backend/app/models/)。
 
 ## 三、表结构详解
 
-### 1. users —— 用户表
+### 1. users：用户表
 
 | 字段 | 类型 | 约束 | 说明 |
 | :--- | :--- | :--- | :--- |
@@ -65,7 +65,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | target_position | varchar(16) | 默认 backend | 目标岗位 code（动态，见 positions 表） |
 | created_at | datetime | server_default=now() | 注册时间，由数据库生成 |
 
-### 2. interviews —— 面试会话表（核心）
+### 2. interviews：面试会话表
 
 | 字段 | 类型 | 约束 | 说明 |
 | :--- | :--- | :--- | :--- |
@@ -78,7 +78,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | started_at | datetime | nullable | 面试开始时间（状态转入 in_progress 时写入） |
 | finished_at | datetime | nullable | 面试结束时间（转入 finished 时写入，支撑成长曲线排序） |
 
-### 3. qa_records —— 问答记录表
+### 3. qa_records：问答记录表
 
 | 字段 | 类型 | 约束 | 说明 |
 | :--- | :--- | :--- | :--- |
@@ -90,7 +90,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | audio_url | varchar(512) | nullable | 录音文件地址，供 P3 语音识别评估 |
 | created_at | datetime | server_default=now() | 记录创建时间 |
 
-### 4. reports —— 评估报告表
+### 4. reports：评估报告表
 
 | 字段 | 类型 | 约束 | 说明 |
 | :--- | :--- | :--- | :--- |
@@ -121,7 +121,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | algorithm | 40% | 25% | 10% | 10% | 15% |
 | system_design | 30% | 30% | 15% | 10% | 15% |
 
-### 5. positions —— 岗位表（独立无外键）
+### 5. positions：岗位表（独立无外键）
 
 | 字段 | 类型 | 约束 | 说明 |
 | :--- | :--- | :--- | :--- |
@@ -135,18 +135,18 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | sort_order | int | 默认 0 | 岗位大厅展示顺序 |
 | created_at | datetime | server_default=now() | |
 
-启动时若表为空，自动 seed 5 个岗位（**V5 换代后全部启用**：backend / frontend / test_engineer / algorithm / system_design，见 [position.py](../backend/app/models/position.py) 的 `DEFAULT_POSITIONS`）；老库由 `database.py::_align_positions` 幂等对齐（占位岗位位改名 + 缺失岗位补插），岗位清单调整只需更新数据库记录，无需改代码。
+启动时若表为空，自动 seed 5 个岗位（V5 换代后全部启用：backend / frontend / test_engineer / algorithm / system_design，见 [position.py](../backend/app/models/position.py) 的 `DEFAULT_POSITIONS`）；老库由 `database.py::_align_positions` 幂等对齐（占位岗位位改名 + 缺失岗位补插），岗位清单调整只需更新数据库记录，无需改代码。
 
-### 6. questions —— 面试题库表（独立无外键）
+### 6. questions：面试题库表（独立无外键）
 
 数据由 [import_question_bank.py](../backend/scripts/import_question_bank.py) 从
-`backend/rag/数据/*-v5.json`（**V5 格式（2026-09-14 换代）**，5 岗位共 **5012 题**）导入，
+`backend/rag/数据/*-v5.json`（V5 格式（2026-09-14 换代），5 岗位共 5012 题）导入，
 幂等可重跑。V5 相比 V4 的变化：题型由 6 类收敛为 4 类、面试阶段由 4 个收敛为 3 个
-（新增「深度压轴」、去掉「收尾交流」）、三级追问由一整段混合文本拆成 L1/L2/L3 **三个独立字段**、
+（新增「深度压轴」、去掉「收尾交流」）、三级追问由一整段混合文本拆成 L1/L2/L3 三个独立字段、
 新增单题校准锚点与关联知识点。字段规范/导入命令/加岗流程见
 [docs/reports/REPORT_TO_P5.md](reports/REPORT_TO_P5.md)。
 
-> ⚠️ **表结构换代涉及删列，无法自动迁移**：老库须执行一次
+> **注意**：表结构换代涉及删列，无法自动迁移。老库须执行一次
 > `python -m scripts.import_question_bank --rebuild --yes`（会自动 `VACUUM INTO` 备份）。
 > 忘了跑会由 `database.py::_warn_questions_schema` 在启动时打 ERROR 日志提示。
 
@@ -176,15 +176,15 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 
 ## 四、关键设计决策
 
-1. **岗位表化（替代硬编码枚举）**：岗位数量与清单在开发期会频繁调整，故将岗位从代码枚举下沉到 `positions` 表——注册/开始面试时查库校验（无效岗位 400）、前端岗位大厅读 `GET /positions`、Mock 题库按 code 匹配（缺省回退通用池）。新增/下线岗位只需改数据库记录，代码零改动。启动 seed 幂等（表空才插入，不覆盖已有数据）。
-2. **双数据库策略**：`DATABASE_URL` 可配置。SQLite 保证演示/开发零依赖成功率；MySQL 体现正式环境技术能力；同一套 ORM 代码，切换零改动。
+1. **岗位表化（替代硬编码枚举）**：岗位数量与清单在开发期会频繁调整，故将岗位从代码枚举下沉到 `positions` 表：注册/开始面试时查库校验（无效岗位 400）、前端岗位大厅读 `GET /positions`、Mock 题库按 code 匹配（缺省回退通用池）。新增/下线岗位只需改数据库记录，代码零改动。启动 seed 幂等（表空才插入，不覆盖已有数据）。
+2. **双数据库策略**：`DATABASE_URL` 可配置。SQLite 用于开发与演示，比赛现场不依赖外部服务；MySQL 用于正式环境。同一套 ORM 代码，切换零改动。
 3. **状态机与数据库解耦**：`status` 存字符串，状态合法性由代码层状态机保证（[state_machine.py](../backend/app/core/state_machine.py)）。转换规则表驱动（`_TRANSITIONS`），非法转换抛 409。新增状态不改表结构，比数据库 ENUM 灵活。
 4. **current_round 指针设计**：会话表只存"进行到第几轮"一个指针，问答明细全在 qa_records，无冗余；轮次上限判断只需比较 `current_round >= 1 + MAX_FOLLOW_UP_ROUNDS`。
 5. **出题即落库、作答再回填**：qa_records 在出题时 INSERT、作答时 UPDATE，任何时刻不会出现"有答案无问题"的脏数据，也天然支持为 P2 重建完整对话历史。
-6. **报告一对一 unique 约束**：数据库层面杜绝一场面试两份报告。
+6. **报告一对一 unique 约束**：数据库层面约束一场面试只能生成一份报告。
 7. **级联删除**（`ondelete=CASCADE` + `delete-orphan`）：删除用户/面试自动清理全部关联数据，无孤儿记录。
-8. **索引最小化**：只在真实查询路径建索引——登录按 username、面试列表按 user_id、报告按 interview_id、状态筛选按 status、题库按 position_code。不建冗余索引。
-9. **题库表化（V5）**：题库 json（`backend/rag/数据/*-v5.json`）由导入脚本落库（questions 表），面试官算法（`backend/interviewer_new/`）按岗位/阶段/难度从库抽题；题库更新只需重跑导入脚本，代码零改动。**V5 的关键改进是把三级追问拆成独立列**——V4 时代下游要用 119 行正则从一段混合文本里挖结构化信息，现在直接读字段即可（详见 [REPORT_TO_P2_INTERVIEWER_NEW.md](reports/REPORT_TO_P2_INTERVIEWER_NEW.md)）。
+8. **索引最小化**：只在真实查询路径建索引：登录按 username、面试列表按 user_id、报告按 interview_id、状态筛选按 status、题库按 position_code。不建冗余索引。
+9. **题库表化（V5）**：题库 json（`backend/rag/数据/*-v5.json`）由导入脚本落库（questions 表），面试官算法（`backend/interviewer_new/`）按岗位/阶段/难度从库抽题；题库更新只需重跑导入脚本，代码零改动。V5 的关键改进是把三级追问拆成独立列：V4 时代下游要用 119 行正则从一段混合文本里挖结构化信息，现在直接读字段即可（详见 [REPORT_TO_P2_INTERVIEWER_NEW.md](reports/REPORT_TO_P2_INTERVIEWER_NEW.md)）。
 
 ## 五、数据流示例（一场完整面试的落库过程）
 

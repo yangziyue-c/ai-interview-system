@@ -1,4 +1,4 @@
-# interviewer/ — P2（后端开发 B）面试官算法目录
+# interviewer/：P2（后端开发 B）面试官算法目录
 
 > 本目录是 **P2 的算法执行版**，与 P3 的 `backend/evaluator/` 平级。
 > **P2 修改算法只需要动本目录**（若需调整题库词表/模型字段，与主项目确认后同步改）。
@@ -17,12 +17,12 @@
 from interviewer import question_bank
 ```
 
-出题数据源优先级：**题库策略（本目录）> AI_INTERVIEWER_URL > LLM 直连 > 内置 Mock**。
-任一路径失败逐级降级，面试流程永不中断。
+出题数据源优先级：题库策略（本目录）> AI_INTERVIEWER_URL > LLM 直连 > 内置 Mock。
+任一路径失败逐级降级，内置 Mock 兜底不依赖外部服务。
 
 ## 三、算法速览（改代码前先读）
 
-策略唯一入口是 **`pick_next(db, position, round_no, history, is_follow_up)`**，
+策略唯一入口是 `pick_next(db, position, round_no, history, is_follow_up)`，
 其内部先加载该岗位题目，再交给纯函数 `pick_next_from_questions` 决策
 （解析与决策全部在同步纯函数中，可直接单测）。
 
@@ -54,7 +54,7 @@ from interviewer import question_bank
 - **笼统判断不要用「简单/基本/大概」**（「简单工厂模式」「基本类型」会被误伤），
   也不要用裸「不会」（「不会产生脏读」是确定性否定而非露怯）。
 - **最后两轮强制收尾**：真实题库每题都带非空追问计划，若不强制，追问链会
-  延伸到最后一轮，收尾题永不出现（实证：修复前 0/2700 场模拟到过收尾）。
+  延伸到最后一轮，收尾题不会出现（实证：修复前 0/2700 场模拟到过收尾）。
 - 阶段词表（开场热身/核心考察/深度考察/收尾交流）与 difficulty（easy/medium/hard）
   从 `app/models/question.py` 的常量解包，单一来源自动跟随。
 
@@ -75,7 +75,7 @@ D:/anaconda3/envs/ai_interview/python.exe -m pytest tests/test_question_bank.py 
    原 docs/P2_CODE_REVIEW.md（2026-09-06 已删，git 历史可查）；
    目录已删除，初版代码可在 git 历史 commit 3bcfb26 查阅）
 2. `interviewwaibao (2)/`：P2 修正版（修了 6 条，仍有两处解析 bug 与依赖缺失；
-   为**未入库的中间版**，交付审查后即删除，修正内容已体现在本目录）
-3. 本目录：落地执行版——数据源从 pandas 读 xlsx 改为 questions 表（451 题全岗位）、
+   为未入库的中间版，交付审查后即删除，修正内容已体现在本目录）
+3. 本目录：落地执行版，数据源从 pandas 读 xlsx 改为 questions 表（451 题全岗位）、
    同步改 async、修复修正版遗留的解析 bug（L1 兜底行漏词、L2/L3 脏前缀），
    并经真实库 451 行全量验证（code-review 实证：解析零丢失、收尾 450/450 可达）

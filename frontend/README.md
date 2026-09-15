@@ -30,16 +30,16 @@ npm run build
 
 ## 页面需求（详见 REPORT_TO_P4.md 第 1 节）
 
-1. **登录/注册页**：账号密码 + 昵称/可选学号 + 选择目标岗位（选项来自 `GET /positions`，**不得硬编码**）
+1. **登录/注册页**：账号密码 + 昵称/可选学号 + 选择目标岗位（选项来自 `GET /positions`，不得硬编码）
 2. **岗位大厅 + 岗位详情**：岗位卡片/详情读 `GET /positions`（code→name 由接口 `name` 字段提供）
 3. **面试对话室**：
    - 聊天式界面（AI 气泡靠左、自己靠右），顶部显示「第 N 题」（`interview.current_round`）
-   - 文本输入 + **按住说话录音**：转写用浏览器 **Web Speech API**（后端无 ASR 接口），
+   - 文本输入 + 按住说话录音：转写用浏览器 Web Speech API（后端无 ASR 接口），
      录音文件（MediaRecorder 录 webm）先 `POST /api/v1/uploads/audio` 上传拿 `url`，
      随答案一起提交到 `POST /api/v1/interviews/{id}/answers` 的 `audio_url` 字段
    - 「结束面试」按钮（`POST /api/v1/interviews/{id}/finish`）
 4. **报告页**：`GET /api/v1/reports/{interview_id}`，
-   总分 + **五个维度**（技术/逻辑/表达/应变/岗位匹配度）雷达图 + 评语/优缺点/建议
+   总分 + 五个维度（技术/逻辑/表达/应变/岗位匹配度）雷达图 + 评语/优缺点/建议
 5. **历史与成长曲线**：
    - `GET /api/v1/interviews` 历史列表（status=in_progress 可点击继续作答）
    - `GET /api/v1/reports/latest` 最近建议、`GET /api/v1/reports/growth` 成长曲线折线图
@@ -55,4 +55,4 @@ npm run build
 ```
 
 > 回答提交后返回 `finished: true` 时直接跳转报告页；`false` 时展示 `next_question`。
-> 提交答案是**普通 JSON**（无 SSE 流），面试题文本由后端题库策略生成，无需前端拼接。
+> 提交答案是普通 JSON（无 SSE 流），面试题文本由后端题库策略生成，无需前端拼接。

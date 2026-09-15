@@ -1,19 +1,19 @@
 # 致 P4（前端）同学：页面需求与接口权威说明
 
-> ⚠️ **2026-09-14 起题库换代到 V5**：岗位增至 **5 个**（新增算法工程师、系统设计工程师）、
+> **2026-09-14 起题库换代到 V5**：岗位增至 5 个（新增算法工程师、系统设计工程师）、
 > 题库题型/阶段受控词表有变、新增 `POST /api/v1/rag/search` 语义检索接口。
-> 岗位列表走 `GET /positions`，**不硬编码岗位即可正常适配**，故无强制改码；
+> 岗位列表走 `GET /positions`，不硬编码岗位即可正常适配，故无强制改码；
 > 但建议验证 5 张岗位卡片的布局。
 >
-> **另有 2 处可选增强（同一日新增，见 2.6 / 2.7）**——**不改也能跑**，
+> **另有 2 处可选增强（同一日新增，见 2.6 / 2.7）**：不改也能跑，
 > 但用上可避免两个实际缺陷：报告页刷新后岗位名空白（2.6 `position` 字段）、
-> 轮数硬编码改配置后脱节（2.7 `GET /config`）。**建议一并采纳。**
+> 轮数硬编码改配置后脱节（2.7 `GET /config`）。建议一并采纳。
 >
 > 变更详情见 [REPORT_TEAM_V5_LAYOUT_AND_API.md](REPORT_TEAM_V5_LAYOUT_AND_API.md) 第 4.4 节；
 > 接口字段以 [docs/API.md](../API.md) 为唯一权威。
 
 > 来自 P1（后端）。本文档由 `frontend-spec.md`（页面需求部分）+ `FRONTEND_HANDOFF.md`
-> （接口勘误与权威）**合并而成（2026-09-06）**——原 frontend-spec 的接口部分
+> （接口勘误与权威）合并而成（2026-09-06）。原 frontend-spec 的接口部分
 > 与后端实际实现大量不符，已作废；开发/联调以本文档第 2 节与 [API.md](../API.md)
 > 为唯一权威，页面设计以第 1 节为准。
 
@@ -21,14 +21,14 @@
 
 ## 1. 页面需求（原 frontend-spec.md 有效部分）
 
-采用 **底部固定 Tab 栏** 布局，共 2 个 Tab：**模拟面试** 与 **个人中心**。
+采用底部固定 Tab 栏布局，共 2 个 Tab：模拟面试与个人中心。
 技术栈：Vue（网页端开发，后续可打包桌面/移动应用）。
 
 ### Tab1：模拟面试
 
 #### ① 岗位大厅
 - 展示岗位卡片（数据来自 `GET /positions`，不得硬编码）。
-- 点击卡片不直接进对话，弹出**岗位详情浮层**或跳转**岗位详情页**。
+- 点击卡片不直接进对话，弹出岗位详情浮层或跳转岗位详情页。
 
 #### ② 岗位详情页
 - 展示：岗位简介 / 技术栈要求 / 面试考察重点。
@@ -36,7 +36,7 @@
 
 #### ③ 面试对话室（核心页面）
 1. **顶部**：面试状态（如「面试中」「第 N 题」，用 `data.interview.current_round`）。
-2. **中间**：聊天区域——AI 气泡靠左、用户回答气泡靠右。
+2. **中间**：聊天区域，AI 气泡靠左、用户回答气泡靠右。
 3. **底部输入区**：左侧语音录制按钮（按住说话）、右侧文本输入框 + 发送按钮，
    语音/文本随时切换。
 
@@ -58,7 +58,7 @@
 ### 2.2 历史列表附带综合得分
 
 `GET /interviews` 每项含 `total_score`（浮点；进行中/未出报告为 `null`），
-个人中心历史列表**无需逐条请求报告接口拿分数**。
+个人中心历史列表无需逐条请求报告接口拿分数。
 
 ### 2.3 最近一次面试建议
 
@@ -74,7 +74,7 @@ GET /reports/latest
 GET /positions
 ```
 
-岗位由后端数据库动态维护（2026-09-14 起已开放 **5 个**：backend / frontend /
+岗位由后端数据库动态维护（2026-09-14 起已开放 5 个：backend / frontend /
 test_engineer / algorithm / system_design，全部 `enabled=True`；清单可能调整）。
 **前端不得硬编码岗位列表**：岗位大厅展示本接口返回数据；注册的 `target_position`
 与开始面试的 `position` 必须传返回的 `code`；岗位中文名由 `name` 字段天然提供。
@@ -89,54 +89,54 @@ test_engineer / algorithm / system_design，全部 `enabled=True`；清单可能
 | `adaptability_score` | 应变能力 |
 | `match_score` | 岗位匹配度 |
 
-报告详情与成长曲线均返回 5 维分数，雷达图按 **5 轴**渲染。前端无需计算总分，
+报告详情与成长曲线均返回 5 维分数，雷达图按 5 轴渲染。前端无需计算总分，
 直接展示 `total_score`。
 
-### 2.6 报告带岗位 code（2026-09-14 新增，**报告页务必用它**）
+### 2.6 报告带岗位 code（2026-09-14 新增，报告页务必用它）
 
 报告响应（`GET /reports/{id}`、`POST /interviews/{id}/answers` 结束时的 `report`、
-`POST /interviews/{id}/finish` 的 `report`）**统一新增 `position` 字段**（岗位 code）。
+`POST /interviews/{id}/finish` 的 `report`）统一新增 `position` 字段（岗位 code）。
 
 ```json
 { "code": 0, "data": { "interview_id": 1, "position": "algorithm", "total_score": 84.5, ... } }
 ```
 
 > **为什么要加**：报告页要显示岗位名，而此前响应里没有岗位字段，前端只能靠
-> **「从列表页带过来的内存变量」**——一旦用户**刷新页面或直接深链**进报告页，
+> 「从列表页带过来的内存变量」，一旦用户刷新页面或直接深链进报告页，
 > 那个变量就没了，页面上岗位名变成空白。
 >
 > **正确做法**：报告页渲染时直接用 `report.position`（配合 `GET /positions` 把 code
-> 转中文名）；**不要**再用内存变量传岗位 code 这类补丁。若 `GET /positions` 因故失败，
+> 转中文名）；不要再用内存变量传岗位 code 这类补丁。若 `GET /positions` 因故失败，
 > 顶多把 code 原样显示出来，不影响报告其余内容。
 
-### 2.7 前端运行参数（2026-09-14 新增，**不要硬编码轮数**）
+### 2.7 前端运行参数（2026-09-14 新增，不要硬编码轮数）
 
 ```
 GET /config     { "code": 0, "data": { "total_rounds": 7, "max_follow_up_rounds": 6 } }
 ```
 
 > 「一场面试共几轮」由后端 `.env` 的 `MAX_FOLLOW_UP_ROUNDS` 决定（当前 = 1 开场题 + 6 追问 = 7）。
-> **前端不要把 7 写死**——`total_rounds` 一改，写死的前端就会显示成「第 N / 7 题」而与实际轮数脱节。
+> **前端不要把 7 写死**：`total_rounds` 一改，写死的前端就会显示成「第 N / 7 题」而与实际轮数脱节。
 > 建议启动/登录后调一次本接口缓存起来（需登录）。`current_round` 仍从面试响应里取。
 
 ---
 
 ## 3. 前端常见错误对照（原 frontend-spec 接口部分已作废，此表防再犯）
 
-### 🔴 致命错误
+### 致命错误（照旧 spec 实现无法联调通过）
 
 | # | 旧 spec 写法 | 后端实际 | 修正 |
 |---|---|---|---|
-| 1 | 提交回答是 **SSE 流式** | 普通 JSON 响应，**无 SSE** | 按 `finished` 字段判断是否结束 |
-| 2 | `POST /api/asr/recognize` 语音转文字接口 | **不存在** | 浏览器 **Web Speech API** 转写，文本填入 `answer` |
+| 1 | 提交回答是 SSE 流式 | 普通 JSON 响应，无 SSE | 按 `finished` 字段判断是否结束 |
+| 2 | `POST /api/asr/recognize` 语音转文字接口 | 不存在 | 浏览器 Web Speech API 转写，文本填入 `answer` |
 | 3 | 路径缺 `/api/v1` 前缀、路由名错误 | 统一前缀 `/api/v1` | 全部按右侧修正 |
-| 4 | 会话标识 `sessionId`（字符串） | `interview.id`（**整数**） | 全部改用整数 id |
+| 4 | 会话标识 `sessionId`（字符串） | `interview.id`（整数） | 全部改用整数 id |
 
-### 🟡 字段对照
+### 字段对照（字段名与类型有变，需逐项替换）
 
 **登录** `POST /api/v1/auth/login`：旧 `data.userId`→`data.user.id`（整数）、
 `realName`→`user.nickname`、`token`→`data.access_token`。系统无内置账号，
-**必须补充注册接口**（`POST /auth/register`）与注册/登录页。
+必须补充注册接口（`POST /auth/register`）与注册/登录页。
 
 **开始面试** `POST /api/v1/interviews`：旧 `{"jobId":"java-backend"}`→
 `{"position":"backend"}`（岗位接口返回的 code）；旧 `{sessionId, firstQuestion}`→
@@ -165,7 +165,7 @@ GET /config     { "code": 0, "data": { "total_rounds": 7, "max_follow_up_rounds"
 **岗位数据**：放弃 `public/jobs.json` 静态方案，一律 `GET /positions`。
 
 **语音格式**：无需 WAV@16000Hz（浏览器 MediaRecorder 原生 webm/opus）。
-后端支持 `mp3/wav/webm/m4a/ogg/aac/flac`（≤20MB），**直接传 webm**。
+后端支持 `mp3/wav/webm/m4a/ogg/aac/flac`（≤20MB），直接传 webm。
 
 **结束面试（旧 spec 遗漏）**：
 
@@ -175,7 +175,7 @@ POST /api/v1/interviews/{interview_id}/finish
 
 响应 `data.report` 即评估报告；对话室需提供「结束面试」按钮。
 
-### 🟢 无需担心项
+### 无需担心项
 
 - **CORS**：后端已 `allow_origins: ["*"]`，`http://localhost:5173` 直连即可，无需代理。
 - **响应约定**：`code === 0` 成功，错误码见 API.md；`data.interview.current_round` 显示"第 N 题"。
@@ -250,35 +250,35 @@ Base URL：`http://localhost:8001/api/v1`（联调期）｜统一响应 `{ code,
    （400→40000、401→40100、409→40900 等），前端按 code 提示 message。
 5. **变更同步**：后端调整会更新 API.md，每次开工前先 `git pull` 核对。
 
-## 7. 关于 P1 的演示前端 frontend_test/（**示范代码**，参考随意）
+## 7. 关于 P1 的演示前端 frontend_test/（示范代码，参考随意）
 
-> 🧭 **先明确定位**：仓库根目录的 **`frontend_test/`** 是 P1 在你们正式前端交付前搭的
-> **零依赖演示前端**（纯 HTML/CSS/JS），用来让整体演示能先跑起来。
-> **它是示范代码，不是给你的起点约束——前端的形态、技术栈、交互全部由你（4 号）决定，
-> 用不用它都行。**
+> **先明确定位**：仓库根目录的 `frontend_test/` 是 P1 在你们正式前端交付前搭的
+> 零依赖演示前端（纯 HTML/CSS/JS），用来让整体演示能先跑起来。
+> 它是示范代码，不是给你的起点约束：前端的形态、技术栈、交互全部由你（4 号）决定，
+> 用不用它都行。
 
 ### 它的三条边界
 
 - **不取代你的 `frontend/`**：两者互不相干，你按自己的工程化方式做；
-- **不抢端口**：`start.bat` 把它拉起到 **5273**，特意避开你的 **5173** 联调端口；
+- **不抢端口**：`start.bat` 把它拉起到 5273，特意避开你的 5173 联调端口；
 - **不用你处理**：你交付正式前端时（`npm run build` → 构建产物放 `backend/static/`），
   `frontend_test/` 与 5273 的拉起会由 P1 停用/删除。
 
 ### 教程：从这份示范里能直接抄到什么
 
-它已实测跑通「注册 → 7 轮面试 → 报告 → 成长曲线」。下面这几处**接口调用姿势**建议对照着看，
+它已实测跑通「注册 → 7 轮面试 → 报告 → 成长曲线」。下面这几处接口调用姿势建议对照着看，
 能少踩坑：
 
 | 你要做的事 | 看 `frontend_test/` 的哪一处 | 关键点 |
 |---|---|---|
 | 统一请求层 | `js/api.js` 的 `request()` | 自动附 `Authorization`；`code!==0` 抛错；`40100` 清 token 跳登录页 |
 | 开始面试 → 对话室 | `js/views.js` 的 `Views.interview` | 提交答案后按 `data.finished` 分支：显示下一题 / 跳报告 |
-| 恢复进行中的面试 | `Views.interview.render()` 开头 | 每次进对话室都调 `GET /interviews/{id}` 同步——**别信内存缓存**，轮次可能已推进 |
+| 恢复进行中的面试 | `Views.interview.render()` 开头 | 每次进对话室都调 `GET /interviews/{id}` 同步，不要依赖内存缓存，轮次可能已推进 |
 | 报告页 5 维雷达 + 成长曲线 | `js/charts.js` | 5 轴雷达；曲线取 `GET /reports/growth` 的 `finished_at` / `total_score` |
-| **刷新后岗位名不丢** | `Views.report.render()` | 直接用响应里的 `report.position`（见 2.6），别用内存变量传岗位 code |
+| **刷新后岗位名不丢** | `Views.report.render()` | 直接用响应里的 `report.position`（见 2.6），不要用内存变量传岗位 code |
 | **轮数不硬编码** | `js/app.js` 的 `loadConfig()` | 启动时拉一次 `GET /config`（见 2.7），失败再退回兜底值 |
 
 ### 一句话
 
-**它是 P1 为了「整体演示能跑」搭的临时实现，完成度按演示标准来。** 正式前端的
-组件化、状态管理、类型约束、构建优化完全交给你，**别被它的简陋实现限制住想象力**。
+它是 P1 为了「整体演示能跑」搭的临时实现，完成度按演示标准来。正式前端的
+组件化、状态管理、类型约束、构建优化完全交给你，别被它的简陋实现限制住想象力。

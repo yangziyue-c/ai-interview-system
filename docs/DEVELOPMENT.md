@@ -2,15 +2,15 @@
 
 > **面向**：需要在本地跑测试、调试后端、改动启动脚本的成员。
 > **互补关系**：Git 协作流程见 `COLLABORATION.md`，内网穿透演示见 `DEPLOY.md`。
-> 本文只写**在任何机器上都成立的机制**；P1 本机的具体路径、端口占用等环境状态不在其中。
+> 本文只写任何机器上都成立的机制；P1 本机的具体路径、端口占用等环境状态不在其中。
 
 ---
 
 ## 一、Python 环境
 
-后端跑在 conda 环境 **`ai_interview`**（Python 3.12）下。
+后端跑在 conda 环境 `ai_interview`（Python 3.12）下。
 
-**`conda run` 有插件 bug**（表现为丢输出或挂起），不要用它包装命令；直接调用该环境内的 `python.exe`：
+`conda run` 有插件 bug（表现为丢输出或挂起），不要用它包装命令；直接调用该环境内的 `python.exe`：
 
 ```bash
 conda env list      # 1. 查环境实际位置
@@ -34,14 +34,14 @@ cd backend
 
 **原因**：`pytest.ini`（`testpaths = tests`、`asyncio_mode = auto`）与
 `tests/conftest.py` 的环境变量注入，都以 `backend/` 为工作目录才生效。
-在仓库根目录跑，`pytest.ini` 不会被加载：`asyncio_mode` 缺失会让**异步用例集体报错**
+在仓库根目录跑，`pytest.ini` 不会被加载：`asyncio_mode` 缺失会让异步用例集体报错
 （`async def functions are not natively supported`），conftest 的环境变量也不会注入。
 
-`asyncio_mode = auto` 的含义：异步测试函数**无需**逐个标注 `@pytest.mark.asyncio`。
+`asyncio_mode = auto` 的含义：异步测试函数无需逐个标注 `@pytest.mark.asyncio`。
 
 ### 2.2 测试库隔离机制（`tests/conftest.py`）
 
-conftest 在 **import app 之前**注入环境变量（顺序是关键，晚于 `app` 导入则失效）：
+conftest 在 import app 之前注入环境变量（顺序是关键，晚于 `app` 导入则失效）：
 
 | 变量 | 测试期取值 | 目的 |
 | :--- | :--- | :--- |
@@ -49,16 +49,16 @@ conftest 在 **import app 之前**注入环境变量（顺序是关键，晚于 
 | `LLM_API_KEY` | 空 | 防止空库用例误调真实大模型 |
 | `REDIS_URL` / `AI_INTERVIEWER_URL` / `AI_EVALUATOR_URL` | 空 | 禁用外部服务 |
 
-**`RAG_API_URL` 需要单独说明**：它与上面三个不同——`config.py` 里默认为
+**`RAG_API_URL` 需要单独说明**：它与上面三个不同，`config.py` 里默认为
 `http://localhost:8003`，不清空的话每个「题库未命中」的用例都会真的去连本机 8003：
-服务没起时白等探测超时，服务起了则拿到真实题目，**「空库降级 Mock」这类断言就失去了意义**。
+服务没起时每次探测都要等到超时，服务起了则拿到真实题目，「空库降级 Mock」这类断言就失去了意义。
 
 每次测试会话开始时，旧的 `test_interview.db` 会被删除重建，保证用例可重复执行。
-**测试全程不会碰开发库 `backend/interview.db`。**
+测试全程不读写开发库 `backend/interview.db`。
 
 ### 2.3 造数工厂（`tests/helpers.py`）
 
-刻意独立于 conftest —— conftest 是有环境副作用的 pytest 钩子文件，不该被测试模块当普通模块 import。
+刻意独立于 conftest：conftest 是有环境副作用的 pytest 钩子文件，不该被测试模块当普通模块 import。
 
 | 函数 | 用途 |
 | :--- | :--- |
@@ -88,12 +88,12 @@ PRAGMA busy_timeout=30000    # 并发写等待锁释放，而非立刻抛 databa
 
 ### 适配器的只读短会话（改代码前必读）
 
-`app/adapters/ai_interviewer.py` 的题库查询**自开独立短会话**，刻意不复用请求级会话：
+`app/adapters/ai_interviewer.py` 的题库查询自开独立短会话，刻意不复用请求级会话：
 
 > 请求会话里可能有尚未提交的脏写（答案 / 轮次），在该会话内执行 SELECT 会触发
-> **autoflush**，把写锁提前到「出题全程」——包含网络级降级源的等待时间。
+> autoflush，把写锁提前到「出题全程」，其中包含网络级降级源的等待时间。
 
-所以：**不要为了省一次会话，把请求级 `db` 传进适配器**。独立短会话 + WAL 下读不阻塞写。
+所以：不要为了少开一次会话，把请求级 `db` 传进适配器。独立短会话 + WAL 下读不阻塞写。
 
 ---
 
@@ -105,11 +105,11 @@ PRAGMA busy_timeout=30000    # 并发写等待锁释放，而非立刻抛 databa
 | P3 评估服务 | **30 秒** | `app/adapters/ai_evaluator.py::EVALUATE_TIMEOUT_SECONDS` |
 | 其余 HTTP/LLM 适配器 | **15 秒** | `app/config.py::ADAPTER_TIMEOUT_SECONDS` |
 
-RAG 单独放宽的原因：单次 `/rag/search` 含 Top-20 reranker 精排，CPU 上实测 **20~30 秒**
-（向量召回本身仅 0.1 秒，瓶颈全在 reranker）。**不要按普通接口把它设成个位数秒**——
-那会让每次检索都被误判为「RAG 不可用」而白白降级。
+RAG 单独放宽的原因：单次 `/rag/search` 含 Top-20 reranker 精排，CPU 上实测 20~30 秒
+（向量召回本身仅 0.1 秒，瓶颈全在 reranker）。不要按普通接口把它设成个位数秒，
+那会让每次检索都误判为「RAG 不可用」而白白降级。
 
-> P3 评估的 30 秒写死在 `ai_evaluator.py` 内，**不经过** `ADAPTER_TIMEOUT_SECONDS`，
+> P3 评估的 30 秒写死在 `ai_evaluator.py` 内，不经过 `ADAPTER_TIMEOUT_SECONDS`，
 > 改通用档不会影响它。
 
 ---
@@ -118,8 +118,8 @@ RAG 单独放宽的原因：单次 `/rag/search` 含 Top-20 reranker 精排，CP
 
 `backend/start.bat` 必须同时满足两条：
 
-1. **CRLF 行尾** —— cmd 对 LF-only 的 bat 解析会出错
-2. **纯 ASCII** —— 不能有中文注释或 `echo`（中文提示放 `start.py`）
+1. **CRLF 行尾**：cmd 对 LF-only 的 bat 解析会出错
+2. **纯 ASCII**：不能有中文注释或 `echo`（中文提示放 `start.py`）
 
 `.gitattributes` 用 `*.bat -text` 来保证：
 
@@ -127,8 +127,8 @@ RAG 单独放宽的原因：单次 `/rag/search` 含 Top-20 reranker 精排，CP
 *.bat -text
 ```
 
-用 `-text`（禁止行尾转换）而不是 `text eol=crlf` 的原因：前者让 CRLF **原样存入仓库**，
-因此 GitHub 的 Download ZIP 导出也是 CRLF；后者只在 `clone` 时转换，**zip 导出会变成 LF**。
+用 `-text`（禁止行尾转换）而不是 `text eol=crlf` 的原因：前者让 CRLF 原样存入仓库，
+因此 GitHub 的 Download ZIP 导出也是 CRLF；后者只在 `clone` 时转换，zip 导出会变成 LF。
 
 改动后校验（行数应等于 CRLF 数，非 ASCII 字节数应为 0）：
 

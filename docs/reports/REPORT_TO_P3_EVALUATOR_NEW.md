@@ -1,36 +1,36 @@
 # 给 3 号（评估）· 评估服务 V5 增强说明（含示范代码，backend/evaluator_new/）
 
-> 🧭 **先明确一个定位：`backend/evaluator_new/` 是 「示范代码」。**
+> 先明确一个定位：`backend/evaluator_new/` 是「示范代码」。
 >
-> 它是 1 号为了让 V5 的**单题校准锚点**能真正喂进评分而做的**最小侵入参考实现**——**没有重写评估服务**。
+> 它是 1 号为让 V5 的单题校准锚点参与评分而做的最小侵入参考实现，没有重写评估服务。
 > 相对你的原版共三处改动：① `build_dialogue_text` 注入单题素材（主体）；
 > ② `call_llm_for_evaluation` 加 `qa_list`/`position` 参数，修正降级分支的档位口径；
 > ③ `evaluation_prompts.py` 为一处在册却无专属文案的岗位补了通用兜底（详见 2.1）。
 >
 > | 你可以 | 说明 |
 > |---|---|
-> | **直接跑** | 由 `start.py` 自动拉起（8002）；有 6 个回归用例守着「不传素材时与原版逐字一致」 |
+> | **直接跑** | 由 `start.py` 自动拉起（8002）；有 6 个回归用例校验「不传素材时与原版逐字一致」 |
 > | **照它改** | 第 4 节列了 5 个拓展方向（校验素材收益 / 逐题诊断 / 接真实 ASR / 素材缓存 / 加岗位同步点） |
 > | **整个推翻** | 只要满足 `POST /evaluate` 契约（5 维分数 + 文本字段），主后端一行都不用动 |
 >
-> ⚠️ 唯一需要守住的边界：主后端只校验 **5 维分数**（`ai_evaluator.py::_is_valid_score_report`）——
-> **新增字段随便加，但这 5 个字段名不能改**。除此之外，Prompt 模板、评分细则、输出结构都由你定。
+> 唯一需要守住的边界：主后端只校验 5 维分数（`ai_evaluator.py::_is_valid_score_report`）：
+> 新增字段不受限制，但这 5 个字段名不能改。除此之外，Prompt 模板、评分细则、输出结构都由你定。
 > 原版 `backend/evaluator/` 也仍然保留着，随时可切回。
 
 ---
 
 > 背景：知识库由 V4 换代到 V5（`backend/rag/数据/*-v5.json`，5012 题 / 5 岗位）。
-> V5 每题带三个**为评估准备**的字段：`basic_score_points`（基础得分点）、
-> `advanced_score_points`（进阶得分点）、`calibration_anchor`（**单题校准锚点**）。
-> 1 号据此为评估服务做了一个**最小侵入的增强版**，落在 **`backend/evaluator_new/`**。
+> V5 每题带三个为评估准备的字段：`basic_score_points`（基础得分点）、
+> `advanced_score_points`（进阶得分点）、`calibration_anchor`（单题校准锚点）。
+> 1 号据此为评估服务做了一个最小侵入的增强版，落在 `backend/evaluator_new/`。
 >
-> 本文回答四件事：**为什么改 / 为什么这么改 / 具体怎么用 / 之后怎么拓展**。
+> 本文回答四件事：为什么改 / 为什么这么改 / 具体怎么用 / 之后怎么拓展。
 
 ---
 
 ## 一、为什么改（V4 时代评估的短板）
 
-原评估服务（`backend/evaluator/app.py`）的输入只有两样：**岗位 code + 对话文本**。
+原评估服务（`backend/evaluator/app.py`）的输入只有两样：岗位 code + 对话文本。
 
 ```
 POST /evaluate  {"position": "backend", "qa_list": [{round, question, answer}]}
@@ -39,11 +39,11 @@ POST /evaluate  {"position": "backend", "qa_list": [{round, question, answer}]}
    → LLM 打分（5 维）
 ```
 
-**短板**：LLM 只能凭对话"就事论事"地打分，**不知道每道题的考察意图**。
+**短板**：LLM 只能凭对话"就事论事"地打分，不知道每道题的考察意图。
 同一个考生答同一段话，在"这道题只要求说清概念"和"这道题要求讲透原理边界"两种情形下
-应得的分是不同的，但原实现无法区分——**评估与题目脱钩**。
+应得的分是不同的，但原实现无法区分，评估与题目脱钩。
 
-**V5 恰好补上了这块**（真实数据示例）：
+V5 补上了这部分信息（真实数据示例）：
 
 ```
 【单题校准锚点】
@@ -53,7 +53,7 @@ POST /evaluate  {"position": "backend", "qa_list": [{round, question, answer}]}
           说明其应用价值与工程考量。
 ```
 
-这正是"这道题该考什么、答到什么程度算好"的判分标准，评估侧不用可惜。
+这正是"这道题该考什么、答到什么程度算好"的判分标准，评估侧可直接采用。
 
 ---
 
@@ -61,7 +61,7 @@ POST /evaluate  {"position": "backend", "qa_list": [{round, question, answer}]}
 
 ### 2.1 改动集中在素材注入，另有两处口径修正
 
-**主体改动是 `build_dialogue_text()` 一个函数**：把素材拼进对话文本。
+主体改动是 `build_dialogue_text()` 一个函数：把素材拼进对话文本。
 
 ```python
 def build_dialogue_text(qa_list):
@@ -78,20 +78,20 @@ def build_dialogue_text(qa_list):
 
 **为什么不动 Prompt 模板的岗位专属内容**（`evaluation_prompts.py` 仅做了一处通用兜底修复）：
 - 模板里有大量岗位专属的评分细则，是 3 号的核心工作，改它风险高；
-- 素材作为"对话文本的一部分"注入，LLM 同样能读到，**效果等价而侵入最小**；
+- 素材作为"对话文本的一部分"注入，LLM 同样能读到，效果等价而侵入最小；
 - 3 号后续要调整模板时，不受本次改动牵扯。
 
 > **那一处必改的修复**：原实现用 `_KEY_POINTS.get(code, "")` 取岗位考察点，对
-> **本文件没有专属文案、但已在 `evaluation_weights.POSITION_CONFIG` 注册**的岗位
-> （即 V5 新增的 algorithm / system_design）会返回**空串**，Prompt 里会出现
+> 本文件没有专属文案、但已在 `evaluation_weights.POSITION_CONFIG` 注册的岗位
+> （即 V5 新增的 algorithm / system_design）会返回空串，Prompt 里会出现
 > 「核心考察点：」后面什么都没有。现改为 `.get(code) or _GENERIC_KEY_POINTS`，
 > 并在文件顶部抽出 `_GENERIC_KEY_POINTS` / `_GENERIC_POSITION_DESC` 两个常量
 > （与既有的 `GENERIC_POSITION` 共用一份，避免两处漂移）。
-> **空串与「未注册」是两回事**——这是本题唯一的逻辑修复，其余模板内容未动。
+> 空串与「未注册」是两个概念：这是本次唯一的逻辑修复，其余模板内容未动。
 
 ### 2.2 依赖倒置：素材由调用方提供，评估服务保持无状态
 
-**素材不是评估服务去查库取的，而是主后端查好传进来的。**
+素材不是评估服务查库取得的，而是主后端查好传入的。
 
 ```
 主后端 app/adapters/ai_evaluator.py
@@ -100,7 +100,7 @@ def build_dialogue_text(qa_list):
 ```
 
 **为什么这样分工**：
-- 评估服务**不引入数据库依赖**（它现在只 import 标准库 + requests + flask），
+- 评估服务不引入数据库依赖（它现在只 import 标准库 + requests + flask），
   保持"纯计算服务"的定位，可独立部署、独立扩缩容；
 - 题库是主后端的领域，题目素材的来源口径由主后端统一把关；
 - 3 号调试时不需要准备数据库。
@@ -117,7 +117,7 @@ build_dialogue_text(qa)
 其中包含「多轮无素材」「空 materials」「materials=None」等边界。
 
 **意义**：主后端未匹配到题目（Mock/LLM 现场生成的题、题库换代前的历史会话）时，
-评估行为与旧版**完全一样**——增强是纯增量的，不会让任何既有场景变差。
+评估行为与旧版完全一样：增强是纯增量的，不会让任何既有场景变差。
 
 ---
 
@@ -132,7 +132,7 @@ backend/evaluator_new/
 └── evaluation_prompts.py  ← 仅加通用文案兜底（_GENERIC_KEY_POINTS / _GENERIC_POSITION_DESC）
 ```
 
-**由 `start.py` 自动拉起**（已切换）：
+由 `start.py` 自动拉起（已切换）：
 
 ```python
 evaluator = subprocess.Popen([str(python), "evaluator_new/app.py"], cwd=str(BASE_DIR))
@@ -140,8 +140,8 @@ evaluator = subprocess.Popen([str(python), "evaluator_new/app.py"], cwd=str(BASE
 
 手动启动：`cd backend && python evaluator_new/app.py`（端口仍 8002）。
 
-> 原 `backend/evaluator/` **保留不动**（3 号成果留档）。若要切回原版，
-> 把 `start.py` 那行的路径改回 `evaluator/app.py` 即可。
+> 原 `backend/evaluator/` 保留不动（3 号成果留档）。若要切回原版，
+> 把 `start.py` 中该行的路径改回 `evaluator/app.py` 即可。
 
 ### 3.2 接口契约（唯一变化：qa 项多了可选 `materials`）
 
@@ -165,9 +165,9 @@ POST http://localhost:8002/evaluate
 }
 ```
 
-**返回格式完全不变**（5 维分数 + summary/strengths/weaknesses/suggestions）。
+返回格式完全不变（5 维分数 + summary/strengths/weaknesses/suggestions）。
 
-> 旧版评估服务（`evaluator/app.py`）会**忽略** `materials` 字段——所以主后端可以放心
+> 旧版评估服务（`evaluator/app.py`）会忽略 `materials` 字段，所以主后端可以放心
 > 无条件附加，两个版本都能跑。
 
 ### 3.3 自测
@@ -190,24 +190,24 @@ curl -X POST http://localhost:8002/evaluate -H "Content-Type: application/json" 
 
 ## 四、教程：之后怎么改
 
-> **这一节是给你的动手教程**——每条都写明**现状 → 怎么改 → 注意什么**。
+> 这一节是给你的动手教程，每条都写明现状 → 怎么改 → 注意什么。
 > 改动集中在 `evaluator_new/` 内部时基本不影响主后端；唯一跨模块的边界是
-> **5 维分数字段名不能改**（主后端 `_is_valid_score_report` 依赖它）。
+> 5 维分数字段名不能改（主后端 `_is_valid_score_report` 依赖它）。
 
-### 拓展 1：校验素材是否真的提升了评分质量
+### 拓展 1：校验素材是否确实提升了评分质量
 
-**现状**：增强的收益是**假设**的（LLM 能按题评分），未做 A/B 量化。
+**现状**：增强的收益目前只是假设（LLM 能按题评分），未做 A/B 量化。
 
 **做法**：构造若干「答案相同、题目不同」的对照样本（如一段泛泛而谈的答案，
 分别配一道 easy 概念题和一道 hard 原理题），对同一份答案跑两次评估：
 - 期望：hard 题的 `tech_score` 显著低于 easy 题（因为校准锚点要求更高）
-- 若两次分数接近，说明素材没起作用，需检查 Prompt 里素材是否被 LLM 读到
+- 若两次分数接近，说明素材未起作用，需检查 LLM 是否读到了 Prompt 里的素材
 
 ### 拓展 2：按题输出诊断（而非只有 5 个总维度）
 
 **现状**：素材注入了，但输出仍是整场面试的 5 维总分。
 
-**可探索**：让 LLM 对**每道题**给一个「本题得分 + 依据」，前端展示成"逐题诊断"。
+**可探索**：让 LLM 对每道题给一个「本题得分 + 依据」，前端展示成"逐题诊断"。
 - 改 `_REPORT_FIELDS` 加一个 `per_question` 数组字段（注意保持 5 维契约不变，
   主后端 `ai_evaluator.py::_is_valid_score_report` 只校验 5 维分数，新增字段不影响兼容）
 - Prompt 模板需加输出要求（这属于 3 号的领域，改动前建议先小样本试）
@@ -215,7 +215,7 @@ curl -X POST http://localhost:8002/evaluate -H "Content-Type: application/json" 
 ### 拓展 3：接入真实 ASR，恢复语音覆盖
 
 `analyze_expression_simulate` 目前是占位（只产出 `simulated=True` 的参考信息，
-不覆盖表达分——3 号注释里说明了原因：按字数的启发式与「简洁精准」的评分标准方向相反）。
+不覆盖表达分；3 号注释说明原因是按字数的启发式与「简洁精准」的评分标准方向相反）。
 
 接入真实语音特征后，在 `merge_report` 恢复覆盖表达分。
 
@@ -223,8 +223,8 @@ curl -X POST http://localhost:8002/evaluate -H "Content-Type: application/json" 
 
 `_attach_materials`（主后端侧）当前是"每场评估查一次题库"，5 题一份 SQL。
 - 若评估并发升高，可加题目级 LRU 缓存（题库是静态数据，变更只发生在导入时）
-- 素材匹配是**题干精确匹配**；若将来题库题干措辞变动，历史会话会匹配不上 →
-  退化为原行为（不报错）。若希望历史会话也能吃到素材，正解是给 `qa_records`
+- 素材匹配是题干精确匹配；若将来题库题干措辞变动，历史会话会匹配不上 →
+  退化为原行为（不报错）。若希望历史会话也能用上素材，正确做法是给 `qa_records`
   加 `question_no` 列（出题时落库），而不是放宽匹配（包含匹配会误配）
 
 ### 拓展 5：新增岗位时的同步点
@@ -234,7 +234,7 @@ curl -X POST http://localhost:8002/evaluate -H "Content-Type: application/json" 
 2. `app/core/evaluation_weights.py` 的 `POSITION_CONFIG` 加权重
 3. `scripts/import_question_bank.py` 的 `POSITION_MAP` 加映射
 
-评估服务本身**无需改动**（它从 `POSITION_CONFIG` 读权重，未知岗位自动用通用权重兜底）。
+评估服务本身无需改动（它从 `POSITION_CONFIG` 读权重，未知岗位自动用通用权重兜底）。
 
 ---
 
@@ -253,5 +253,5 @@ curl -X POST http://localhost:8002/evaluate -H "Content-Type: application/json" 
 
 ---
 
-**有疑问或要改评估逻辑，直接动 `backend/evaluator_new/`（该目录已移交 3 号）。**
+有疑问或要改评估逻辑，直接动 `backend/evaluator_new/`（该目录已移交 3 号）。
 原 `backend/evaluator/` 保留留档；确认新版稳定后可删除，或把 `start.py` 切回原版。

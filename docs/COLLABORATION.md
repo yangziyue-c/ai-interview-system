@@ -5,7 +5,7 @@
 - **GitHub**：https://github.com/yangziyue-c/ai-interview-system
 - **Gitee**（国内访问快，推荐国内成员使用）：https://gitee.com/yangziyuegit/ai-interview-system
 - 两个远程内容完全一致，任选其一克隆即可
-- 分支策略：所有成员直接推 `main` 分支（团队人数少，功能模块不重叠，直推最省事）
+- 分支策略：所有成员直接推 `main` 分支（团队人数少，功能模块不重叠，无需按功能开分支）
 
 ## 二、成员的日常提交流程（写给 P2~P5）
 
@@ -42,7 +42,7 @@ git commit -m "merge: 同步远端最新代码"
 git push origin main
 ```
 
-## 三、协作约定（重要）
+## 三、协作约定
 
 | 规则 | 说明 |
 | :--- | :--- |
