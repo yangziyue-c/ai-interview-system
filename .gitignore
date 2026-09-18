@@ -45,6 +45,3 @@ htmlcov/
 *.swp
 .DS_Store
 .claude/settings.local.json
-
-# AI 工具本地指令文件（本机工作流用，不入库；锚定根目录，避免误伤子目录同名文件）
-/CLAUDE.md
