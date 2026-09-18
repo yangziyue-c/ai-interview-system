@@ -8,7 +8,7 @@ AI 模拟面试训练系统（FastAPI 异步 + SQLAlchemy 2.0，5 人小组项�
 
 | 成员 | 职责 | 代码/文档位置 |
 | :--- | :--- | :--- |
-| P1（本机） | 主后端 + 集成 | `backend/app/` |
+| P1 | 主后端 + 集成 | `backend/app/` |
 | P2 | 面试官出题算法 | `backend/interviewer_new/`（V5 版；旧 `backend/interviewer/` 已冻结留档） |
 | P3 | AI 评估服务 | `backend/evaluator_new/`（独立 Flask 进程，端口 8002；旧 `backend/evaluator/` 留档） |
 | P4 | 前端 | `frontend/`（⚠️ 当前**仅有 README.md**、正式代码未交付；构建产物将拷 `backend/static/` 同端口挂载） |
@@ -30,13 +30,14 @@ P1 维护的零依赖**演示前端**在 `frontend_test/`（由 `backend/start.b
 ## 常用命令（conda 环境 ai_interview）
 
 > `conda run` 有插件 bug，**直接调用环境内 python.exe**。本机实测路径
-> `D:/anaconda3/envs/ai_interview/python.exe`，环境真实位置以 `conda env list` 为准。
+> `D:/anaconda3/envs/ai_interview/python.exe`（**P1 本机路径；其他成员请替换为自己 conda 环境内的解释器**），
+> 环境真实位置以 `conda env list` 为准。
 > 测试隔离机制、SQLite 并发配置、超时分档、`start.bat` 编码校验等**机制性说明见 `docs/DEVELOPMENT.md`**。
 >
 > ⚠️ **首次手动启动前需 `cp backend/.env.example backend/.env`**（`start.bat` 会自动生成，手动
 > `uvicorn` 那条路不会）。关键默认值坑：`AI_EVALUATOR_URL` 默认为**空串**，而适配器规则是
 > "未配置 URL → 直接返回内置 Mock"——**没有 .env 时，即使 8002 评估服务在跑，所有报告也都静默
-> 走 Mock 兜底**；`RAG_API_URL` 默认指向本机 8003。本机因 `.env` 已存在而看不出差异，换环境才会暴露。
+> 走 Mock 兜底**；`RAG_API_URL` 默认指向本机 8003。若 `.env` 已存在则看不出差异，换环境才会暴露。
 
 ```bash
 # 一键启动：RAG 检索（8003）+ P3 评估（8002）+ 演示前端（5273）+ 主服务（8001），
@@ -125,7 +126,7 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
 ## 环境与部署铁律（踩过血的坑）
 
 - **端口**：8001=主后端、8002=P3 评估、**8003=RAG 检索**、5273=演示前端（start.py 自动拉起）；
-  **8000 被本机 Godot AI MCP 占用，勿改回**；5173 是 P4 Vite 联调端口，start.py 不会占用
+  **8000 由 P1 本机的 Godot AI MCP 占用，全组统一用 8001，勿改回**；5173 是 P4 Vite 联调端口，start.py 不会占用
 - **RAG 大文件与依赖**：`backend/rag/vector_db/`（674MB）、`backend/rag/数据/*-rag-v2.jsonl`（约 70MB）
   已 gitignore；RAG 依赖（torch 等约 2.5GB）单独放 `backend/rag/requirements-rag.txt`，
   **不要写进 `backend/requirements.txt`**（会让每个新环境都被强加 2.5GB）；
@@ -145,11 +146,13 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
 - **内网穿透**：Sakura Frp Web 隧道 + 自动 HTTPS，访问必须 https://（http 被 501 拦截），
   详见 docs/DEPLOY.md
 
-## 双远程推送规则（每次提交必须执行）
+## 双远程推送规则（仅 P1，每次提交必须执行）
+
+> 本节约束同时持有 GitHub（origin）与 Gitee 推送权的 P1；P2~P5 按各自远程推送即可。
 
 **每次 git commit 后必须同时推送到两个远程**（提交前先 `git pull origin main` 同步）：
 
-远程地址见 `git remote -v`：`origin` 走 **SSH**（`~/.ssh/config` 里配了 `ssh.github.com:443` 端口回退，
+远程地址见 `git remote -v`：`origin` 走 **SSH**（P1 本机 `~/.ssh/config` 里配了 `ssh.github.com:443` 端口回退，
 22 端口不通时靠它，**勿删该配置**）；`gitee` 走 HTTPS。
 
 ```bash
