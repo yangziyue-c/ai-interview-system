@@ -57,11 +57,8 @@ POST {你的服务}/evaluate
 | backend | 35% | 25% | 10% | 10% | 20% |
 | frontend | 30% | 20% | 15% | 15% | 20% |
 | test_engineer | 25% | 25% | 20% | 15% | 15% |
-| **algorithm** | 40% | 25% | 10% | 10% | 15% |
+| **algorithm** | 35% | 30% | 10% | 10% | 15% |
 | **system_design** | 30% | 30% | 15% | 10% | 15% |
-
-> 最后两行是 2026-09-14 随 V5 启用新岗位时的**临时权重**，待团队在
-> 《评估维度.csv》定稿后替换。
 
 `total_score` 由各维度按岗位权重加权计算（不要直接填平均值）；
 权重单一事实源在 `backend/app/core/evaluation_weights.py`（`POSITION_CONFIG` /

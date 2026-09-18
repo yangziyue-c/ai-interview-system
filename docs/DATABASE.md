@@ -32,10 +32,10 @@ users (用户)
   │ 1              │
 interviews (面试会话)      status: idle → in_progress → finished
   │ 1                    current_round: 已提问到第几轮
-  ├────────────────┐
-  │ N              │ 1
-qa_records (问答记录)    reports (评估报告)
-  round: 第几轮          五个维度分数 + 评语
+  ├────────────────┬─────────────────┐
+  │ N              │ 1               │ N
+qa_records (问答记录)    reports (评估报告)      report_shares (报告分享)
+  round: 第几轮          五个维度分数 + 评语    分享码 + 有效期 + 访问计数
 
 positions (岗位表，独立无外键)
   启动时自动 seed 5 个岗位位，enabled 控制上/下线
@@ -46,6 +46,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 
 - 1 个用户 → N 场面试
 - 1 场面试 → N 条问答记录 + 1 份评估报告（严格一对一）
+- 1 场面试 → N 个分享码（有效期内的至多 1 个，重复生成会复用）
 - 岗位由 positions 表动态维护（替代硬编码枚举），预留 5 个岗位位
 - 题库由 questions 表承载（V5 换代，5 岗位共 5012 题：backend 2146 + frontend 734 + test_engineer 667 + algorithm 655 + system_design 810），算法按岗位/阶段/难度抽题
 
@@ -63,6 +64,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | nickname | varchar(64) | 默认空串 | 展示昵称 |
 | student_id | varchar(32) | nullable | 学号（可选，个人中心展示用） |
 | target_position | varchar(16) | 默认 backend | 目标岗位 code（动态，见 positions 表） |
+| avatar_url | varchar(512) | nullable | 头像地址，形如 `/uploads/avatars/1_ab3f9c2d.png`；为空时前端用昵称首字母占位。老库由 `database.py::_ensure_column` 补列 |
 | created_at | datetime | server_default=now() | 注册时间，由数据库生成 |
 
 ### 2. interviews：面试会话表
@@ -118,10 +120,26 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 | backend | 35% | 25% | 10% | 10% | 20% |
 | frontend | 30% | 20% | 15% | 15% | 20% |
 | test_engineer | 25% | 25% | 20% | 15% | 15% |
-| algorithm | 40% | 25% | 10% | 10% | 15% |
+| algorithm | 35% | 30% | 10% | 10% | 15% |
 | system_design | 30% | 30% | 15% | 10% | 15% |
 
-### 5. positions：岗位表（独立无外键）
+### 5. report_shares：报告分享表
+
+| 字段 | 类型 | 约束 | 说明 |
+| :--- | :--- | :--- | :--- |
+| id | int | 主键自增 | |
+| interview_id | int | FK→interviews，index，级联删除 | 被分享报告所属的面试（报告与面试严格一对一，故直连 interviews） |
+| share_code | varchar(32) | unique + index | 分享码，`uuid4().hex`（128 位随机），即分享链接里的那一串 |
+| created_at | datetime | server_default=now() | 生成时间 |
+| expires_at | datetime | not null | 过期时间 = 生成时刻 + `SHARE_EXPIRE_DAYS`（默认 7 天） |
+| view_count | int | 默认 0 | 被访问次数，每次成功读取 +1 |
+
+> 字段名是 `interview_id` 而不是需求文档里写的 `report_id`——需求文档自己也注明
+> 「报告 ID（即 interview_id）」，直接叫 interview_id，免得后人误以为要 join `reports.id`。
+> 同一份报告重复生成会复用尚未过期的分享码，因此一个 interview_id 可能对应多行
+> （历史过期码 + 当前有效码），查询一律带 `expires_at` 条件。
+
+### 6. positions：岗位表（独立无外键）
 
 | 字段 | 类型 | 约束 | 说明 |
 | :--- | :--- | :--- | :--- |
@@ -137,7 +155,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 
 启动时若表为空，自动 seed 5 个岗位（V5 换代后全部启用：backend / frontend / test_engineer / algorithm / system_design，见 [position.py](../backend/app/models/position.py) 的 `DEFAULT_POSITIONS`）；老库由 `database.py::_align_positions` 幂等对齐（占位岗位位改名 + 缺失岗位补插），岗位清单调整只需更新数据库记录，无需改代码。
 
-### 6. questions：面试题库表（独立无外键）
+### 7. questions：面试题库表（独立无外键）
 
 数据由 [import_question_bank.py](../backend/scripts/import_question_bank.py) 从
 `backend/rag/数据/*-v5.json`（V5 格式（2026-09-14 换代），5 岗位共 5012 题）导入，
@@ -185,6 +203,8 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 7. **级联删除**（`ondelete=CASCADE` + `delete-orphan`）：删除用户/面试自动清理全部关联数据，无孤儿记录。
 8. **索引最小化**：只在真实查询路径建索引：登录按 username、面试列表按 user_id、报告按 interview_id、状态筛选按 status、题库按 position_code。不建冗余索引。
 9. **题库表化（V5）**：题库 json（`backend/rag/数据/*-v5.json`）由导入脚本落库（questions 表），面试官算法（`backend/interviewer_new/`）按岗位/阶段/难度从库抽题；题库更新只需重跑导入脚本，代码零改动。V5 的关键改进是把三级追问拆成独立列：V4 时代下游要用 119 行正则从一段混合文本里挖结构化信息，现在直接读字段即可（详见 [REPORT_TO_P2_INTERVIEWER_NEW.md](reports/REPORT_TO_P2_INTERVIEWER_NEW.md)）。
+10. **分享码与登录解耦**：分享是外发场景，接收方没有账号，故分享码独立成表，`GET /share/{code}` 是全站唯一免登录的业务接口。安全性靠三点：码为 128 位随机、不可枚举；有有效期；「不存在」与「已过期」返回同一提示，不泄露哪个码真实存在。
+11. **用户输入不当作可信 URL**：`users.avatar_url` 只接受 `/uploads/avatars/` 下的站内路径，外部地址、`javascript:`、路径穿越一律 400。前端会把它直接塞进 `<img src>`，放开任意字符串等于允许用户互相注入。头像上传本身也校验文件头，防止改扩展名把非图片内容托管到静态目录。
 
 ## 五、数据流示例（一场完整面试的落库过程）
 
@@ -206,6 +226,14 @@ POST /interviews/{id}/finish（手动结束或达到轮次上限自动触发）
 
 GET /reports/growth
   → JOIN interviews × reports，WHERE status=finished，ORDER BY finished_at ASC
+
+POST /reports/{id}/share
+  → 复用该面试尚未过期的分享码；没有则 INSERT report_shares (share_code=uuid4, expires_at=now+7d)
+
+GET /share/{code}（免登录）
+  → SELECT report_shares WHERE share_code=? AND expires_at > now
+  → 命中：view_count +1，返回与 GET /reports/{id} 结构一致的报告
+  → 未命中或已过期：一律 404（不区分二者）
 ```
 
 ## 六、相关文件索引

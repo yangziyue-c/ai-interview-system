@@ -39,12 +39,10 @@ POSITION_CONFIG = {
         "weight_adaptability": 15,
         "weight_match": 15,
     },
-    # ⚠️ 以下两岗位为**临时权重**（2026-09-14，V5 知识库换代时启用）——
-    # 待团队在《评估维度.csv》定稿后替换；test_weights_match_csv 会拦住两处不一致。
     "algorithm": {
         "name": "算法工程师",
-        "weight_tech": 40,          # 算法岗：技术水平权重最高
-        "weight_logic": 25,
+        "weight_tech": 35,          # 算法岗：技术水平权重最高
+        "weight_logic": 30,
         "weight_expression": 10,
         "weight_adaptability": 10,
         "weight_match": 15,

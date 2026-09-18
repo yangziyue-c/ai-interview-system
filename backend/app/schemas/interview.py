@@ -24,6 +24,8 @@ class QAOut(BaseModel):
     question: str
     answer: str | None
     audio_url: str | None
+    # 出题时间：问答回顾页按时间线展示「何时问、何时答」需要它
+    created_at: datetime
 
 
 class InterviewOut(BaseModel):

@@ -1,12 +1,19 @@
-"""认证接口：注册 / 登录 / 当前用户"""
+"""认证接口：注册 / 登录 / 当前用户 / 更新资料"""
 from fastapi import APIRouter
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession, validate_position
 from app.core.exceptions import BadRequestError, UnauthorizedError
 from app.core.security import create_access_token, hash_password, verify_password
+from app.core.upload_rules import remove_avatar_file, validate_avatar_url
 from app.models import User
-from app.schemas.auth import LoginRequest, RegisterRequest, TokenOut, UserOut
+from app.schemas.auth import (
+    LoginRequest,
+    RegisterRequest,
+    TokenOut,
+    UpdateProfileRequest,
+    UserOut,
+)
 from app.utils.response import ok
 
 router = APIRouter()
@@ -47,3 +54,48 @@ async def login(req: LoginRequest, db: DbSession) -> dict:
 @router.get("/me", response_model=dict, summary="获取当前登录用户信息")
 async def me(user: CurrentUser) -> dict:
     return ok(UserOut.model_validate(user).model_dump())
+
+
+@router.put("/me", response_model=dict, summary="更新当前用户资料")
+@router.patch(
+    "/me",
+    response_model=dict,
+    summary="更新当前用户资料（与 PUT 等价）",
+    include_in_schema=False,
+)
+async def update_me(req: UpdateProfileRequest, user: CurrentUser, db: DbSession) -> dict:
+    """只改传入的字段，未传的保持原值（request schema 已说明两种「空」的区别）。
+
+    PUT 与 PATCH 并存是刻意的：本接口本就是部分更新语义，两者在该场景下没有实际
+    差异，前端挑顺手的用即可，省得联调时为方法名来回改。
+    """
+    # exclude_unset 区分「没传该字段」（保持原值）与「显式传 null」（清空）
+    updates = req.model_dump(exclude_unset=True)
+
+    if "nickname" in updates:
+        nickname = (updates["nickname"] or "").strip()
+        if not nickname:
+            raise BadRequestError("昵称不能为空")
+        updates["nickname"] = nickname
+    if "student_id" in updates:
+        # 空串与 null 等价（都表示「没填」），统一存 None，免得库里出现 '' 和 NULL 两种空
+        updates["student_id"] = (updates["student_id"] or "").strip() or None
+    if "target_position" in updates:
+        if updates["target_position"] is None:
+            raise BadRequestError("目标岗位不能为空")
+        await validate_position(db, updates["target_position"])
+    if "avatar_url" in updates:
+        validate_avatar_url(updates["avatar_url"])
+
+    old_avatar = user.avatar_url
+    for field, value in updates.items():
+        setattr(user, field, value)
+    await db.commit()
+    await db.refresh(user)
+
+    # 换掉头像才清理旧文件，且放在 commit 之后：先保证新地址已落库，再删旧图——
+    # 顺序反过来的话，删完旧图、写库却失败，用户资料里就留下一个指向空文件的地址
+    if "avatar_url" in updates and updates["avatar_url"] != old_avatar:
+        remove_avatar_file(old_avatar)
+
+    return ok(UserOut.model_validate(user).model_dump(), "资料已更新")

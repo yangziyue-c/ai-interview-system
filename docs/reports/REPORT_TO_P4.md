@@ -1,5 +1,10 @@
 # 致 P4（前端）同学：页面需求与接口权威说明
 
+> **2026-09-18 新增 5 组接口（见 2.8~2.12）**：个人资料可编辑、头像可上传、报告可生成
+> 限时分享链接（含一个免登录的只读报告页）、历史记录与成长曲线支持按岗位筛选、
+> 面试详情补上问答时间戳。后端均已实现并有回归测试覆盖；
+> 接口字段以 [docs/API.md](../API.md) 为唯一权威。
+
 > **2026-09-14 起题库换代到 V5**：岗位增至 5 个（新增算法工程师、系统设计工程师）、
 > 题库题型/阶段受控词表有变、新增 `POST /api/v1/rag/search` 语义检索接口。
 > 岗位列表走 `GET /positions`，不硬编码岗位即可正常适配，故无强制改码；
@@ -42,8 +47,11 @@
 
 ### Tab2：个人中心
 
-1. **上半部分**：头像（后端无头像字段，用昵称首字母占位）、昵称、学号。
-2. **中间部分**：历史面试列表（按时间倒序；岗位名称 + 综合得分 + 日期，点击进完整报告）。
+1. **上半部分**：头像、昵称、学号、目标岗位，并提供「编辑资料」与「更换头像」入口
+   （接口见 2.8 / 2.9）。用户没设置头像时用昵称首字母占位。
+2. **中间部分**：岗位筛选 Tab（「全部」+ 各岗位，选项来自 `GET /positions`）+ 历史面试列表
+   （按时间倒序；岗位名称 + 综合得分 + 日期，点击进完整报告）。统计卡片（总次数/平均分/最高分）
+   与成长曲线都要跟着 Tab 一起筛选（见 2.11）。
 3. **下半部分**：最近一次 AI 改进建议（`GET /reports/latest`；无数据时显示"暂无建议"）。
 
 ---
@@ -119,6 +127,92 @@ GET /config     { "code": 0, "data": { "total_rounds": 7, "max_follow_up_rounds"
 > **前端不要把 7 写死**：`total_rounds` 一改，写死的前端就会显示成「第 N / 7 题」而与实际轮数脱节。
 > 建议启动/登录后调一次本接口缓存起来（需登录）。`current_round` 仍从面试响应里取。
 
+### 2.8 更新个人资料（个人中心「编辑资料」用，2026-09-18 新增）
+
+```
+PUT   /auth/me          （PATCH /auth/me 等价，用哪个都行）
+```
+
+请求体字段全部可选，**只改传入的那些**：
+
+```json
+{ "nickname": "张三丰", "student_id": "20260002", "target_position": "frontend" }
+```
+
+返回更新后的完整 `user` 对象，用它刷新 localStorage 里的 `userInfo` 与页面顶部/侧边栏显示。
+
+> 「未传」与「显式传 null」含义不同：未传的保持原值，传 `null` 表示清空
+> （`student_id`、`avatar_url` 适用）。`nickname` 与 `target_position` 不允许为空，
+> 传 null 或纯空白返回 400。
+> `target_position` 的选项从 `GET /positions` 取，不要硬编码。
+> 改昵称后记得同步头像占位字母——没设头像时显示的就是昵称首字母。
+> 改目标岗位只影响之后新开的面试，历史记录保留当时的岗位。
+
+### 2.9 上传头像（个人中心「更换头像」用，2026-09-18 新增）
+
+```
+POST /uploads/avatar      multipart/form-data，file 字段（jpg/jpeg/png/webp，≤2MB）
+                          → { "code": 0, "data": { "url": "/uploads/avatars/1_ab3f9c2d.png" } }
+```
+
+**分两步**：先上传拿到 `url`，再调 `PUT /auth/me` 提交 `avatar_url`，头像才真正生效。
+
+> 本地预览用 `FileReader` 即可，不必等上传成功；提交成功后再刷新所有显示头像的位置。
+> `avatar_url` 为 `null` 时仍用昵称首字母占位。
+> 服务端会校验文件头：把 `.html` 改名成 `.png` 会被 400 拒掉。
+> `avatar_url` 只接受 `/uploads/avatars/` 下的站内路径，传外部 URL 也是 400。
+> 移动端注意 `<input type="file" accept="image/*">` 的选图体验。
+
+### 2.10 报告分享链接（报告页「生成分享链接」用，2026-09-18 新增）
+
+```
+POST /reports/{interview_id}/share
+  → { "share_code": "8f14e45f…", "share_url": "http://host/#/share/8f14e45f…", "expires_at": "…" }
+```
+
+取到 `share_url` 后直接复制到剪贴板即可。同时需要新增一个**只读报告页** `/share/:code`：
+
+```
+GET /share/{code}        // 免登录
+```
+
+返回结构与 `GET /reports/{interview_id}` **完全一致**，报告渲染组件可以直接复用。
+
+> 分享码不存在或已过期都返回 404 且提示相同，前端统一提示「链接不存在或已过期」。
+> 重复点「生成链接」返回的是同一个未过期的码，不会每次都给新的。
+> 这是全站唯一无需登录的接口：分享页不要跳登录，也别去读 localStorage 里的 token。
+> 分享内容含个人信息，页面上加一句「分享内容包含个人信息，请注意隐私」。
+
+### 2.11 历史记录与成长曲线按岗位筛选（2026-09-18 新增）
+
+```
+GET /interviews?position=backend          // 不传 = 全部岗位
+GET /reports/growth?position=backend      // 不传 = 全部岗位
+```
+
+个人中心历史列表上方加岗位 Tab（「全部」+ 各岗位），切换时把 code 传给上面两个接口。
+
+> 切换 Tab 要同时驱动三处：历史列表、统计卡片、成长曲线。只筛列表不筛统计，
+> 页面上就会出现「列表 5 条、总次数 12 次」这种自相矛盾的显示。
+> 各岗位评估维度权重不同，混在一条成长曲线上没有可比性——这正是加这个筛选的原因。
+> 别用 localStorage 里的 `position` 做本地筛选来顶替：本地筛选只能筛到当前页那几条，
+> 统计口径还是全量的，数据一多就露馅。
+
+### 2.12 报告页「查看问答记录」（2026-09-18 补字段，无需新接口）
+
+`GET /interviews/{interview_id}` 的 `data.qa_records` 就是完整问答记录：
+
+```json
+[{ "id": 1, "round": 1, "question": "…", "answer": "…", "audio_url": null, "created_at": "…" }]
+```
+
+按 `round` 升序；`answer` 为 `null` 表示该题已出、考生尚未作答。
+
+> 数据早就在库里，报告页加个「查看问答记录」入口即可，不需要新接口。
+> `created_at` 是本轮新补的字段，用于按时间线展示。
+> 建议做成从右侧滑出的抽屉（不跳走，用户不必离开报告页），聊天气泡样式
+> （AI 左、用户右）与对话室保持一致，再加一个「复制全文」按钮。
+
 ---
 
 ## 3. 前端常见错误对照（原 frontend-spec 接口部分已作废，此表防再犯）
@@ -193,17 +287,21 @@ Base URL：`http://localhost:8001/api/v1`（联调期）｜统一响应 `{ code,
 | 注册（自动登录） | `POST /auth/register` | 否 |
 | 登录 | `POST /auth/login` | 否 |
 | 当前用户信息 | `GET /auth/me` | 是 |
+| 更新个人资料 | `PUT /auth/me`（PATCH 等价），body `{"nickname"?, "student_id"?, "target_position"?, "avatar_url"?}` | 是 |
 | 岗位列表（岗位大厅） | `GET /positions` | 是 |
 | 前端运行参数（总轮数） | `GET /config` | 是 |
 | 开始面试 | `POST /interviews`，body `{"position": "<岗位接口返回的 code>"}` | 是 |
-| 历史面试列表（附分数） | `GET /interviews` | 是 |
-| 面试详情（恢复会话） | `GET /interviews/{interview_id}` | 是 |
+| 历史面试列表（附分数） | `GET /interviews`，可选 `?position=` | 是 |
+| 面试详情（恢复会话 / 问答记录） | `GET /interviews/{interview_id}` | 是 |
 | 提交答案并获取下一题 | `POST /interviews/{interview_id}/answers`，body `{"answer", "audio_url"?}` | 是 |
 | 主动结束面试 | `POST /interviews/{interview_id}/finish` | 是 |
 | 上传录音 | `POST /uploads/audio`（multipart，file 字段） | 是 |
+| 上传头像 | `POST /uploads/avatar`（multipart，file 字段） | 是 |
 | 评估报告详情 | `GET /reports/{interview_id}` | 是 |
+| 生成报告分享链接 | `POST /reports/{interview_id}/share` | 是 |
+| 凭分享码看报告（只读页） | `GET /share/{code}` | **否** |
 | 最近一次面试建议 | `GET /reports/latest` | 是 |
-| 能力成长曲线 | `GET /reports/growth` | 是 |
+| 能力成长曲线 | `GET /reports/growth`，可选 `?position=` | 是 |
 
 完整请求/响应示例与错误码见 [API.md](../API.md)；在线调试 http://localhost:8001/docs 。
 
@@ -228,7 +326,9 @@ Base URL：`http://localhost:8001/api/v1`（联调期）｜统一响应 `{ code,
   岗位大厅（读 GET /positions）、岗位详情、面试对话室（文本+按住说话语音：
   Web Speech API 转写 + MediaRecorder 录 webm 上传 /api/v1/uploads/audio）、
   报告页（5 维雷达图 技术/逻辑/表达/应变/匹配 + 总分 + 评语/优缺点/建议 +
-  成长曲线折线图）、个人中心（用户信息 + 历史列表带分数 + 最近建议）；
+  成长曲线折线图 + 「查看问答记录」抽屉 + 「生成分享链接」按钮）、
+  分享只读报告页（/share/:code，免登录）、
+  个人中心（用户信息 + 编辑资料/更换头像 + 岗位筛选 Tab + 历史列表带分数 + 统计卡片 + 最近建议）；
 - 面试对话室关键流程：开始面试拿 interview.id → 提交答案后按 finished 判断
   显示下一题或跳报告；提供"结束面试"按钮；历史列表 status=in_progress 可继续作答；
 - 岗位名称/简介/技术栈/考察重点均从 GET /positions 读取，position 原样传 code；

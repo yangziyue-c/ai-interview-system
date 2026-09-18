@@ -60,6 +60,7 @@ POST /auth/register
       "nickname": "张三",
       "student_id": "20260001",
       "target_position": "backend",
+      "avatar_url": null,          // 头像地址，未设置时为 null（前端用昵称首字母占位）
       "created_at": "2026-09-01T10:00:00"
     }
   }
@@ -79,6 +80,34 @@ POST /auth/login          { "username": "zhangsan", "password": "123456" }
 ```
 GET /auth/me
 ```
+
+`data` 为 `user` 对象（结构见 1.1）。
+
+### 1.4 更新当前用户资料（个人中心用）
+
+```
+PUT   /auth/me
+PATCH /auth/me              // 与 PUT 等价，前端用哪个都行
+```
+
+字段全部可选，**只更新传入的字段**，未传的保持原值：
+
+```json
+{
+  "nickname": "张三丰",                              // 昵称，不可为空白
+  "student_id": "20260002",                          // 学号
+  "target_position": "frontend",                     // 目标岗位 code（见 2.1）
+  "avatar_url": "/uploads/avatars/1_ab3f9c2d.png"    // 头像地址，须为 6.2 返回的站内路径
+}
+```
+
+返回更新后的完整 `user` 对象（结构同 1.1 的 `user`）。
+
+> 「未传」与「显式传 null」含义不同：未传的字段保持原值，显式传 `null` 表示清空
+> （适用于 `student_id`、`avatar_url`）。
+> `nickname` 与 `target_position` 不允许为空，传 `null` 或纯空白返回 400（`code: 40000`）；
+> `target_position` 不存在或未开放同样返回 400。
+> 改目标岗位只影响之后新开的面试，历史记录保留当时的岗位。
 
 ---
 
@@ -131,7 +160,12 @@ POST /interviews           { "position": "backend" }    // 岗位 code（见 2.1
 
 ```
 GET /interviews
+GET /interviews?position=backend     // 可选：只看该岗位的记录
 ```
+
+| 参数 | 说明 |
+| :--- | :--- |
+| position | 岗位 code（可选，不传 = 全部岗位）。各岗位评估维度权重不同，混在一起统计没有可比性 |
 
 按时间倒序，每项附带综合得分（`total_score`；未生成报告时为 `null`，如进行中/未结束的面试）：
 
@@ -152,7 +186,10 @@ GET /interviews
 GET /interviews/{interview_id}
 ```
 
-返回 `data.qa_records`：`[{round, question, answer, audio_url}]`。
+返回 `data.qa_records`：`[{round, question, answer, audio_url, created_at}]`，按 `round` 升序。
+
+> `answer` 为 `null` 表示该题已出、考生尚未作答。「查看问答记录」直接用本接口，
+> 无需另开接口；`created_at` 供按时间线展示时使用。
 
 ### 3.4 提交答案并获取下一题
 
@@ -250,7 +287,12 @@ GET /reports/latest
 
 ```
 GET /reports/growth
+GET /reports/growth?position=backend   // 可选：只看该岗位的得分序列
 ```
+
+| 参数 | 说明 |
+| :--- | :--- |
+| position | 岗位 code（可选，不传 = 全部岗位）。个人中心按岗位 Tab 筛选时传它 |
 
 返回已结束面试的得分序列（按时间升序）：
 
@@ -263,6 +305,26 @@ GET /reports/growth
     "total_score": 84.5, ... }
 ] }
 ```
+
+### 4.4 生成报告分享链接
+
+```
+POST /reports/{interview_id}/share
+```
+
+```json
+{ "code": 0, "message": "分享链接已生成", "data": {
+  "share_code": "8f14e45fceea167a5a36dedd4bea2543",
+  "share_url": "http://localhost:8001/#/share/8f14e45fceea167a5a36dedd4bea2543",
+  "expires_at": "2026-09-25T21:00:00"
+} }
+```
+
+> 面试未结束（尚无报告）时返回 409。
+> 同一份报告重复调用会**复用尚未过期的分享码**，不会堆出一串等价的有效码。
+> 有效期默认 7 天，由 `.env` 的 `SHARE_EXPIRE_DAYS` 控制。
+> `share_url` 由后端按当前请求的 Host 拼好（内网穿透演示时即穿透域名），前端直接复制到剪贴板即可。
+> 分享内容含个人信息，前端应提示「分享内容包含个人信息，请注意隐私」。
 
 ---
 
@@ -390,6 +452,27 @@ POST /uploads/audio        Content-Type: multipart/form-data
 
 `url` 为相对路径，完整地址 = 当前服务地址 + url（如 `http://localhost:8001/uploads/12_ab3f9c2d.mp3`）。上传后可直接访问该 URL 播放/下载，提交答案时把 `url` 填入 `audio_url` 字段供 P3 语音识别评估。
 
+### 6.2 上传头像
+
+```
+POST /uploads/avatar       Content-Type: multipart/form-data
+                           file: 图片文件（jpg/jpeg/png/webp，≤2MB）
+```
+
+返回：
+
+```json
+{ "code": 0, "message": "头像上传成功", "data": { "url": "/uploads/avatars/1_ab3f9c2d.png" } }
+```
+
+拿到 `url` 后还需调用 `PUT /auth/me` 提交，头像才会生效——先传图拿地址，再改资料。
+
+> 本接口只落盘并返回地址，不动用户资料；旧头像文件的清理发生在 `PUT /auth/me`
+> 换掉 `avatar_url` 的那一步。这样「传了图但没提交」只会留下一个无引用文件，
+> 不会让用户资料指向一张已删的图。
+> 服务端会校验**文件头**：把 `.html` 改名成 `.png` 会被拒（否则静态服务会照
+> `image/png` 托管任意内容）。`avatar_url` 也只接受 `/uploads/avatars/` 下的站内路径。
+
 ---
 
 ## 7. 系统
@@ -412,6 +495,22 @@ GET /config                { "code": 0, "message": "ok", "data": {
 > 需登录（与其余业务接口一致）。前端不要硬编码轮数，它由后端 `.env` 的
 > `MAX_FOLLOW_UP_ROUNDS` 决定，改配置后本接口自动跟随；硬编码会导致
 > 「第 N / 7 题」的显示与实际轮数静默脱节。
+
+---
+
+## 8. 分享
+
+### 8.1 凭分享码查看报告（免登录）
+
+```
+GET /share/{code}
+```
+
+返回结构与 4.1 完全一致，前端可复用同一套报告渲染。**本接口是全站唯一无需登录的业务接口。**
+
+> 分享码不存在或已过期，一律返回 404（`code: 40400`）且提示同一句话，
+> 不区分二者——否则可被用来枚举试探出哪些分享码真实有效。
+> 每次成功访问累加一次访问计数（`report_shares.view_count`，当前不对外暴露）。
 
 ---
 
@@ -501,7 +600,7 @@ POST {AI_EVALUATOR_URL}/evaluate
 | backend | 35% | 25% | 10% | 10% | 20% |
 | frontend | 30% | 20% | 15% | 15% | 20% |
 | test_engineer | 25% | 25% | 20% | 15% | 15% |
-| algorithm | 40% | 25% | 10% | 10% | 15% |
+| algorithm | 35% | 30% | 10% | 10% | 15% |
 | system_design | 30% | 30% | 15% | 10% | 15% |
 
 > 最后两个岗位（2026-09-14 随 V5 知识库启用）的权重已在《评估维度.csv》与

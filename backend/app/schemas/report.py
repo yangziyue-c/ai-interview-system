@@ -43,6 +43,16 @@ def report_out(report, interview) -> ReportOut:
     )
 
 
+class ShareOut(BaseModel):
+    """报告分享链接的创建结果"""
+
+    share_code: str
+    # 后端按当前请求的 Host 拼好的完整链接，前端直接复制到剪贴板即可。
+    # 路由形式沿用前端的 hash 路由（#/share/<code>）。
+    share_url: str
+    expires_at: datetime
+
+
 class GrowthPoint(BaseModel):
     """能力成长曲线上的一个点（一次已完成的面试）"""
 

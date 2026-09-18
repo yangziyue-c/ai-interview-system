@@ -135,6 +135,13 @@ async def init_db() -> None:
             "student_id",
             "ALTER TABLE users ADD COLUMN student_id VARCHAR(32)",
         )
+        # 头像地址（个人中心支持更换头像；老库补列后为 NULL，前端回退首字母占位）
+        await conn.run_sync(
+            _ensure_column,
+            "users",
+            "avatar_url",
+            "ALTER TABLE users ADD COLUMN avatar_url VARCHAR(512)",
+        )
         # 评估维度从 4 维扩展为 5 维（2026-09-04，源自《评估维度.csv》的「应变能力」）
         await conn.run_sync(
             _ensure_column,

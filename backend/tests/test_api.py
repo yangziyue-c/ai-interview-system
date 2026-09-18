@@ -3,6 +3,7 @@
 覆盖：注册登录、开始面试、多轮问答、自动结束出报告、手动结束、
 成长曲线、越权访问、非法状态、音频上传、异常兜底格式。
 """
+import base64
 import uuid
 from collections import defaultdict
 
@@ -36,6 +37,11 @@ async def _cleanup_made_questions():
 
 BASE = "/api/v1"
 
+# 1x1 像素 PNG 的真实字节：头像用例需要「扩展名与文件内容都成立」的素材
+_PNG_1PX = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
 
 def _unique_name(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
@@ -56,6 +62,22 @@ async def _register(client: AsyncClient, prefix: str = "user", position: str = "
     assert body["code"] == 0
     token = body["data"]["access_token"]
     return token, {"Authorization": f"Bearer {token}"}
+
+
+async def _finished_interview(
+    client: AsyncClient, headers: dict, position: str = "backend"
+) -> int:
+    """跑完一场面试（答一题 → 主动结束）并返回 interview_id"""
+    resp = await client.post(f"{BASE}/interviews", json={"position": position}, headers=headers)
+    interview_id = resp.json()["data"]["interview"]["id"]
+    await client.post(
+        f"{BASE}/interviews/{interview_id}/answers",
+        json={"answer": "我会从原理、实现与取舍三个层面来回答这个问题。" * 3},
+        headers=headers,
+    )
+    finish = await client.post(f"{BASE}/interviews/{interview_id}/finish", headers=headers)
+    assert finish.status_code == 200, finish.text
+    return interview_id
 
 
 class TestAuth:
@@ -125,6 +147,72 @@ class TestAuth:
         resp = await client.get(f"{BASE}/auth/me")
         assert resp.status_code == 401
         resp = await client.get(f"{BASE}/interviews")
+        assert resp.status_code == 401
+
+    async def test_update_profile(self, client: AsyncClient):
+        """更新资料：只改传入的字段，未传的保持原值；显式 null 表示清空"""
+        resp = await client.post(
+            f"{BASE}/auth/register",
+            json={
+                "username": _unique_name("edit"),
+                "password": "pass123456",
+                "nickname": "旧昵称",
+                "student_id": "20250001",
+            },
+        )
+        token = resp.json()["data"]["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 只传 nickname：其余字段不得被顺手清空
+        resp = await client.put(f"{BASE}/auth/me", json={"nickname": "新昵称"}, headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["nickname"] == "新昵称"
+        assert data["student_id"] == "20250001", "未传的字段应保持原值"
+        assert data["target_position"] == "backend"
+
+        # 改岗位 + 显式传 null 清空学号
+        resp = await client.put(
+            f"{BASE}/auth/me",
+            json={"target_position": "frontend", "student_id": None},
+            headers=headers,
+        )
+        data = resp.json()["data"]
+        assert data["target_position"] == "frontend"
+        assert data["student_id"] is None
+
+        # 已落库：重新拉取 /auth/me 仍是新值
+        data = (await client.get(f"{BASE}/auth/me", headers=headers)).json()["data"]
+        assert (data["nickname"], data["target_position"], data["student_id"]) == (
+            "新昵称", "frontend", None
+        )
+
+        # PATCH 与 PUT 等价（前端用哪个都行）
+        resp = await client.patch(f"{BASE}/auth/me", json={"nickname": "再改一次"}, headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["data"]["nickname"] == "再改一次"
+
+        # 空 body：不改任何字段，也不报错
+        resp = await client.put(f"{BASE}/auth/me", json={}, headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["data"]["nickname"] == "再改一次"
+
+    async def test_update_profile_rejects_invalid(self, client: AsyncClient):
+        """非法输入：未开放岗位、空昵称、显式传 null 的目标岗位一律 40000"""
+        _, headers = await _register(client, "editbad")
+
+        for payload in (
+            {"target_position": "rust"},
+            {"nickname": "   "},
+            {"nickname": None},
+            {"target_position": None},
+        ):
+            resp = await client.put(f"{BASE}/auth/me", json=payload, headers=headers)
+            assert resp.status_code == 400, f"{payload} 应被拒绝"
+            assert resp.json()["code"] == 40000
+
+    async def test_update_profile_requires_auth(self, client: AsyncClient):
+        resp = await client.put(f"{BASE}/auth/me", json={"nickname": "x"})
         assert resp.status_code == 401
 
 
@@ -310,6 +398,65 @@ class TestInterviewFlow:
         resp = await client.get(f"{BASE}/reports/{interview_id}", headers=headers)
         assert resp.status_code == 409
 
+    async def test_detail_qa_records(self, client: AsyncClient):
+        """面试详情返回完整问答：字段名 qa_records，含轮次、题干、作答与时间戳"""
+        _, headers = await _register(client, "qadetail")
+        resp = await client.post(f"{BASE}/interviews", json={"position": "backend"}, headers=headers)
+        interview_id = resp.json()["data"]["interview"]["id"]
+        first_question = resp.json()["data"]["question"]
+
+        await client.post(
+            f"{BASE}/interviews/{interview_id}/answers",
+            json={"answer": "我的回答内容"},
+            headers=headers,
+        )
+
+        resp = await client.get(f"{BASE}/interviews/{interview_id}", headers=headers)
+        assert resp.status_code == 200
+        records = resp.json()["data"]["qa_records"]
+        assert len(records) == 2, "开场题与随后的追问都应落库"
+
+        first = records[0]
+        assert first["round"] == 1
+        assert first["question"] == first_question
+        assert first["answer"] == "我的回答内容"
+        # 时间戳：问答回顾页按时间线展示需要它
+        assert first["created_at"]
+
+        # 追问已出但未作答 → answer 为 null（前端渲染成「待作答」）
+        assert records[1]["round"] == 2
+        assert records[1]["answer"] is None
+
+    async def test_filter_by_position(self, client: AsyncClient):
+        """按岗位筛选：历史列表与成长曲线都只返回该岗位的记录"""
+        _, headers = await _register(client, "filter")
+        back_id = await _finished_interview(client, headers, "backend")
+        front_id = await _finished_interview(client, headers, "frontend")
+
+        # 不传岗位：两场都在
+        data = (await client.get(f"{BASE}/interviews", headers=headers)).json()["data"]
+        assert {back_id, front_id} <= {i["id"] for i in data}
+
+        # 传岗位：只剩该岗位那一场
+        data = (await client.get(f"{BASE}/interviews?position=backend", headers=headers)).json()["data"]
+        assert [i["id"] for i in data] == [back_id]
+        assert all(i["position"] == "backend" for i in data)
+
+        # 成长曲线同样按岗位切分（各岗位权重不同，混在一条曲线上没有可比性）
+        points = (
+            await client.get(f"{BASE}/reports/growth?position=frontend", headers=headers)
+        ).json()["data"]
+        assert [p["interview_id"] for p in points] == [front_id]
+        assert all(p["position"] == "frontend" for p in points)
+
+        points = (await client.get(f"{BASE}/reports/growth", headers=headers)).json()["data"]
+        assert {p["interview_id"] for p in points} >= {back_id, front_id}
+
+        # 未开放的岗位 code：不报错，返回空集（岗位是动态集合）
+        resp = await client.get(f"{BASE}/interviews?position=rust", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["data"] == []
+
 
 class TestUpload:
     async def test_upload_audio(self, client: AsyncClient):
@@ -331,6 +478,179 @@ class TestUpload:
         )
         assert resp.status_code == 400
         assert resp.json()["code"] == 40000
+
+    async def test_upload_avatar_and_set(self, client: AsyncClient):
+        """上传头像 → 拿到站内地址 → 写入资料 → /auth/me 与登录响应都带上它"""
+        resp = await client.post(
+            f"{BASE}/auth/register",
+            json={"username": _unique_name("avatar"), "password": "pass123456"},
+        )
+        headers = {"Authorization": f"Bearer {resp.json()['data']['access_token']}"}
+
+        resp = await client.post(
+            f"{BASE}/uploads/avatar",
+            files={"file": ("me.png", _PNG_1PX, "image/png")},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        url = resp.json()["data"]["url"]
+        assert url.startswith("/uploads/avatars/")
+
+        resp = await client.put(f"{BASE}/auth/me", json={"avatar_url": url}, headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["data"]["avatar_url"] == url
+
+        assert (await client.get(f"{BASE}/auth/me", headers=headers)).json()["data"]["avatar_url"] == url
+
+    async def test_upload_avatar_rejects_non_image(self, client: AsyncClient):
+        """改扩展名混进来：内容不是图片 → 400（否则静态服务会照 .png 托管任意内容）"""
+        _, headers = await _register(client, "av_fake")
+        resp = await client.post(
+            f"{BASE}/uploads/avatar",
+            files={"file": ("evil.png", b"<html><script>alert(1)</script>", "image/png")},
+            headers=headers,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == 40000
+
+    async def test_upload_avatar_rejects_bad_format(self, client: AsyncClient):
+        """非白名单格式（svg 可内嵌脚本）与超出大小上限一律 400"""
+        _, headers = await _register(client, "av_ext")
+        resp = await client.post(
+            f"{BASE}/uploads/avatar",
+            files={"file": ("me.svg", _PNG_1PX, "image/svg+xml")},
+            headers=headers,
+        )
+        assert resp.status_code == 400
+
+        too_big = b"\x89PNG\r\n\x1a\n" + b"\x00" * (settings.MAX_AVATAR_SIZE_MB * 1024 * 1024)
+        resp = await client.post(
+            f"{BASE}/uploads/avatar",
+            files={"file": ("big.png", too_big, "image/png")},
+            headers=headers,
+        )
+        assert resp.status_code == 400
+
+    async def test_upload_avatar_requires_auth(self, client: AsyncClient):
+        resp = await client.post(
+            f"{BASE}/uploads/avatar", files={"file": ("me.png", _PNG_1PX, "image/png")}
+        )
+        assert resp.status_code == 401
+
+    async def test_avatar_url_must_be_internal(self, client: AsyncClient):
+        """头像地址只收本站头像目录下的路径：外部地址与穿越路径一律 400"""
+        _, headers = await _register(client, "av_url")
+        for bad in (
+            "https://evil.example.com/x.png",
+            "javascript:alert(1)",
+            "/uploads/avatars/../../../etc/passwd",
+            "/uploads/audio/leak.mp3",
+        ):
+            resp = await client.put(f"{BASE}/auth/me", json={"avatar_url": bad}, headers=headers)
+            assert resp.status_code == 400, f"{bad} 应被拒绝"
+            assert resp.json()["code"] == 40000
+
+        # 清空头像（显式传 null）是允许的
+        resp = await client.put(f"{BASE}/auth/me", json={"avatar_url": None}, headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["data"]["avatar_url"] is None
+
+
+class TestReportShare:
+    """报告分享：生成分享码、免登录读取、越权与过期"""
+
+    async def test_share_and_read_without_login(self, client: AsyncClient):
+        _, headers = await _register(client, "share")
+        interview_id = await _finished_interview(client, headers)
+
+        resp = await client.post(f"{BASE}/reports/{interview_id}/share", headers=headers)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        code = data["share_code"]
+        assert code and len(code) == 32
+        assert code in data["share_url"]
+        assert data["expires_at"]
+
+        # 免登录读取，且与本人查看报告的返回完全一致（前端可复用同一套渲染）
+        resp = await client.get(f"{BASE}/share/{code}")
+        assert resp.status_code == 200
+        shared = resp.json()["data"]
+        owned = (await client.get(f"{BASE}/reports/{interview_id}", headers=headers)).json()["data"]
+        assert shared == owned
+
+        # 再次生成：复用未过期的分享码，不堆出一串等价的有效码
+        again = (await client.post(f"{BASE}/reports/{interview_id}/share", headers=headers)).json()
+        assert again["data"]["share_code"] == code
+
+    async def test_share_increments_view_count(self, client: AsyncClient):
+        from sqlalchemy import select
+
+        from app.database import async_session
+        from app.models import ReportShare
+
+        _, headers = await _register(client, "share_cnt")
+        interview_id = await _finished_interview(client, headers)
+        code = (
+            await client.post(f"{BASE}/reports/{interview_id}/share", headers=headers)
+        ).json()["data"]["share_code"]
+
+        for _ in range(2):
+            assert (await client.get(f"{BASE}/share/{code}")).status_code == 200
+
+        async with async_session() as db:
+            share = await db.scalar(select(ReportShare).where(ReportShare.share_code == code))
+            assert share.view_count == 2
+
+    async def test_share_requires_finished_interview(self, client: AsyncClient):
+        """未结束的面试没有报告可分享 → 409"""
+        _, headers = await _register(client, "share_early")
+        resp = await client.post(f"{BASE}/interviews", json={"position": "backend"}, headers=headers)
+        interview_id = resp.json()["data"]["interview"]["id"]
+        resp = await client.post(f"{BASE}/reports/{interview_id}/share", headers=headers)
+        assert resp.status_code == 409
+
+    async def test_cannot_share_others_report(self, client: AsyncClient):
+        """不能替别人生成分享链接（归属校验 → 404）"""
+        _, headers_a = await _register(client, "share_owner")
+        _, headers_b = await _register(client, "share_other")
+        interview_id = await _finished_interview(client, headers_a)
+
+        resp = await client.post(f"{BASE}/reports/{interview_id}/share", headers=headers_b)
+        assert resp.status_code == 404
+
+    async def test_unknown_share_code(self, client: AsyncClient):
+        """不存在的分享码 → 404，且与过期同一提示（避免枚举探测有效码）"""
+        resp = await client.get(f"{BASE}/share/{'0' * 32}")
+        assert resp.status_code == 404
+        assert resp.json()["code"] == 40400
+
+    async def test_expired_share_code(self, client: AsyncClient):
+        """过期的分享码 → 404（直接把库里的过期时间改到过去，等价于等满 7 天）"""
+        from datetime import datetime, timedelta
+
+        from sqlalchemy import select
+
+        from app.database import async_session
+        from app.models import ReportShare
+
+        _, headers = await _register(client, "share_exp")
+        interview_id = await _finished_interview(client, headers)
+        code = (
+            await client.post(f"{BASE}/reports/{interview_id}/share", headers=headers)
+        ).json()["data"]["share_code"]
+
+        async with async_session() as db:
+            share = await db.scalar(select(ReportShare).where(ReportShare.share_code == code))
+            share.expires_at = datetime.now() - timedelta(seconds=1)
+            await db.commit()
+
+        # 过期后可重新生成一张（旧码不阻塞新码）
+        resp = await client.get(f"{BASE}/share/{code}")
+        assert resp.status_code == 404
+
+        resp = await client.post(f"{BASE}/reports/{interview_id}/share", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["data"]["share_code"] != code
 
 
 class TestQuestionBank:

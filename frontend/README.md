@@ -39,11 +39,15 @@ npm run build
      随答案一起提交到 `POST /api/v1/interviews/{id}/answers` 的 `audio_url` 字段
    - 「结束面试」按钮（`POST /api/v1/interviews/{id}/finish`）
 4. **报告页**：`GET /api/v1/reports/{interview_id}`，
-   总分 + 五个维度（技术/逻辑/表达/应变/岗位匹配度）雷达图 + 评语/优缺点/建议
+   总分 + 五个维度（技术/逻辑/表达/应变/岗位匹配度）雷达图 + 评语/优缺点/建议；
+   另可加「查看问答记录」抽屉（数据取 `GET /interviews/{id}` 的 `qa_records`，无需新接口）
+   与「生成分享链接」（`POST /reports/{id}/share`，配套一个免登录的 `/share/:code` 只读页）
 5. **历史与成长曲线**：
    - `GET /api/v1/interviews` 历史列表（status=in_progress 可点击继续作答）
    - `GET /api/v1/reports/latest` 最近建议、`GET /api/v1/reports/growth` 成长曲线折线图
-   - 个人中心：头像用昵称首字母占位（后端无头像字段）
+     （后两个接口都支持可选 `?position=`，个人中心按岗位 Tab 筛选时传它）
+   - 个人中心：资料可编辑（`PUT /api/v1/auth/me`）、头像可上传（`POST /api/v1/uploads/avatar`）；
+     未设置头像时用昵称首字母占位
 
 ## 关键流程时序
 

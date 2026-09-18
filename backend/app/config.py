@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     # ---- 上传 ----
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_SIZE_MB: int = 20
+    # 头像单独设上限：它比录音小得多，且会随用户信息接口反复传输
+    MAX_AVATAR_SIZE_MB: int = 2
+
+    # ---- 报告分享 ----
+    # 分享链接有效期（天）：过期后凭分享码访问返回 404，报告本身不受影响
+    SHARE_EXPIRE_DAYS: int = 7
 
     # ---- 前端静态文件（P4 构建产物 dist 挂载点）----
     STATIC_DIR: str = "static"

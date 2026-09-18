@@ -6,7 +6,9 @@
 - **岗位化面试对话**：题库策略出题（V5 知识库已入库 5012 题 / 5 岗位）。开场热身/核心考察/深度压轴
   三阶段 + 锚点追问链（L1→L2→L3→降级引导，按考生回答质量动态分流）动态追问，支持语音/文本
 - **五维评估报告**：技术水平、逻辑思维、沟通表达、应变能力、岗位匹配度
-- **能力成长曲线**：历史面试得分趋势可视化
+- **能力成长曲线**：历史面试得分趋势可视化，可按岗位拆分查看
+- **报告分享与问答回顾**：报告可生成限时分享链接（对方免登录查看）、逐轮问答记录可回顾；
+  个人资料（昵称/学号/目标岗位）与头像可编辑
 
 > 仓库地址：https://github.com/yangziyue-c/ai-interview-system
 
@@ -31,11 +33,11 @@ project/
 │   │   ├── config.py         # 配置（读取 .env）
 │   │   ├── database.py       # SQLAlchemy 异步引擎
 │   │   ├── redis_client.py   # Redis/内存缓存双实现
-│   │   ├── core/             # 异常体系、JWT 鉴权、面试状态机、评估权重
-│   │   ├── models/           # 用户/面试/问答/报告/岗位/题库 六张表（含受控词表常量）
+│   │   ├── core/             # 异常体系、JWT 鉴权、面试状态机、评估权重、上传规则
+│   │   ├── models/           # 用户/面试/问答/报告/分享/岗位/题库 七张表（含受控词表常量）
 │   │   ├── schemas/          # Pydantic 请求响应模型
 │   │   ├── adapters/         # 出题/评估适配器（数据源链 + 超时降级）
-│   │   ├── api/              # 认证/面试/报告/题库/上传 路由
+│   │   ├── api/              # 认证/面试/报告/分享/题库/上传 路由
 │   │   └── utils/            # 统一响应格式
 │   ├── interviewer_new/      # 面试官出题算法（P2，V5 版；旧 interviewer/ 已冻结留档）
 │   ├── evaluator_new/        # 评估服务（P3，增强版：按题评分；旧 evaluator/ 留档）
@@ -174,12 +176,13 @@ idle → in_progress → finished（终态）
 
 ```bash
 cd backend
-D:/anaconda3/envs/ai_interview/python.exe -m pytest    # 68 个用例全绿（测试库 test_interview.db，不污染开发库）
+python -m pytest    # 84 个用例（测试库 test_interview.db，不污染开发库）
 ```
 
-> 本机 `conda run` 有插件 bug，请直接调用 ai_interview 环境内的 python.exe
-> （环境真实位置用 `conda env list` 查询）。测试必须在 backend/ 目录下运行
-> （pytest.ini 的 asyncio 配置与 conftest 的环境切换依赖该目录）。
+> 测试必须在 `backend/` 目录下运行（pytest.ini 的 asyncio 配置与 conftest
+> 的环境切换依赖该目录），且需先激活 `ai_interview` 环境。
+> 本机 `conda run` 有插件 bug，可直接调用该环境内的 python.exe
+> （环境真实位置用 `conda env list` 查询，各机器不同，勿照抄绝对路径）。
 
 ## 内网穿透演示
 
