@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>A11 AI 面试官 · 测试页</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Microsoft YaHei", sans-serif;
+         background: #f0f2f5; height: 100vh; display: flex; flex-direction: column; }
+  .header { background: #1a1a2e; color: #fff; padding: 12px 20px;
+            display: flex; align-items: center; gap: 12px; }
+  .header h1 { font-size: 16px; font-weight: 600; }
+  .header select, .header button { padding: 6px 12px; border-radius: 6px;
+            border: 1px solid #444; background: #2a2a4e; color: #fff; font-size: 13px; }
+  .header button { cursor: pointer; background: #4a69bd; border-color: #4a69bd; }
+  .header button:disabled { background: #666; cursor: not-allowed; }
+  .chat { flex: 1; overflow-y: auto; padding: 20px; }
+  .msg { max-width: 75%; margin-bottom: 14px; padding: 10px 14px;
+         border-radius: 10px; line-height: 1.6; font-size: 14px; white-space: pre-wrap; }
+  .interviewer { background: #fff; border-left: 3px solid #4a69bd; align-self: flex-start; }
+  .candidate  { background: #4a69bd; color: #fff; margin-left: auto; }
+  .system { background: #fff3cd; color: #856404; font-size: 12px; max-width: 100%; }
+  .score { background: #d4edda; color: #155724; font-size: 12px; max-width: 100%; }
+  .input-area { padding: 14px 20px; background: #fff;
+                border-top: 1px solid #ddd; display: flex; gap: 10px; }
+  .input-area input { flex: 1; padding: 10px 14px; border: 1px solid #ccc;
+                border-radius: 8px; font-size: 14px; }
+  .input-area button { padding: 10px 20px; background: #4a69bd; color: #fff;
+                border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  .input-area button:disabled { background: #999; }
+  /* 评分明细折叠区（本次新增，方便自查；不影响对话流程） */
+  .msg details { margin-top: 8px; }
+  .msg details summary { cursor: pointer; font-weight: 600; }
+  .msg pre { margin-top: 6px; padding: 8px; background: #f6f8fa; border-radius: 6px;
+             font-size: 11px; line-height: 1.5; max-height: 320px; overflow: auto;
+             white-space: pre-wrap; word-break: break-all; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🎤 A11 AI 面试官</h1>
+  <select id="job">
+    <option>Java 后端开发工程师</option>
+    <option>Web 前端开发工程师</option>
+    <option>测试开发工程师</option>
+    <option>算法工程师</option>
+    <option>系统设计工程师</option>
+  </select>
+  <button id="startBtn" onclick="startInterview()">开始面试</button>
+  <button id="finishBtn" onclick="finishInterview()" disabled>结束面试</button>
+</div>
+
+<div class="chat" id="chat">
+  <div class="msg system">点"开始面试"，选好岗位，然后像真面试一样打字对话。面试官回复会流式显示。</div>
+</div>
+
+<div class="input-area">
+  <input id="input" placeholder="输入你的回答..." disabled onkeydown="if(event.key==='Enter')send()">
+  <button id="sendBtn" onclick="send()" disabled>发送</button>
+</div>
+
+<script>
+// 页面从服务端打开时（/ui/test_chat.html）跟当前 origin 同源；
+// 直接双击文件打开时 origin 是 "null"，只能显式指向本机 8005。
+const API = (location.protocol === "http:" || location.protocol === "https:")
+  ? location.origin
+  : "http://localhost:8005";
+let sid = null;
+let streaming = false;
+
+function addMsg(text, cls) {
+  const div = document.createElement("div");
+  div.className = "msg " + cls;
+  div.textContent = text;
+  document.getElementById("chat").appendChild(div);
+  document.getElementById("chat").scrollTop = 999999;
+  return div;
+}
+
+async function startInterview() {
+  const job = document.getElementById("job").value;
+  addMsg("正在连接面试官...", "system");
+  const r = await fetch(API + "/start", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({job})
+  });
+  const data = await r.json();
+  if (!r.ok) { addMsg("启动失败: " + (data.err || JSON.stringify(data)), "system"); return; }
+  sid = data.session_id;
+  addMsg("会话已建立: " + sid + "\n" + data.message, "interviewer");
+  document.getElementById("startBtn").disabled = true;
+  document.getElementById("finishBtn").disabled = false;
+  document.getElementById("input").disabled = false;
+  document.getElementById("sendBtn").disabled = false;
+  document.getElementById("input").focus();
+
+  // 自动要第一道题
+  await nextQuestion();
+}
+
+async function nextQuestion() {
+  const r = await fetch(API + "/next", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({session_id: sid, message: ""})
+  });
+  const data = await r.json();
+  if (!r.ok) { addMsg("出题失败: " + (data.err || JSON.stringify(data)), "system"); return; }
+  if (data.finished) {
+    addMsg("面试结束: " + (data.message || ""), "system");
+    return;
+  }
+  addMsg(`【${data.stage || ""}】第 ${data.q_index||1}/${data.total||10} 题\n${data.question}`, "interviewer");
+}
+
+async function send() {
+  const input = document.getElementById("input");
+  const text = input.value.trim();
+  if (!text || streaming) return;
+  input.value = "";
+  addMsg(text, "candidate");
+  streaming = true;
+  document.getElementById("sendBtn").disabled = true;
+
+  // 流式接收
+  const holder = addMsg("", "interviewer");
+  const resp = await fetch(API + "/chat", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({session_id: sid, message: text})
+  });
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, {stream: true});
+    const lines = buf.split("\n\n");
+    buf = lines.pop();
+    for (const block of lines) {
+      const line = block.trim();
+      if (!line.startsWith("data:")) continue;
+      try {
+        const ev = JSON.parse(line.slice(5).trim());
+        if (ev.type === "token") {
+          holder.textContent += ev.text;
+          document.getElementById("chat").scrollTop = 999999;
+        } else if (ev.type === "done") {
+          // follow_up=true 表示面试官在追问，等用户继续答；不自动出下一题
+          if (ev.follow_up) {
+            // 追问中，输入框等着用户继续答
+          } else {
+            // 这题结束了，出下一题
+            setTimeout(nextQuestion, 500);
+          }
+          if (ev.reranker_ok === false) {
+            addMsg("（提示：本轮客观评分失败，分数按默认值处理，仅供流程演示）", "system");
+          }
+        } else if (ev.type === "error") {
+          addMsg("错误: " + ev.err, "system");
+        }
+      } catch(e) {}
+    }
+  }
+  streaming = false;
+  document.getElementById("sendBtn").disabled = false;
+  document.getElementById("input").focus();
+}
+
+async function finishInterview() {
+  if (!sid) return;
+  const r = await fetch(API + "/finish", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({session_id: sid, message: ""})
+  });
+  const data = await r.json();
+  if (!r.ok) { addMsg("结束失败: " + (data.err || JSON.stringify(data)), "system"); return; }
+
+  const partial = data.partial ? "\n⚠️ 本次评分不完整（部分轮次评分失败），分数仅供参考" : "";
+  addMsg("=== 面试结束 ===\n" +
+    "五维均分: " + JSON.stringify(data.five_dim_avg) + "\n" +
+    "总分(加权): " + data.total_score + "\n" +
+    "权重: " + data.weights + partial + "\n\n" +
+    "【面试评价】\n" + data.summary, "score");
+
+  // 本次新增：把给 3 号评估用的完整明细折叠展示，方便自查
+  if (data.raw) {
+    const box = addMsg("", "score");
+    const det = document.createElement("details");
+    const sum = document.createElement("summary");
+    sum.textContent = "评分明细（raw，供 3 号评估取用）";
+    const pre = document.createElement("pre");
+    pre.textContent = JSON.stringify(data.raw, null, 2);
+    det.appendChild(sum); det.appendChild(pre); box.appendChild(det);
+    document.getElementById("chat").scrollTop = 999999;
+  }
+
+  document.getElementById("finishBtn").disabled = true;
+  document.getElementById("input").disabled = true;
+  document.getElementById("sendBtn").disabled = true;
+}
+</script>
+</body>
+</html>

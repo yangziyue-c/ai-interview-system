@@ -8,6 +8,7 @@
     404xx   资源不存在
     409xx   状态冲突（如非法状态转换）
     500xx   服务器内部错误
+    503xx   依赖服务暂时不可用（如 AI 对话层引擎未就绪）
 """
 from fastapi import HTTPException
 
@@ -49,3 +50,14 @@ class ConflictError(AppException):
 class InternalError(AppException):
     def __init__(self, message: str = "服务器内部错误") -> None:
         super().__init__(50000, message, 500)
+
+
+class ServiceUnavailableError(AppException):
+    """依赖服务不可用（AI 对话层引擎连不上/未就绪）
+
+    刻意区别于 50000：调用方要能一眼看出「不是这场面试的数据有问题，而是
+    依赖服务没准备好」——引擎模式下失败就是失败，不静默换回原链路。
+    """
+
+    def __init__(self, message: str = "依赖服务暂时不可用，请稍后重试") -> None:
+        super().__init__(50300, message, 503)

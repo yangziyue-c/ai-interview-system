@@ -33,6 +33,10 @@ async def get_growth(
     user: CurrentUser,
     db: DbSession,
     position: str | None = Query(default=None, description="按岗位筛选（不传=全部岗位）"),
+    engine: str | None = Query(
+        default=None,
+        description="按面试链路筛选：standard=原链路 / a11=AI 对话层引擎（不传=全部）",
+    ),
 ) -> dict:
     conditions = [
         Interview.user_id == user.id,
@@ -43,6 +47,10 @@ async def get_growth(
         # 各岗位评估维度与权重不同，混在一条曲线里没有可比性——按岗位筛是这条接口
         # 的主要用法，前端个人中心切 Tab 时传该参数。
         conditions.append(Interview.position == position)
+    if engine:
+        # 同理：两种链路的五维分不是同一把尺子（P3 按题注入校准锚点，引擎逐轮
+        # LLM 打分），混画会被误读成涨跌。库里原链路存的是空串，对外叫 standard。
+        conditions.append(Interview.engine == ("" if engine == "standard" else engine))
 
     result = await db.execute(
         select(Interview, Report)
@@ -54,6 +62,7 @@ async def get_growth(
         GrowthPoint(
             interview_id=interview.id,
             position=interview.position,
+            engine=interview.engine or "",
             finished_at=interview.finished_at,
             total_score=report.total_score,
             tech_score=report.tech_score,

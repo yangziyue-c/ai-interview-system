@@ -17,6 +17,7 @@
 | 40400 | 资源不存在 |
 | 40900 | 状态冲突（如对已结束的面试提交答案） |
 | 50000 | 服务器内部错误 |
+| 50300 | 依赖服务不可用（AI 对话层引擎未就绪或连不上；仅在 `DIALOGUE_ENGINE=a11` 时出现） |
 
 ## 鉴权
 
@@ -288,20 +289,22 @@ GET /reports/latest
 ```
 GET /reports/growth
 GET /reports/growth?position=backend   // 可选：只看该岗位的得分序列
+GET /reports/growth?engine=a11         // 可选：只看 AI 对话层引擎评的场次
 ```
 
 | 参数 | 说明 |
 | :--- | :--- |
 | position | 岗位 code（可选，不传 = 全部岗位）。个人中心按岗位 Tab 筛选时传它 |
+| engine | 面试链路（可选，不传 = 全部）：`standard` = 原链路（题库策略 + P3 评估），`a11` = AI 对话层引擎。两种链路的五维分口径不同，混在一条曲线上会被误读成涨跌 |
 
 返回已结束面试的得分序列（按时间升序）：
 
 ```json
 { "code": 0, "message": "ok", "data": [
-  { "interview_id": 1, "position": "backend", "finished_at": "...",
+  { "interview_id": 1, "position": "backend", "engine": "", "finished_at": "...",
     "total_score": 76.0, "tech_score": 76.0, "logic_score": 74.0,
     "expression_score": 78.0, "adaptability_score": 75.0, "match_score": 77.0 },
-  { "interview_id": 3, "position": "backend", "finished_at": "...",
+  { "interview_id": 3, "position": "backend", "engine": "a11", "finished_at": "...",
     "total_score": 84.5, ... }
 ] }
 ```
@@ -661,7 +664,8 @@ GET /health                { "code": 0, "message": "ok", "data": { "status": "he
 ```
 GET /config                { "code": 0, "message": "ok", "data": {
                               "total_rounds": 7,           // 一场面试总轮数（1 开场题 + N 追问）
-                              "max_follow_up_rounds": 6    // 最大追问轮数
+                              "max_follow_up_rounds": 6,   // 最大追问轮数
+                              "engine": "standard"         // 当前面试链路：standard=原链路；a11=AI 对话层引擎
                             } }
 ```
 

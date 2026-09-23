@@ -149,6 +149,33 @@ async def init_db() -> None:
             "adaptability_score",
             "ALTER TABLE reports ADD COLUMN adaptability_score FLOAT DEFAULT 0.0",
         )
+        # AI 对话层引擎集成（2026-09-23）：三张表各补一列，老库启动即自愈。
+        # 顺带一提：interviews.engine 的默认值必须是 ''（不是 NULL）——判链路用的
+        # 是字符串比较，历史行走 NULL 会让「原链路」这个判断多一种写法。
+        await conn.run_sync(
+            _ensure_column,
+            "interviews",
+            "engine",
+            "ALTER TABLE interviews ADD COLUMN engine VARCHAR(16) DEFAULT ''",
+        )
+        await conn.run_sync(
+            _ensure_column,
+            "interviews",
+            "engine_session_id",
+            "ALTER TABLE interviews ADD COLUMN engine_session_id VARCHAR(64)",
+        )
+        await conn.run_sync(
+            _ensure_column,
+            "qa_records",
+            "engine_turns",
+            "ALTER TABLE qa_records ADD COLUMN engine_turns JSON",
+        )
+        await conn.run_sync(
+            _ensure_column,
+            "reports",
+            "engine_meta",
+            "ALTER TABLE reports ADD COLUMN engine_meta JSON",
+        )
         # 注：原「题库 V4 第 16 列 expression_points」的补列语句已随 V5 换代删除——
         # 该列在新表结构中不存在，留着会在每次启动把已删列 ALTER 回来。
         # questions 的结构变更走 scripts/import_question_bank.py --rebuild，

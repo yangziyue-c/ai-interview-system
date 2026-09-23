@@ -58,6 +58,10 @@ class GrowthPoint(BaseModel):
 
     interview_id: int
     position: str
+    # 面试链路：'' = 题库策略 + P3 评估（原链路）；'a11' = AI 对话层引擎。
+    # 两种链路的五维分口径不同（P3 按题注入校准锚点，引擎逐轮 LLM 打分），
+    # 混在一条曲线上会被误读成涨跌；要分开看时传 ?engine=standard|a11。
+    engine: str = ""
     finished_at: datetime
     total_score: float
     tech_score: float

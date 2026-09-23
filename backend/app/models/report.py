@@ -29,6 +29,11 @@ class Report(Base):
     weaknesses: Mapped[list] = mapped_column(JSON, default=list, comment="不足列表")
     suggestions: Mapped[list] = mapped_column(JSON, default=list, comment="改进建议")
 
+    # 引擎链路的报告明细（会话 ID、参与评分轮次、partial/notes、盲区摘要等）。
+    # 只做留痕与事后核对，不进考生可见文案——notes 是引擎的内部口径，
+    # 该说的话引擎已经拼进了 summary。
+    engine_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="引擎报告明细")
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     interview = relationship("Interview", back_populates="report")

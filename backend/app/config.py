@@ -46,6 +46,28 @@ class Settings(BaseSettings):
     # 健康探测结果缓存秒数（RAG 未启用时避免每轮白等超时；取值偏大以摊薄探测开销）
     RAG_HEALTH_CACHE_SECONDS: float = 120.0
 
+    # ---- AI 对话层引擎（A11，P2 交付的独立服务，代码在 backend/dialogue_layer/）----
+    # 置空 = 关闭引擎，面试走原链路（题库策略 + P3 评估）；填 "a11" = 启用引擎：
+    # 出题、追问、评分全部委托 8005 服务，本后端只负责镜像落库。
+    # 引擎已启用但未就绪（/health 的 bank_loaded / scorer_ready / llm_configured 任一为假）
+    # 时**明确报错，不静默回落原链路**：回落会让报告悄悄换一套口径且无从分辨，
+    # 这正是本项目一贯要避免的静默降级。要回到原链路就显式把本项置空。
+    DIALOGUE_ENGINE: str = ""
+    DIALOGUE_ENGINE_URL: str = "http://localhost:8005"
+    # 引擎一场的题数（A11 固定 3/5/2 共 10 题），下发给前端渲染「第 N / 共几题」胶囊
+    DIALOGUE_ENGINE_TOTAL_QUESTIONS: int = 10
+    # 超时预算分三档：
+    # /start 与 /next 只查题库，给 30 秒足够；
+    # /chat 含 reranker 客观档（CPU 实测约 3 秒）+ LLM 判档（1~2 秒），但 A11 侧
+    #   LLM_TIMEOUT=60 且最多重试 2 次，最坏一轮可达约 180 秒 —— 取 120 秒：
+    #   宁可等，也不要误判「引擎挂了」而丢掉考生这一次作答（重试会二次提交同一答案）；
+    # /finish 要对每一轮各调一次 LLM 评分（4 路并发），最慢那一路决定耗时。
+    DIALOGUE_START_TIMEOUT_SECONDS: float = 30.0
+    DIALOGUE_CHAT_TIMEOUT_SECONDS: float = 120.0
+    DIALOGUE_FINISH_TIMEOUT_SECONDS: float = 180.0
+    # 健康探测结果缓存秒数：引擎状态会变（模型预热完成、服务挂掉），取值不宜过大
+    DIALOGUE_HEALTH_CACHE_SECONDS: float = 30.0
+
     # ---- 大模型直连（题库策略未命中时的兜底源，OpenAI 兼容接口）----
     # 面试官出题优先级：题库策略（interviewer_new/）> RAG 检索 > AI_INTERVIEWER_URL > LLM_API_KEY > Mock
     # 仅保存在本地 .env，切勿提交到 git
@@ -85,6 +107,11 @@ class Settings(BaseSettings):
     def total_rounds(self) -> int:
         """面试总轮数 = 开场题 1 + 最大追问轮数"""
         return 1 + self.MAX_FOLLOW_UP_ROUNDS
+
+    @property
+    def engine_enabled(self) -> bool:
+        """AI 对话层引擎是否启用（取值见 DIALOGUE_ENGINE）"""
+        return self.DIALOGUE_ENGINE.strip().lower() == "a11"
 
 
 @lru_cache

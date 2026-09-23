@@ -8,6 +8,8 @@ Started processes:
 1. Main FastAPI backend on port 8001 (foreground)
 2. P3 AI evaluator (Flask) on port 8002 (child process, auto-stopped on exit)
 """
+import json
+import os
 import socket
 import subprocess
 import sys
@@ -25,6 +27,7 @@ PORT = "8001"
 EVALUATOR_PORT = "8002"
 FRONTEND_PORT = "5273"  # 演示前端（frontend_test/）静态服务端口（避开 P4 Vite 联调用的 5173）
 RAG_PORT = "8003"       # RAG 语义检索服务（V5 知识库，backend/rag/）
+DIALOGUE_PORT = "8005"  # AI 对话层引擎（P2 交付的 A11，backend/dialogue_layer/）
 HEALTH_WAIT_SECONDS = 30  # 主后端就绪的最长等待时间
 PIP_INDEX = "https://pypi.tuna.tsinghua.edu.cn/simple"
 # 主后端 + P3 评估服务所需的全部第三方库（缺任一则触发 pip install）
@@ -40,6 +43,20 @@ RAG_IMPORT_CHECK = (
     "import importlib.util as u, sys; sys.exit(0 if all("
     "u.find_spec(m) for m in ('torch','chromadb','sentence_transformers')) else 1)"
 )
+
+# AI 对话层（可选引擎）：整场委托出题 / 追问 / 五维评分。与 RAG 同档 ——
+# 依赖外部 API key 与约 2.14GB 的本地 reranker 模型，属「可选增强」，
+# 端口被占用只跳过、依赖缺失只提示，主流程不受影响。
+DIALOGUE_DIR = BASE_DIR / "dialogue_layer"
+DIALOGUE_ENTRY = DIALOGUE_DIR / "app" / "main.py"
+DIALOGUE_IMPORT_CHECK = (
+    "import importlib.util as u, sys; sys.exit(0 if all("
+    "u.find_spec(m) for m in ('openai','sentence_transformers','transformers')) else 1)"
+)
+# 模型缓存目录（bge-reranker-v2-m3 首次运行需联网下载，见 README-集成说明.md）
+DIALOGUE_HF_HOME = BASE_DIR / ".hf_cache"
+# 平铺的本地模型目录（魔搭下载的布局；CrossEncoder 可直接加载目录路径）
+DIALOGUE_MODEL_DIR = DIALOGUE_HF_HOME / "bge-reranker-v2-m3"
 
 
 def sh(cmd: str) -> subprocess.CompletedProcess:
@@ -82,12 +99,21 @@ def get_lan_ip() -> str:
         s.close()
 
 
-def wait_until_ready(url: str, seconds: int, proc: subprocess.Popen | None = None) -> bool:
+def wait_until_ready(
+    url: str,
+    seconds: int,
+    proc: subprocess.Popen | None = None,
+    predicate=None,
+) -> bool:
     """轮询健康检查直到服务就绪（仅用标准库，避免依赖未安装时 import 失败）
 
     传入 proc 时监控子进程存活：进程启动即崩溃则立即返回 False，
     不白等满 seconds（真实报错已在控制台可见）。
     以单调时钟截止时间为准（而非按次计数），实际等待严格受限于 seconds。
+
+    predicate：可选，接收解析后的 JSON body、返回 bool。用于那些
+    「HTTP 200 但依赖还没就绪」的服务——AI 对话层的 /health 恒返回 200，
+    就绪与否写在 body 的字段里，只看状态码会把「没加载完」当成「就绪」。
     """
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
@@ -96,14 +122,105 @@ def wait_until_ready(url: str, seconds: int, proc: subprocess.Popen | None = Non
         try:
             with urllib.request.urlopen(url, timeout=max(0.5, deadline - time.monotonic())) as resp:
                 if resp.status == 200:
-                    return True
+                    if predicate is None:
+                        return True
+                    try:
+                        body = json.loads(resp.read().decode("utf-8"))
+                    except Exception:
+                        body = None
+                    if isinstance(body, dict) and predicate(body):
+                        return True
         except Exception:
             pass
         time.sleep(0.25)
     return False
 
 
-def print_guide(server_ready: bool, frontend_ready: bool, rag_started: bool = False) -> None:
+def read_env_value(name: str) -> str:
+    """从 backend/.env 读一个配置项（没有则返回空串）
+
+    刻意不 import app.config：启动器要能在依赖没装好、应用起不来时照样跑，
+    只做最简单的 KEY=VALUE 解析就够，不值得为此引入 dotenv。
+    """
+    env_file = BASE_DIR / ".env"
+    if not env_file.exists():
+        return ""
+    try:
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            if key.strip() == name:
+                return value.strip().strip('"').strip("'")
+    except OSError:
+        return ""
+    return ""
+
+
+def dialogue_model_cached() -> bool:
+    """reranker 权重是否已就位（两种布局都认，只按文件名判断、不校验完整性）
+
+    缺它时对话层**照样起得来**，只是客观分恒走默认值——那种「能跑但结果是错的」
+    最容易被当成本系统的 bug，所以这里提前提示一句。
+    """
+    flat = DIALOGUE_MODEL_DIR
+    if any(flat.glob("*.safetensors")):
+        return True
+    for weights in (DIALOGUE_HF_HOME / "hub").glob(
+        "models--BAAI--bge-reranker-v2-m3/snapshots/*/*.safetensors"
+    ):
+        if weights.stat().st_size > 0:
+            return True
+    return False
+
+
+def build_dialogue_env() -> dict:
+    """AI 对话层子进程的环境变量
+
+    这些值原本散在 A11 的 run.ps1 里（PowerShell 脚本，默认路径指向 2 号的机器），
+    这里用本项目的位置重新注入。API key 只从 .env 读、只经环境变量传给子进程，
+    不写任何新文件、不打印。
+    """
+    env = dict(os.environ)
+    env.update({
+        "FRAMEWORK_PORT": DIALOGUE_PORT,
+        # 题库复用本项目的一份（内容已逐字段核对一致），避免两份数据将来漂移
+        "A11_MAIN_DB": str(BASE_DIR / "rag" / "数据"),
+        "A11_KG_PATH": str(DIALOGUE_DIR / "数据" / "kg" / "kg_question_graph.pkl"),
+        "A11_RAG_RETRIEVER_PY": str(DIALOGUE_DIR / "数据" / "rag" / "memory_retriever.py"),
+        "RAG_MEM_DIR": str(DIALOGUE_DIR / "数据" / "rag"),  # 裸名，不能加 A11_ 前缀
+        "A11_KG": "1",
+        "A11_RAG": "0",
+        "SCORER_DEVICE": os.environ.get("SCORER_DEVICE", "cpu"),
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1",
+    })
+    env["HF_HOME"] = os.environ.get("HF_HOME") or str(DIALOGUE_HF_HOME)
+    env.setdefault("HF_HUB_OFFLINE", "1")
+    env.setdefault("TRANSFORMERS_OFFLINE", "1")
+    # 平铺的本地模型目录优先：魔搭下载不写 HF 缓存布局，用路径直接喂给 CrossEncoder
+    if any(DIALOGUE_MODEL_DIR.glob("*.safetensors")):
+        env["RERANKER_MODEL"] = str(DIALOGUE_MODEL_DIR)
+    # DeepSeek 三项复用本项目 .env 的 LLM_* 配置（LLM 直连与对话层引擎本就用同一套）
+    for dialogue_key, project_key in (
+        ("DEEPSEEK_API_KEY", "LLM_API_KEY"),
+        ("DEEPSEEK_BASE_URL", "LLM_BASE_URL"),
+        ("DEEPSEEK_MODEL", "LLM_MODEL"),
+    ):
+        if not env.get(dialogue_key):
+            value = read_env_value(project_key)
+            if value:
+                env[dialogue_key] = value
+    return env
+
+
+def print_guide(
+    server_ready: bool,
+    frontend_ready: bool,
+    rag_started: bool = False,
+    dialogue_started: bool = False,
+) -> None:
     """启动完成后的访问指引：明确每个网址可以做什么"""
     lan_ip = get_lan_ip()
     print()
@@ -132,8 +249,16 @@ def print_guide(server_ready: bool, frontend_ready: bool, rag_started: bool = Fa
         print("          稍后刷新 /health 看到 collection_size 即就绪。主流程不等它。")
     else:
         print("      （未启用：依赖缺失或 backend/rag 不存在，主流程不受影响）")
+    print("  🤖  [AI 对话层引擎] 整场委托出题 / 追问 / 五维评分（可选引擎模式）")
+    if dialogue_started:
+        print(f"      健康检查:  http://localhost:{DIALOGUE_PORT}/health")
+        print(f"      接口文档:  http://localhost:{DIALOGUE_PORT}/docs")
+        print("      注：评分模型在后台预热（约需数十秒），/health 的 scorer_ready 变 true 即就绪。")
+        print("      启用方式:  在 backend/.env 里设 DIALOGUE_ENGINE=a11（不设则走原链路）")
+    else:
+        print("      （未启用：目录缺失或依赖未就绪，主流程不受影响）")
     print("=" * 64)
-    print("  停止全部服务：在本窗口按 Ctrl+C（前端 / P3 / RAG / 主后端一并退出）")
+    print("  停止全部服务：在本窗口按 Ctrl+C（前端 / P3 / RAG / 对话层 / 主后端一并退出）")
     print("=" * 64)
     print()
 
@@ -234,6 +359,7 @@ def main() -> None:
     # 都走 finally 清理，不残留占用 8001/8002/5273 的孤儿进程
     evaluator = None
     rag_proc = None
+    dialogue_proc = None
     server = None
     try:
         if (frontend_dir / "index.html").exists():
@@ -294,11 +420,50 @@ def main() -> None:
                 rag_proc = subprocess.Popen(
                     [str(python), "05_rag_api_server.py"], cwd=str(RAG_ENTRY.parent))
 
-        print_guide(server_ready, frontend_ready, rag_started=rag_proc is not None)
+        # AI 对话层引擎（可选）：与 RAG 同档——依赖外部 key 与 2.14GB 模型，
+        # 任何一步失败只打印、绝不 fail()。拉起后**不等它就绪**：评分模型在
+        # 后台线程里预热（数十秒），干等会把「一键启动」变成「一键启动加等待」；
+        # 就绪与否由 /health 的 scorer_ready 表达，引擎模式下面试会据此明确报错。
+        dialogue_started = False
+        if not DIALOGUE_ENTRY.exists():
+            print("未找到 AI 对话层（backend/dialogue_layer/），跳过")
+        elif port_in_use(DIALOGUE_PORT):
+            print(f"AI 对话层端口 {DIALOGUE_PORT} 已被占用，跳过拉起（沿用已在跑的服务）")
+            dialogue_started = True
+        else:
+            dialogue_deps_ok = sh(f'"{python}" -c "{DIALOGUE_IMPORT_CHECK}"').returncode == 0
+            if not dialogue_deps_ok:
+                # 只补装 openai 这一个纯 Python 包：sentence-transformers / transformers
+                # 复用共享环境里已有的版本。照 A11 的版本锁降级会打断 8003 的 RAG 服务。
+                print("AI 对话层需补装 openai（约 1MB）...")
+                sh(f'"{python}" -m pip install openai -i {PIP_INDEX}')
+                dialogue_deps_ok = sh(f'"{python}" -c "{DIALOGUE_IMPORT_CHECK}"').returncode == 0
+            if not dialogue_deps_ok:
+                print("[警告] AI 对话层依赖未就绪，跳过（主流程不受影响）")
+            else:
+                if not dialogue_model_cached():
+                    print("[提示] 未发现 reranker 模型缓存，对话层要等模型就位才可用；")
+                    print("       下载命令见 backend/dialogue_layer/README-集成说明.md")
+                print(f"拉起 AI 对话层引擎 → http://localhost:{DIALOGUE_PORT}"
+                      "（评分模型后台预热，稍后看 /health 的 scorer_ready）")
+                dialogue_proc = subprocess.Popen(
+                    [str(python), "app/main.py"],
+                    cwd=str(DIALOGUE_DIR),
+                    env=build_dialogue_env(),
+                )
+                dialogue_started = True
+
+        print_guide(
+            server_ready,
+            frontend_ready,
+            rag_started=rag_proc is not None,
+            dialogue_started=dialogue_started,
+        )
         exit_code = server.wait()
     finally:
-        # 主后端退出后关闭 P3 评估服务 / RAG / 前端，避免残留孤儿进程占用 8002/8003/5273
-        for proc in (evaluator, rag_proc, frontend_proc, server):
+        # 主后端退出后关闭 P3 评估服务 / RAG / 对话层 / 前端，
+        # 避免残留孤儿进程占用 8002/8003/8005/5273
+        for proc in (evaluator, rag_proc, dialogue_proc, frontend_proc, server):
             if proc is not None:
                 proc.terminate()
                 try:

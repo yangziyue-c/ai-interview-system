@@ -17,9 +17,15 @@ router = APIRouter()
 
 @router.get("", response_model=dict, summary="前端运行参数（面试总轮数等）")
 async def get_config(_: CurrentUser) -> dict:
+    # 引擎链路的题数由对话层决定（固定 10 题），原链路才是 1 + 追问轮数。
+    # 这里不加判断的话，前端胶囊在引擎场会显示「第 5 / 共 7 题」而实际有 10 题。
+    engine_on = settings.engine_enabled
     return ok(
         {
-            "total_rounds": settings.total_rounds,
+            "total_rounds": (
+                settings.DIALOGUE_ENGINE_TOTAL_QUESTIONS if engine_on else settings.total_rounds
+            ),
             "max_follow_up_rounds": settings.MAX_FOLLOW_UP_ROUNDS,
+            "engine": "a11" if engine_on else "standard",
         }
     )

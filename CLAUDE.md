@@ -9,7 +9,7 @@ AI 模拟面试训练系统（FastAPI 异步 + SQLAlchemy 2.0，5 人小组项�
 | 成员 | 职责 | 代码/文档位置 |
 | :--- | :--- | :--- |
 | P1 | 主后端 + 集成 | `backend/app/` |
-| P2 | 面试官出题算法 | `backend/interviewer_new/`（V5 版；旧 `backend/interviewer/` 已冻结留档） |
+| P2 | 面试官出题算法 + AI 对话层 | `backend/interviewer_new/`（V5 版；旧 `backend/interviewer/` 已冻结留档）；`backend/dialogue_layer/`（独立服务 8005，见「AI 对话层引擎」节） |
 | P3 | AI 评估服务 | `backend/evaluator_new/`（独立 Flask 进程，端口 8002；旧 `backend/evaluator/` 留档） |
 | P4 | 前端 | `frontend/`（⚠️ 当前**仅有 README.md**、正式代码未交付；构建产物将拷 `backend/static/` 同端口挂载） |
 | P5 | 知识库 | `backend/rag/数据/*-v5.json`（5012 题）+ 向量库；服务代码 `backend/rag/代码/` |
@@ -63,8 +63,8 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
 
 ## 代码架构（大图）
 
-**目录布局**：`backend/app/`（主应用包）+ `backend/interviewer_new/`、`backend/evaluator_new/`、`backend/rag/`
-（成员成果目录，主应用 import/拉起）。
+**目录布局**：`backend/app/`（主应用包）+ `backend/interviewer_new/`、`backend/evaluator_new/`、
+`backend/dialogue_layer/`、`backend/rag/`（成员成果目录，主应用 import/拉起）。
 
 **缓存抽象（`app/redis_client.py`，约 100 行）**：Redis 与进程内双实现，配置 `REDIS_URL` 时探活并启用、
 **任何异常自动降级为进程内实现**（未配置则直接用内存版）。⚠️ 当前**仅 `main.py` lifespan 预热调用，
@@ -99,10 +99,25 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
   `tests/test_api.py::test_weights_match_csv` 机器校验两者一致——改 CSV 或权重必须同步跑该测试）
 - 老库启动自愈：`adaptability_score` 为 0 时用 expression_score 近似回填（database.py init_db）
 
+### AI 对话层引擎（可选链路：P2 的 A11，`backend/dialogue_layer/`）
+
+- 独立 FastAPI 服务（**8005**，源码一行未改），`start.py` 在 RAG 之后拉起；开关 `DIALOGUE_ENGINE=a11`
+  （`.env`，默认空 = 关）。开启后出题/追问/五维评分全部委托它，主后端只镜像落库
+- **引擎链路 10 题制**（3/5/2 阶段），与原链路 7 轮制并存；链路在 `POST /interviews` 时定死、整场只读
+  （`interviews.engine`），中途不切换
+- **未就绪即报 503（错误码 50300），不回落原链路**：半场换口径事后无从分辨。就绪判据是 `/health` 的
+  `bank_loaded` + `scorer_ready` + `llm_configured`——**该端点恒返回 200，不能只看状态码**
+- **落库口径**：`qa_records` 每道题一行（`round` = 引擎的 `q_index`），**追问不落新行、只记进 `engine_turns`**；
+  `question` 保持题库原题面逐字不变——学习计划与评分素材按题干反查题库，靠这条不变量
+- 报告：引擎 1~5 分制 ×20 换算（`app/core/engine_report.py`），三栏由主后端从引擎明细推导；
+  `reports.engine_meta` **只存摘要**，引擎 raw 里的得分点原文不进本表
+- 题库复用 `backend/rag/数据/`（与 A11 自带那份已逐字段核对一致），不拷第二份；
+  模型缓存 `backend/.hf_cache`（已 gitignore，2.14GB），下载与环境清单见 `dialogue_layer/README-集成说明.md`
+
 ### 领域约定（改代码前必读）
 
-- **统一响应** `{code, message, data}`；错误码 0/40000/40100/40300/40400/40900/50000
-  （app/core/exceptions.py 的 AppException 子类，HTTP 状态码自动对应）
+- **统一响应** `{code, message, data}`；错误码 0/40000/40100/40300/40400/40900/50000/50300
+  （app/core/exceptions.py 的 AppException 子类，HTTP 状态码自动对应；50300 = 依赖服务不可用）
 - **受控词表单一来源**：题库 category（**4 类：技术知识题/场景应用题/项目经历题/行为素质题**）、
   difficulty（easy/medium/hard）、stage（**3 个：开场热身/核心考察/深度压轴**）常量定义在
   `app/models/question.py`；`app/api/questions.py` 校验非法值返回 400
@@ -125,7 +140,7 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
 
 ## 环境与部署铁律（踩过血的坑）
 
-- **端口**：8001=主后端、8002=P3 评估、**8003=RAG 检索**、5273=演示前端（start.py 自动拉起）；
+- **端口**：8001=主后端、8002=P3 评估、**8003=RAG 检索**、**8005=AI 对话层引擎**、5273=演示前端（start.py 自动拉起）；
   **8000 由 P1 本机的 Godot AI MCP 占用，全组统一用 8001，勿改回**；5173 是 P4 Vite 联调端口，start.py 不会占用
 - **RAG 大文件与依赖**：`backend/rag/vector_db/`（674MB）、`backend/rag/数据/*-rag-v2.jsonl`（约 70MB）
   已 gitignore；RAG 依赖（torch 等约 2.5GB）单独放 `backend/rag/requirements-rag.txt`，

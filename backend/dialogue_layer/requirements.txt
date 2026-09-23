@@ -1,0 +1,43 @@
+# ============================================================
+# A11 AI 面试官框架 · 依赖清单
+# ============================================================
+# 本机（豆包沙箱 python 3.14.7）已经全部装好，此文件是**备查 + 换机器复用**用，
+# 平时不需要 pip install。
+#
+# 版本为 2026-09-22 实测通过的值，不是随便写的下限 ——
+# 尤其是 sentence-transformers / torch / transformers 这三个，
+# 它们和 D:\A11-Data\hf_cache 里的模型缓存格式是绑死的，
+# 升级前请先在本机跑一遍 smoke_test.py 再确认。
+#
+# ⚠️ chromadb 必须锁 1.5.9（RAG 线铁律：其它版本的段格式不兼容）。
+#    本框架**运行时不 import chromadb**（全项目搜过，一处都没有）；这条 pin 是为了
+#    同机共用环境时别连累 8003 的 RAG 服务与向量库重建工具 02_build_vector_db.py。
+#    换到一台不重建向量库的新机器，chromadb 装不装都不影响本框架。
+
+# ---- Web 服务 ----
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5
+
+# ---- LLM（OpenAI 兼容接口，指向 DeepSeek）----
+openai==3.17.0
+httpx==0.28.1
+
+# ---- 本地评分模型（bge-reranker-v2-m3）----
+sentence-transformers==4.1.0
+torch==2.14.0
+transformers==4.49.0
+numpy==2.5.2
+
+# ---- RAG ----
+# ⚠️ 本框架的 RAG 是「默认关、按需开」：设 A11_RAG=1 才启用，缺件时**静默降级**
+#    （面试照常，只是不带参考片段）。它真正需要的是三个文件 ——
+#    memory_retriever.py + all_records.pkl + memory_index.npz —— 而不是 chromadb，
+#    换机器要一起搬。清单见 交付说明-后端.md 的「换机器部署清单」一节，
+#    或直接在包根跑 check_env.py 自检。
+chromadb==1.5.9
+
+# ---- 测试 ----
+# smoke_test.py 两种模式都用 httpx：
+#   进程内模式走 fastapi.testclient（依赖 httpx），远程模式直接 httpx。
+# httpx 已由 openai 带入，无需单列。

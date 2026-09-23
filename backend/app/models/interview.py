@@ -22,6 +22,15 @@ class Interview(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="开始时间")
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="结束时间")
 
+    # 面试链路：'' = 题库策略 + P3 评估（原链路）；'a11' = AI 对话层引擎（8005）。
+    # 链路在开场时定死、整场只读——半场换引擎会让上下文与分数口径同时失控。
+    engine: Mapped[str] = mapped_column(String(16), default="", comment="面试链路标记")
+    # 引擎侧会话 ID（仅引擎链路有值）。引擎的会话在内存里、会过期，
+    # 这里留一份是为了「报告出不来时能对账」与将来续接。
+    engine_session_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="对话层引擎会话 ID"
+    )
+
     qa_records = relationship(
         "QARecord", back_populates="interview", order_by="QARecord.round", cascade="all, delete-orphan"
     )

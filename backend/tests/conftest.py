@@ -19,6 +19,10 @@ os.environ["LLM_API_KEY"] = ""
 # 不禁用会让每个「题库未命中」的用例真去连本机 8003——服务没起时每次白等 1 秒探测超时，
 # 服务起了则拿到真实题目，「空库降级 Mock」这类断言就失去了意义。
 os.environ["RAG_API_URL"] = ""
+# AI 对话层引擎同样隔离：DIALOGUE_ENGINE 默认为空（关闭），这里再显式清一遍，
+# 防止开发机的 .env 开着引擎时用例真去连 8005；URL 一并清掉更稳妥。
+os.environ["DIALOGUE_ENGINE"] = ""
+os.environ["DIALOGUE_ENGINE_URL"] = ""
 # 上传与简历目录也隔离到临时目录：否则用例会把测试文件真写进 backend/uploads/ 与
 # backend/private/——后者是用户简历的私有目录，被测试垃圾污染尤其糟糕。
 os.environ["UPLOAD_DIR"] = str(_TEST_TMP / "uploads")

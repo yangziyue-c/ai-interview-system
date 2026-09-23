@@ -35,6 +35,15 @@ backend/.test_tmp/
 frontend/node_modules/
 frontend/dist/
 
+# AI 对话层（A11）模型缓存：bge-reranker-v2-m3 约 2.14GB，首次运行自动下载
+backend/.hf_cache/
+
+# AI 对话层 RAG 旁路数据（约 224MB，A11_RAG=0 时不加载，可由 P2 的构建产物重取）
+backend/dialogue_layer/数据/rag/
+
+# AI 对话层运行时日志
+backend/dialogue_layer/logs/
+
 # RAG 向量库（674MB，可由 rag/数据/*-rag-v2.jsonl 重建，不入库）
 # 目录名必须纯 ASCII：chromadb 打不开含非 ASCII 的绝对路径（详见 rag/代码/README.md）
 backend/rag/vector_db/
