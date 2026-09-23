@@ -28,10 +28,12 @@ DATABASE_URL=mysql+aiomysql://root:你的密码@127.0.0.1:3306/interview_db
 ```
 users (用户)
   │ 1
-  ├────────────────┐
-  │ 1              │
-interviews (面试会话)      status: idle → in_progress → finished
-  │ 1                    current_round: 已提问到第几轮
+  ├────────────────┬
+  │ 1              │ N
+interviews (面试会话)        resumes (简历导入)
+  status: idle → in_progress → finished     parse_status: 五值（见三-8）
+  current_round: 已提问到第几轮              按上传时间保留全部历史
+  │ 1
   ├────────────────┬─────────────────┐
   │ N              │ 1               │ N
 qa_records (问答记录)    reports (评估报告)      report_shares (报告分享)
@@ -45,6 +47,7 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 ```
 
 - 1 个用户 → N 场面试
+- 1 个用户 → N 份简历（append-only 保留历史，`GET /resumes/latest` 取最近一份）
 - 1 场面试 → N 条问答记录 + 1 份评估报告（严格一对一）
 - 1 场面试 → N 个分享码（有效期内的至多 1 个，重复生成会复用）
 - 岗位由 positions 表动态维护（替代硬编码枚举），预留 5 个岗位位
@@ -192,6 +195,33 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 
 查询接口：`GET /api/v1/questions`（按岗位/题型/难度/阶段/优先级过滤 + 分页，见 [API.md](API.md)）。
 
+### 8. resumes：简历导入表
+
+| 字段 | 类型 | 约束 | 说明 |
+| :--- | :--- | :--- | :--- |
+| id | int | 主键自增 | |
+| user_id | int | FK→users，index，级联删除 | 所属用户 |
+| original_filename | varchar(255) | 默认空串 | 用户上传时的原始文件名，仅用于展示与下载名，不参与拼磁盘路径 |
+| stored_name | varchar(128) | not null | 落盘文件名（`{user_id}_{uuid12}{ext}`），只存文件名不存路径 |
+| file_ext | varchar(8) | not null | 扩展名（小写含点），同时服务 Content-Type、图片/PDF 分支与下载后缀 |
+| file_size | int | 默认 0 | 字节数 |
+| parse_status | varchar(24) | 默认 failed | 解析状态：parsed / no_text_layer / garbled / image_pending / failed |
+| parse_message | varchar(255) | 默认空串 | 给用户看的一句话提示，文案只维护在后端一处 |
+| parser | varchar(32) | 默认空串 | 解析器标识（当前 `pypdf`），接 OCR 后可据此筛旧数据重解析 |
+| text_content | Text | nullable | 提取的简历全文（截断至 10000 字）；图片与解析失败时为 NULL |
+| text_length | int | 默认 0 | 截断前的原始字符数，前端据此提示「已截断」 |
+| created_at | datetime | server_default=now() | 上传时间 |
+
+> 简历原件落独立私有目录 `RESUME_DIR`（`private/resumes/`），与提取文本分存。
+> 该目录不做静态挂载：`main.py` 把 `UPLOAD_DIR` 整棵挂在 `/uploads`（无鉴权、无子目录白名单），
+> `STATIC_DIR` 挂在 `/`（兜底所有未匹配路径），而简历含姓名、学号、联系方式，放进去即无鉴权可访问；
+> 故简历只由鉴权下载接口下发，目录本身已进 `.gitignore`。
+> 抽字段宁可返回 null 也不猜，解析结果不自动写入用户资料：简历格式千差万别，规则抽取必然出错，
+> 自动覆盖会把用户已经填对的信息改坏。流程是解析 → 返回建议字段 → 用户确认 → 走既有的
+> `PUT /auth/me`，与头像「上传拿地址 → 提交」同构。
+> 解析同步阻塞，已隔离到线程（`asyncio.to_thread` + 15 秒超时）：pypdf 是同步库，项目跑单进程
+> uvicorn，直接在 async 端点里调用会冻住整个事件循环，连正在答题的面试都会卡。
+
 ## 四、关键设计决策
 
 1. **岗位表化（替代硬编码枚举）**：岗位数量与清单在开发期会频繁调整，故将岗位从代码枚举下沉到 `positions` 表：注册/开始面试时查库校验（无效岗位 400）、前端岗位大厅读 `GET /positions`、Mock 题库按 code 匹配（缺省回退通用池）。新增/下线岗位只需改数据库记录，代码零改动。启动 seed 幂等（表空才插入，不覆盖已有数据）。
@@ -205,6 +235,8 @@ questions (题库表，独立无外键，按 position_code 关联岗位)
 9. **题库表化（V5）**：题库 json（`backend/rag/数据/*-v5.json`）由导入脚本落库（questions 表），面试官算法（`backend/interviewer_new/`）按岗位/阶段/难度从库抽题；题库更新只需重跑导入脚本，代码零改动。V5 的关键改进是把三级追问拆成独立列：V4 时代下游要用 119 行正则从一段混合文本里挖结构化信息，现在直接读字段即可（详见 [REPORT_TO_P2_INTERVIEWER_NEW.md](reports/REPORT_TO_P2_INTERVIEWER_NEW.md)）。
 10. **分享码与登录解耦**：分享是外发场景，接收方没有账号，故分享码独立成表，`GET /share/{code}` 是全站唯一免登录的业务接口。安全性靠三点：码为 128 位随机、不可枚举；有有效期；「不存在」与「已过期」返回同一提示，不泄露哪个码真实存在。
 11. **用户输入不当作可信 URL**：`users.avatar_url` 只接受 `/uploads/avatars/` 下的站内路径，外部地址、`javascript:`、路径穿越一律 400。前端会把它直接塞进 `<img src>`，放开任意字符串等于允许用户互相注入。头像上传本身也校验文件头，防止改扩展名把非图片内容托管到静态目录。
+12. **简历原件不与其他上传物混放**：简历含姓名、学号、联系方式，而 `UPLOAD_DIR` 整棵挂在 `/uploads`（无鉴权、无子目录白名单）、`STATIC_DIR` 挂在 `/` 兜底所有未匹配路径，混放即等于公开。故简历用独立的 `RESUME_DIR`（`private/resumes/`，已进 `.gitignore`），不参与静态挂载，只经鉴权下载接口按 `stored_name` 定位下发。
+13. **抽字段宁可 null 也不猜**：简历格式千差万别，规则抽取必然出错，若自动写回用户资料，会把用户已填对的信息改坏（预填了用户又懒得改）。因此解析只产出建议字段，用户确认后走既有的 `PUT /auth/me` 回填，与头像「上传拿地址 → 提交」同构；本功能不新增资料写接口。
 
 ## 五、数据流示例（一场完整面试的落库过程）
 
@@ -234,6 +266,15 @@ GET /share/{code}（免登录）
   → SELECT report_shares WHERE share_code=? AND expires_at > now
   → 命中：view_count +1，返回与 GET /reports/{id} 结构一致的报告
   → 未命中或已过期：一律 404（不区分二者）
+
+POST /resumes（multipart 上传简历）
+  → 校验：扩展名白名单 → 声明体积(file.size) → 读入 → 兜底体积 → 文件头魔数
+  → save_resume_bytes()  落盘 private/resumes/（只存文件名不存路径）
+  → parse_resume_file()  解析：图片 → image_pending；PDF → to_thread 提取，15 秒超时
+  → extract_fields()     抽昵称/学号/目标岗位（纯函数，抽不到返回 null）
+  → _resolve_position()  校验岗位 code 是否开放
+  → resumes      INSERT (parse_status / text_content / text_length)
+  → 返回「简历记录 + 建议字段」，用户确认后调既有的 PUT /auth/me 回填（本功能不新增写接口）
 ```
 
 ## 六、相关文件索引
@@ -244,4 +285,8 @@ GET /share/{code}（免登录）
 | 引擎与会话 | [backend/app/database.py](../backend/app/database.py) |
 | 缓存抽象（Redis/内存） | [backend/app/redis_client.py](../backend/app/redis_client.py) |
 | 状态机 | [backend/app/core/state_machine.py](../backend/app/core/state_machine.py) |
+| 简历模型 | [backend/app/models/resume.py](../backend/app/models/resume.py) |
+| 简历 schema | [backend/app/schemas/resume.py](../backend/app/schemas/resume.py) |
+| 简历解析适配器 | [backend/app/adapters/resume_parser.py](../backend/app/adapters/resume_parser.py) |
+| 简历接口 | [backend/app/api/resumes.py](../backend/app/api/resumes.py) |
 | 环境变量模板 | [backend/.env.example](../backend/.env.example) |

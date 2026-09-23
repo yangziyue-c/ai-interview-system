@@ -1,4 +1,4 @@
-"""上传规则：头像的格式白名单、文件头校验与地址校验
+"""上传规则：头像与简历的格式白名单、文件头校验与地址校验
 
 音频与头像共用 UPLOAD_DIR 这个静态挂载点，但规则不同：音频进 uploads/ 根目录、
 上限 20MB；头像进 uploads/avatars/、上限 2MB，故分开定义。
@@ -36,6 +36,27 @@ def looks_like_image(content: bytes, ext: str) -> bool:
         # RIFF 容器：第 0-3 字节是容器标识，格式标识在第 8-11 字节
         return content[:4] == b"RIFF" and content[8:12] == b"WEBP"
     return any(content.startswith(sig) for sig in _MAGIC.get(ext, ()))
+
+
+# PDF 文件头。**不并进 _MAGIC**：那个字典的结构是「扩展名 → 图片签名集合」且被
+# looks_like_image 消费，混入 PDF 会让该函数的语义变模糊。
+_PDF_MAGIC = b"%PDF-"
+
+
+def looks_like_pdf(content: bytes) -> bool:
+    """按文件头判断内容是否真是 PDF"""
+    return content.startswith(_PDF_MAGIC)
+
+
+def looks_like_resume(content: bytes, ext: str) -> bool:
+    """简历文件的内容真伪校验：PDF 认 `%PDF-` 魔数，图片复用 looks_like_image
+
+    与头像同理——简历下载接口的 Content-Type 取自扩展名，若内容与扩展名不符，
+    这个接口就成了托管任意内容的入口。
+    """
+    if ext == ".pdf":
+        return looks_like_pdf(content)
+    return looks_like_image(content, ext)
 
 
 def validate_avatar_url(url: str | None) -> None:

@@ -45,7 +45,7 @@ P1 维护的零依赖**演示前端**在 `frontend_test/`（由 `backend/start.b
 cd backend && 双击 start.bat        # 或 python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 
 # 测试：必须在 backend/ 目录下跑（pytest.ini 的 asyncio_mode、conftest 的 env 切换都在这里生效）
-cd backend && D:/anaconda3/envs/ai_interview/python.exe -m pytest        # 68 个用例全绿
+cd backend && D:/anaconda3/envs/ai_interview/python.exe -m pytest        # 151 个用例全绿
 cd backend && D:/anaconda3/envs/ai_interview/python.exe -m pytest tests/test_question_bank.py -q   # 单文件
 cd backend && D:/anaconda3/envs/ai_interview/python.exe -m pytest tests/test_api.py::TestAuth::test_login_wrong_password  # 单用例
 

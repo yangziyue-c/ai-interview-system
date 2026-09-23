@@ -59,6 +59,21 @@ class Settings(BaseSettings):
     # 头像单独设上限：它比录音小得多，且会随用户信息接口反复传输
     MAX_AVATAR_SIZE_MB: int = 2
 
+    # ---- 简历导入 ----
+    # 简历原件私有目录：**绝不能**改成 UPLOAD_DIR 或 STATIC_DIR 的子目录。
+    # main.py 把这两个目录整棵挂成了静态资源（/uploads 无鉴权、/ 兜底前端），
+    # 放进去等于把简历（姓名/手机/学历）公开到公网。只有鉴权接口能读到它。
+    # 该目录已进 .gitignore——简历原件永远不该进版本库。
+    RESUME_DIR: str = "private/resumes"
+    MAX_RESUME_SIZE_MB: int = 10
+    # 全文存储与接口返回的上限。同时受 MySQL TEXT 64KB 字节约束
+    # （utf8mb4 最坏 4 字节/字符，10000 字符 ≈ 40KB，留足余量）；
+    # 将来若要放宽到 5 万字符，得换 MEDIUMTEXT，不是改这个常量的事。
+    MAX_RESUME_TEXT_CHARS: int = 10000
+    # PDF 解析预算（秒）：解析阻塞，丢到线程里跑并设超时。
+    # 注意超时只让请求返回，杀不掉那个线程（原因与安全性见 adapters/resume_parser.py）
+    RESUME_PARSE_TIMEOUT_SECONDS: float = 15.0
+
     # ---- 报告分享 ----
     # 分享链接有效期（天）：过期后凭分享码访问返回 404，报告本身不受影响
     SHARE_EXPIRE_DAYS: int = 7

@@ -24,6 +24,13 @@ a.md
 backend/uploads/*
 !backend/uploads/.gitkeep
 
+# 简历原件私有目录（含姓名/学号/联系方式等个人信息，绝不入库）
+# 只增不减地接收用户上传的简历，一旦提交就是隐私事故
+backend/private/
+
+# 测试临时目录（用例的目录隔离落点，会话结束自动清理）
+backend/.test_tmp/
+
 # 前端构建产物（由各成员本地构建，不入库）
 frontend/node_modules/
 frontend/dist/

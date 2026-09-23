@@ -326,6 +326,85 @@ POST /reports/{interview_id}/share
 > `share_url` 由后端按当前请求的 Host 拼好（内网穿透演示时即穿透域名），前端直接复制到剪贴板即可。
 > 分享内容含个人信息，前端应提示「分享内容包含个人信息，请注意隐私」。
 
+### 4.5 智能推荐学习资源 / 练习计划
+
+```
+GET /reports/study-plan                             // 聚合最近 5 场（个人中心用）
+GET /reports/study-plan?interview_id=12             // 单场（报告页用）
+GET /reports/study-plan?position=backend&recent=3   // 按岗位聚合
+```
+
+| 参数 | 说明 |
+| :--- | :--- |
+| interview_id | 指定单场面试（可选）。**不传 = 按最近 N 场聚合**，两种用法共用一个接口 |
+| position | 岗位 code（可选，仅聚合模式）。**与 `interview_id` 互斥**，同传返回 400 |
+| recent | 聚合模式下取最近 N 场已结束面试，默认 5，范围 1~20 |
+| max_knowledge | 最多返回多少个知识点，默认 10，范围 1~50（按优先级 + 命中次数排序后截断） |
+
+返回「该场 / 最近 N 场面试考察过的知识点」+ 题库自带的学习建议原文 + 同知识点的配套练习题：
+
+```json
+{ "code": 0, "message": "ok", "data": {
+  "interview_id": 12,                    // 单场模式为该场 ID；聚合模式为 null
+  "source_interviews": [                 // 本次计划用到的面试（按结束时间倒序）
+    { "interview_id": 12, "position": "backend", "finished_at": "2026-09-23T21:04:00" }
+  ],
+  "positions": ["backend"],              // 覆盖的岗位 code（跨岗位聚合时为多个）
+  "knowledge_points": [
+    {
+      "kp_id": "java-backend-kp-0523",
+      "name": "HTTP 响应报文结构",
+      "advice": "建议从「HTTP 响应报文结构」的核心定义与基本用法入手……",   // 题库原文
+      "priority": "高频必考题",            // 该知识点来源题目中最高的考点优先级
+      "hit_count": 2,                     // 来源面试里有几道锚点原题关联到它
+      "sources": [                        // 来源：哪场面试的第几轮问到了它
+        { "interview_id": 12, "round": 1,
+          "question_no": "JAVA_BACKEND-Q0043",
+          "question": "GET和POST有什么区别？" }
+      ],
+      "practice_minutes": 4,              // 该知识点配套练习时长（分）
+      "practice_questions": [             // 全库反查同知识点的题：同岗位优先、高频必考题优先
+        { "id": 43, "position_code": "backend", "question_no": "JAVA_BACKEND-Q0043",
+          "question": "GET和POST有什么区别？", "category": "技术知识题",
+          "difficulty": "easy", "exam_priority": "高频必考题", "suggested_minutes": 2,
+          "asked": true },                // true = 本计划的来源面试里已经问到过
+        { "id": 62, "position_code": "backend", "question_no": "JAVA_BACKEND-Q0062",
+          "question": "什么是幂等？HTTP 幂等语义和业务幂等有什么区别？",
+          "category": "技术知识题", "difficulty": "easy",
+          "exam_priority": "常规题", "suggested_minutes": 2, "asked": false }
+      ]
+    }
+  ],
+  "total_minutes": 44,                    // 推荐练习总时长（同题服务多个知识点时只算一次）
+  "pending_minutes": 37,                  // 其中尚未练过的部分
+  "notice": null                          // 无可推荐内容时的一句中文说明，正常为 null
+} }
+```
+
+> **知识点口径是「考察过的知识点」，不是「你答得差的知识点」**：报告只有整场面试的
+> 5 维聚合分（`reports` 表无单题得分），接口不会假装知道你哪道题答错。排序口径 =
+> 考点优先级（高频必考题优先）→ 被多道题命中 → 首次出现顺序。
+>
+> **只认锚点原题**：接口把面试问答的题干反查回题库（`questions.question` 精确匹配 +
+> 按该场面试的岗位过滤）。追问轮次里由锚点生成的追问文本不在题库里，因此不参与反查；
+> 题干跨岗位会重复（如「什么是优先级队列？」同时在算法与系统设计岗），故必须按各场
+> 面试自己的岗位分组反查。
+>
+> 配套练习题按知识点 ID 的**完整 token**（`ID|`）在全库反查，不依赖「当前 1513 个 ID
+> 恰好两两无前缀关系」这一数据巧合——否则 `java-backend-kp-318` 会串到 `java-backend-kp-3180`。
+> 全库反查会带出别岗位的题（知识点 ID 会跨岗位被引用），故每项带 `position_code`，
+> 同岗位的排在前面。
+>
+> `asked=true` 表示本题在本计划的来源面试里**被问到过**（含最后一轮问了未作答的），
+> 前端应标为「已练过」而不是「重做」。
+>
+> **前置条件**：需要题库已导入（`python -m scripts.import_question_bank`）且存在已结束的
+> 面试。题库为空、或本场题目全部由 RAG / Mock 现场生成时，接口返回 200 且
+> `knowledge_points` 为空，`notice` 说明原因——**前端展示「暂无推荐」即可，不要当错误处理**。
+>
+> 错误码：面试未结束 409；`interview_id` 不存在或非本人 404；`interview_id` 与
+> `position` 同传 400；`position` 传未开放岗位不报错，返回空计划（与 4.3 同口径）。
+
 ---
 
 ## 5. 题库
@@ -435,7 +514,7 @@ POST /rag/search
 
 ---
 
-## 6. 上传
+## 6. 上传与简历导入
 
 ### 6.1 上传面试录音
 
@@ -472,6 +551,100 @@ POST /uploads/avatar       Content-Type: multipart/form-data
 > 不会让用户资料指向一张已删的图。
 > 服务端会校验**文件头**：把 `.html` 改名成 `.png` 会被拒（否则静态服务会照
 > `image/png` 托管任意内容）。`avatar_url` 也只接受 `/uploads/avatars/` 下的站内路径。
+
+### 6.3 上传并解析简历
+
+```
+POST /resumes              Content-Type: multipart/form-data
+                           file: 简历文件（pdf/jpg/jpeg/png/webp，≤10MB）
+```
+
+返回解析结果与**建议回填**的个人资料字段：
+
+```json
+{ "code": 0, "message": "已从 PDF 中提取 1823 字，请核对识别结果后保存", "data": {
+  "id": 7,
+  "original_filename": "张三-后端开发.pdf",
+  "file_ext": ".pdf",
+  "file_size": 248913,
+  "parse_status": "parsed",
+  "parse_message": "已从 PDF 中提取 1823 字，请核对识别结果后保存",
+  "text": "张三\n求职意向：Java 后端开发工程师\n学号：20210001\n……",   // 全文，上限 10000 字
+  "text_preview": "张三\n求职意向：Java 后端开发工程师……",            // 前 300 字，供折叠态渲染
+  "text_length": 1823,          // 截断前的字符数
+  "text_truncated": false,      // 为 true 说明 text 被截断了
+  "suggested": { "nickname": "张三", "student_id": "20210001", "target_position": "backend" },
+  "suggested_notes": {
+    "nickname": "据文档首行推测：张三（请核对）",
+    "student_id": "命中「学号」标签：20210001",
+    "target_position": "据「Java 后端开发工程师」判定为 backend"
+  },
+  "created_at": "2026-09-23T17:20:11"
+} }
+```
+
+`parse_status` 的五个取值，前端只需判 `== "parsed"`，其余一律展示 `parse_message`：
+
+| 取值 | 含义 | 前端建议 |
+| :--- | :--- | :--- |
+| `parsed` | 提取成功，`text` 有内容 | 展示识别结果供用户核对 |
+| `no_text_layer` | PDF 无文字层（扫描件、纯图 PDF） | 提示改用手动填写 |
+| `garbled` | 字体缺 ToUnicode 表，提取成乱码 | 提示改用手动填写 |
+| `image_pending` | 图片，当前版本不识别 | 提示手动填写（后续版本支持） |
+| `failed` | 损坏 / 加密 / 超时 / 解析依赖缺失 | 提示手动填写 |
+
+> **解析不出来不算请求失败**：文件已安全保存，仍返回 200，原因写在 `parse_message` 里。
+> 只有「扩展名不在白名单 / 超过 10MB / 文件头与扩展名不符 / 未登录」才返回 400 或 401。
+>
+> **`suggested` 是推测而非结论**：三个字段都可能为 `null`——**抽不到就不猜**（抽错会把
+> 用户已经填对的信息引导成错的）。`suggested_notes` 给出每个值的来源，可直接展示。
+> **前端不要自动提交**：应由用户确认后再调 `PUT /auth/me`（部分更新语义）。
+>
+> **只回填 users 表已有的三个字段**（昵称/学号/目标岗位），本次不新增资料字段。
+> 建议值是每次读取时按当前开放的岗位现算的——岗位若下线，`target_position` 会回到 `null`。
+>
+> **图片不做 OCR**：照片/扫描件只保存原件并明确返回 `image_pending`，不假装识别成功。
+>
+> `text` 可供面试出题「结合简历提问」使用（一期未接，约定见 P2 对接文档）。
+
+### 6.4 获取最近一次简历
+
+```
+GET /resumes/latest
+```
+
+返回与 6.3 完全相同的 `data` 结构；**从未上传过时 `data` 为 `null`**（空态查询而非缺资源，故不返回 404）：
+
+```json
+{ "code": 0, "message": "ok", "data": null }
+```
+
+> 多次上传保留历史（append-only），`latest` 取最近一份；按 id 读历史用 `GET /resumes/{resume_id}`，
+> 返回同一结构。
+
+### 6.5 下载简历原文件
+
+```
+GET /resumes/{resume_id}/file
+```
+
+返回文件流，**仅本人可下载**：
+
+```
+200 OK
+Content-Type: application/pdf
+Content-Disposition: attachment; filename*=utf-8''%E5%BC%A0%E4%B8%89%E7%9A%84%E7%AE%80%E5%8E%86.pdf
+```
+
+> **简历原件存在私有目录 `backend/private/resumes/`，不在 `/uploads` 静态挂载内**——
+> 那个目录是完全公开的（无鉴权、无子目录白名单），而简历含姓名/学号/联系方式。
+> 本接口是下发简历原件的唯一途径。
+>
+> **非本人一律 404**，不返回 403（403 等于承认这个 id 存在）。
+>
+> **前端必须带 token 请求**：`<iframe src>` 与 `window.open()` 发出的是不带
+> `Authorization` 头的普通 GET，拿不到文件。要用 fetch/axios 带 token 请求，
+> `responseType: 'blob'`，再 `URL.createObjectURL(blob)` 预览或触发下载。
 
 ---
 

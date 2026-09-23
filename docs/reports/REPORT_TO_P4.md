@@ -1,5 +1,21 @@
 # 致 P4（前端）同学：页面需求与接口权威说明
 
+> **2026-09-23 回你的接口清单**：新增
+> [《你的接口清单：逐条确认与补充》](REPORT_TO_P4_API_CHECKLIST.md)——
+> 针对《致 1 号 · 前端接口需求》逐条核对，**清单里的字段全部满足**，
+> 并补上两块未覆盖的新功能（简历导入、学习资源推荐）。
+
+> **2026-09-23 新增简历导入（见 2.14）**：`POST /resumes` 上传简历（PDF / 图片）→ 自动提取
+> 文本 → 返回**建议回填**的昵称/学号/目标岗位，用户确认后再走既有的 `PUT /auth/me` 提交；
+> 另有 `GET /resumes/latest` 与鉴权下载 `GET /resumes/{id}/file`。图片当前不识别文字
+> （明确提示，不假装成功）。后端已实现并有回归测试覆盖；
+> 接口字段以 [docs/API.md](../API.md) 为唯一权威。
+
+> **2026-09-23 新增 1 个接口（见 2.13）**：`GET /reports/study-plan` 智能推荐学习资源与
+> 练习计划——按面试考察过的知识点给出题库自带的学习建议原文与同知识点的配套练习题。
+> 单场（报告页）与最近 N 场聚合（个人中心）共用一个接口，站内闭环、不依赖外部服务。
+> 后端已实现并有回归测试覆盖；接口字段以 [docs/API.md](../API.md) 为唯一权威。
+
 > **2026-09-18 新增 5 组接口（见 2.8~2.12）**：个人资料可编辑、头像可上传、报告可生成
 > 限时分享链接（含一个免登录的只读报告页）、历史记录与成长曲线支持按岗位筛选、
 > 面试详情补上问答时间戳。后端均已实现并有回归测试覆盖；
@@ -213,6 +229,137 @@ GET /reports/growth?position=backend      // 不传 = 全部岗位
 > 建议做成从右侧滑出的抽屉（不跳走，用户不必离开报告页），聊天气泡样式
 > （AI 左、用户右）与对话室保持一致，再加一个「复制全文」按钮。
 
+### 2.13 智能推荐学习资源 / 练习计划（2026-09-23 新增）
+
+```
+GET /reports/study-plan                          // 聚合最近 5 场 → 个人中心用
+GET /reports/study-plan?interview_id=12          // 单场 → 报告页用
+GET /reports/study-plan?position=backend&recent=3
+```
+
+| 参数 | 说明 |
+| :--- | :--- |
+| interview_id | 指定单场面试（可选）。**不传 = 按最近 N 场聚合**，一个接口两种用法 |
+| position | 岗位 code（可选，仅聚合模式）。与 `interview_id` **互斥**，同传返回 400 |
+| recent | 聚合模式下取最近 N 场已结束面试，默认 5（范围 1~20） |
+| max_knowledge | 最多返回几个知识点，默认 10（范围 1~50） |
+
+`data` 的形状（精简版，完整字段见 [API.md 4.5](../API.md)）：
+
+```json
+{
+  "interview_id": 12,                 // 单场模式=该场 ID；聚合模式=null
+  "source_interviews": [{ "interview_id": 12, "position": "backend", "finished_at": "…" }],
+  "positions": ["backend"],
+  "knowledge_points": [{
+    "kp_id": "java-backend-kp-0523", "name": "HTTP 响应报文结构",
+    "advice": "建议从「HTTP 响应报文结构」的核心定义与基本用法入手……",   // 题库原文
+    "priority": "高频必考题", "hit_count": 2,
+    "sources": [{ "interview_id": 12, "round": 1,
+                  "question_no": "JAVA_BACKEND-Q0043", "question": "GET和POST有什么区别？" }],
+    "practice_minutes": 4,
+    "practice_questions": [{ "id": 43, "position_code": "backend",
+                             "question_no": "JAVA_BACKEND-Q0043", "question": "GET和POST有什么区别？",
+                             "category": "技术知识题", "difficulty": "easy",
+                             "exam_priority": "高频必考题", "suggested_minutes": 2,
+                             "asked": true }]
+  }],
+  "total_minutes": 44, "pending_minutes": 37,
+  "notice": null                      // 非 null 时是「暂无推荐」的原因说明
+}
+```
+
+**页面摆放建议**：报告页放一张卡片、传 `interview_id`（跟着这场面试走）；个人中心放一个
+入口、不传参（跨场的持续练习计划）。两者共用同一个接口，不用写两套逻辑。
+
+> **`notice` 不是错误**：题库未导入、或这场面试的题目是 RAG / AI 现场生成时，接口返回
+> 200、`knowledge_points` 为空、`notice` 里写着原因。**按提示文案展示即可，不要弹错误
+> toast**——它不是失败，是「暂时没有可推荐的内容」。
+>
+> **演示前必须先导题库**：`python -m scripts.import_question_bank`。题库为空的机器上出题
+> 会走 Mock 兜底，题干永远反查不到题库，这个接口看起来就像「坏了」。另外至少要有一场
+> **已结束**的面试——进行中的面试传 `interview_id` 会返回 409。
+>
+> **知识点口径是「考察过的」，不是「你答得差的」**：后端拿不到单题得分（报告只有 5 维
+> 聚合分），所以界面上别写「你答错了这几道」——按「这场面试考察到、建议巩固」的说法
+> 呈现才与数据一致。排序已按「高频必考题 → 被多题命中」给好，前端按顺序渲染即可。
+>
+> **`asked=true` 的题标「已练过」而不是「重做」**：它表示这道题在本计划的来源面试里
+> 已经问到过。
+>
+> **`total_minutes` 与题目清单自洽**：它统计的就是 `practice_questions` 里那批题（同一道
+> 题服务多个知识点时只算一次），可直接显示「共约 44 分钟」。实测单场计划约 40~120 分钟
+> （每个知识点最多带 5 道配套题），需要的话前端自行截断展示，后端不再做二次裁剪。
+
+### 2.14 简历导入（2026-09-23 新增，个人中心 / 资料页用）
+
+```
+POST /resumes                     // 上传简历（PDF / 图片），multipart，file 字段
+GET  /resumes/latest              // 最近一份（含提取的全文与建议字段）
+GET  /resumes/{resume_id}         // 按 id 读历史
+GET  /resumes/{resume_id}/file    // 下载原件（仅本人）
+```
+
+`POST /resumes` 的返回（精简版，完整字段见 [API.md 6.3](../API.md)）：
+
+```json
+{ "code": 0, "message": "已从 PDF 中提取 1823 字，请核对识别结果后保存", "data": {
+  "id": 7, "original_filename": "张三-后端开发.pdf", "file_ext": ".pdf", "file_size": 248913,
+  "parse_status": "parsed",
+  "parse_message": "已从 PDF 中提取 1823 字，请核对识别结果后保存",
+  "text": "张三\n求职意向：Java 后端开发工程师\n学号：20210001\n……",
+  "text_preview": "张三\n求职意向：Java 后端开发工程师……",
+  "text_length": 1823, "text_truncated": false,
+  "suggested": { "nickname": "张三", "student_id": "20210001", "target_position": "backend" },
+  "suggested_notes": {
+    "nickname": "据文档首行推测：张三（请核对）",
+    "student_id": "命中「学号」标签：20210001",
+    "target_position": "据「Java 后端开发工程师」判定为 backend"
+  },
+  "created_at": "2026-09-23T17:20:11"
+} }
+```
+
+**`parse_status` 只有五种**，前端只需判 `== "parsed"`，其余一律展示 `parse_message`：
+
+| 取值 | 含义 | 前端怎么做 |
+| :--- | :--- | :--- |
+| `parsed` | 提取成功 | 展示「识别结果」卡片供用户核对 |
+| `no_text_layer` | PDF 没有文字层（扫描件、纯图 PDF） | 提示手动填写 |
+| `garbled` | 字体编码不支持，提取成乱码 | 提示手动填写 |
+| `image_pending` | 图片，当前版本不识别 | 提示手动填写 |
+| `failed` | 损坏 / 加密 / 超时 / 缺解析依赖 | 提示手动填写 |
+
+> **预填 ≠ 自动提交**：`suggested` 是**推测**，三个字段都可能为 `null`——后端的原则是
+> **抽不到就不猜**（抽错会把用户已经填对的信息引导成错的，预填了用户又懒得改）。
+> 请做成「识别结果」卡片 + 「填入表单」按钮，用户点确认后再调 `PUT /auth/me`。
+> **绝不要在拿到响应后静默提交**，那会覆盖用户填好的昵称，而用户完全不知道发生了什么。
+>
+> **`suggested_notes` 要一并展示**：它解释每个值是怎么来的（「据文档首行推测，请核对」／
+> 「命中「学号」标签」），是用户判断该不该采纳的唯一依据。
+>
+> **`parse_message` 不是错误**：解析不出来时接口仍返回 200（文件已安全保存），
+> 按普通提示展示即可，**不要弹错误 toast**。
+>
+> **上传入口**：`<input type="file" accept=".pdf,image/*" capture="environment">`——
+> 加 `capture` 后手机能直接调起相机。但 **iPhone 默认拍出 HEIC**，后端白名单不收
+> （收了也解析不了），请在 canvas 里转成 JPEG 再传；顺带把 8~12MB 的原图压到 1MB 以内。
+>
+> **下载原件必须带 token**：`<iframe src="/api/v1/resumes/7/file">` 和 `window.open()`
+> 发的都是**不带 `Authorization` 头的普通 GET，拿不到文件**。要用 fetch/axios 带 token、
+> `responseType: 'blob'`，再 `URL.createObjectURL(blob)` 预览或触发下载。
+>
+> **原件不公开**：简历存在私有目录，只有上面那个鉴权接口能读到——**不要试图拼
+> `/uploads/...` 的地址**，那里取不到。这是刻意的：`/uploads` 是公开静态目录，
+> 而简历含姓名/学号/联系方式。
+>
+> **`original_filename` 是用户可控字符串**，渲染时用 `textContent` 而非 `innerHTML`。
+>
+> **隐私提示**：界面上建议加一句「简历仅用于本次面试训练，不会对外分享」。
+>
+> 读取用 `GET /resumes/latest`（返回同一结构）；**从未上传过时 `data` 为 `null`
+> 而不是 404**，页面加载时判 null 显示引导上传的空态即可。
+
 ---
 
 ## 3. 前端常见错误对照（原 frontend-spec 接口部分已作废，此表防再犯）
@@ -302,6 +449,10 @@ Base URL：`http://localhost:8001/api/v1`（联调期）｜统一响应 `{ code,
 | 凭分享码看报告（只读页） | `GET /share/{code}` | **否** |
 | 最近一次面试建议 | `GET /reports/latest` | 是 |
 | 能力成长曲线 | `GET /reports/growth`，可选 `?position=` | 是 |
+| 学习资源 / 练习计划 | `GET /reports/study-plan`，可选 `?interview_id=` / `?position=` / `?recent=` | 是 |
+| 上传简历并解析 | `POST /resumes`（multipart，file 字段） | 是 |
+| 最近一次简历 | `GET /resumes/latest`（无记录时 `data` 为 null） | 是 |
+| 下载简历原件 | `GET /resumes/{resume_id}/file`（仅本人，需带 token） | 是 |
 
 完整请求/响应示例与错误码见 [API.md](../API.md)；在线调试 http://localhost:8001/docs 。
 

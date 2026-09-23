@@ -65,3 +65,79 @@ class GrowthPoint(BaseModel):
     expression_score: float
     adaptability_score: float
     match_score: float
+
+
+# ---------------- 学习资源 / 练习计划（2026-09-23）----------------
+# 口径说明：报告只有整场面试的 5 维聚合分（reports 表无单题得分），P3 评估服务
+# 也不返回逐题评分，所以这里推荐的是「**考察过的**知识点」，不是「你答得差的」。
+# 排序依据 = 考点优先级 + 被几道题命中，不假装知道哪道题答错。
+
+
+class KPSource(BaseModel):
+    """知识点的来源：本计划里哪场面试的第几轮问到了它"""
+
+    interview_id: int
+    round: int
+    # 锚点原题在题库中的编号（前端可据此跳题库详情）
+    question_no: str
+    question: str
+
+
+class PracticeQuestionOut(BaseModel):
+    """配套练习题（题库中关联同一知识点的题）"""
+
+    id: int
+    # 岗位 code：知识点 ID 会跨岗位被引用，全库反查会带出别岗的题，前端据此标注
+    position_code: str
+    question_no: str
+    question: str
+    category: str
+    difficulty: str
+    exam_priority: str
+    suggested_minutes: int
+    # 本题在本计划的来源面试里被问到过（含最后一轮问了未作答的）。
+    # 刻意不叫 answered：把「问了没答」也算作答，是过度声称。
+    asked: bool
+
+
+class KnowledgePointOut(BaseModel):
+    """一个待巩固的知识点（题库自带学习建议原文 + 同知识点的配套练习）"""
+
+    kp_id: str
+    name: str
+    # 题库自带的学习建议原文，不重写不总结（站内闭环，不依赖外部服务）
+    advice: str
+    # 该知识点的来源题目中最高的考点优先级
+    priority: str
+    # 来源面试里有几道锚点原题关联到它（等于 len(sources)，同时是显式排序键）
+    hit_count: int
+    sources: list[KPSource]
+    # 该知识点配套练习时长（分）
+    practice_minutes: int
+    practice_questions: list[PracticeQuestionOut]
+
+
+class SourceInterviewOut(BaseModel):
+    """本次计划用到的面试（聚合模式下可能跨岗位，按结束时间倒序）"""
+
+    interview_id: int
+    position: str
+    finished_at: datetime
+
+
+class StudyPlanOut(BaseModel):
+    """学习资源与练习计划（站内闭环：知识点 + 题库原文建议 + 配套练习）"""
+
+    # 单场模式=该场面试 ID；聚合模式=null
+    interview_id: int | None
+    source_interviews: list[SourceInterviewOut]
+    # 覆盖的岗位 code（跨岗位聚合时为多个）
+    positions: list[str]
+    knowledge_points: list[KnowledgePointOut]
+    # 推荐练习总时长（同一道题服务多个知识点时只算一次）
+    total_minutes: int
+    # 其中尚未练过的部分（asked 为 false 的题）
+    pending_minutes: int
+    # 无可推荐内容时的一句中文说明（正常为 null）。前端直接展示即可，不要当错误处理：
+    # 有它才能区分「还没面试」与「题库未导入 / 题干没命中」这两种空。
+    notice: str | None

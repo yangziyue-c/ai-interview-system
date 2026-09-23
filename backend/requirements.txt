@@ -29,6 +29,10 @@ requests>=2.31.0
 # 音频上传
 python-multipart>=0.0.9
 
+# PDF 文本提取（简历导入用；纯 Python 无二进制依赖，BSD-3-Clause）
+# 下限取 6.8：该版本起对 stream /Length 与压缩流加了上限保护（防解压炸弹）
+pypdf>=6.8,<7.0
+
 # （V4 时代的 openpyxl 已随 xlsx 题库流水线一并移除：
 #   导入脚本现读 backend/rag/数据/*-v5.json，全仓库无 openpyxl 引用）
 

@@ -7,6 +7,8 @@
   三阶段 + 锚点追问链（L1→L2→L3→降级引导，按考生回答质量动态分流）动态追问，支持语音/文本
 - **五维评估报告**：技术水平、逻辑思维、沟通表达、应变能力、岗位匹配度
 - **能力成长曲线**：历史面试得分趋势可视化，可按岗位拆分查看
+- **学习资源与练习计划**：按面试考察过的知识点给出题库自带的学习建议原文与同知识点的
+  配套练习题，并汇总练习时长；单场（报告页）与最近多场聚合（个人中心）共用一个接口
 - **报告分享与问答回顾**：报告可生成限时分享链接（对方免登录查看）、逐轮问答记录可回顾；
   个人资料（昵称/学号/目标岗位）与头像可编辑
 
@@ -44,8 +46,9 @@ project/
 │   ├── rag/                  # RAG 语义检索服务（P5 交付 + P1 适配，端口 8003）
 │   ├── scripts/              # 题库导入（import_question_bank.py）+ 面试流程仿真（simulate_interview.py）
 │   ├── static/               # 前端 dist 挂载目录（P4 构建产物放这里）
-│   ├── uploads/              # 面试录音文件
-│   ├── tests/                # 全流程回归测试（68 用例）
+│   ├── uploads/              # 面试录音与头像（公开静态挂载，勿放隐私文件）
+│   ├── private/resumes/      # 简历原件私有目录（不在静态挂载内，仅鉴权接口可读）
+│   ├── tests/                # 全流程回归测试（151 用例）
 │   ├── requirements.txt
 │   ├── .env.example          # 环境变量模板
 │   └── start.bat             # Windows 一键启动（自动拉起 RAG + 评估 + 演示前端 + 主后端）
@@ -176,7 +179,7 @@ idle → in_progress → finished（终态）
 
 ```bash
 cd backend
-python -m pytest    # 84 个用例（测试库 test_interview.db，不污染开发库）
+python -m pytest    # 151 个用例（测试库 test_interview.db 与临时目录 .test_tmp/，均不污染工作区）
 ```
 
 > 测试必须在 `backend/` 目录下运行（pytest.ini 的 asyncio 配置与 conftest

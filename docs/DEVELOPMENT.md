@@ -48,12 +48,16 @@ conftest 在 import app 之前注入环境变量（顺序是关键，晚于 `app
 | `DATABASE_URL` | `sqlite+aiosqlite:///./test_interview.db` | 指向独立测试库 |
 | `LLM_API_KEY` | 空 | 防止空库用例误调真实大模型 |
 | `REDIS_URL` / `AI_INTERVIEWER_URL` / `AI_EVALUATOR_URL` | 空 | 禁用外部服务 |
+| `UPLOAD_DIR` / `RESUME_DIR` | `.test_tmp/uploads` / `.test_tmp/resumes` | 上传与简历文件写入临时目录 |
 
 **`RAG_API_URL` 需要单独说明**：它与上面三个不同，`config.py` 里默认为
 `http://localhost:8003`，不清空的话每个「题库未命中」的用例都会真的去连本机 8003：
 服务没起时每次探测都要等到超时，服务起了则拿到真实题目，「空库降级 Mock」这类断言就失去了意义。
 
-每次测试会话开始时，旧的 `test_interview.db` 会被删除重建，保证用例可重复执行。
+每次测试会话开始时，旧的 `test_interview.db` 会被删除重建，`UPLOAD_DIR` / `RESUME_DIR` 所在的
+`.test_tmp/` 也会清空，保证用例可重复执行。会话结束时（`_cleanup_test_tmp` fixture）整个
+`.test_tmp/` 一并删除，跑完 pytest 工作区是干净的。文件目录必须隔离：不隔离的话用例会把测试文件
+真写进 `backend/uploads/` 与 `backend/private/`，后者是用户简历的私有目录，被测试垃圾污染尤其糟糕。
 测试全程不读写开发库 `backend/interview.db`。
 
 ### 2.3 造数工厂（`tests/helpers.py`）
