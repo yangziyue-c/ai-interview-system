@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # 健康探测结果缓存秒数（RAG 未启用时避免每轮白等超时；取值偏大以摊薄探测开销）
     RAG_HEALTH_CACHE_SECONDS: float = 120.0
 
-    # ---- AI 对话层引擎（A11，P2 交付的独立服务，代码在 backend/dialogue_layer/）----
+    # ---- AI 对话层引擎（A11，P5 交付的独立服务，代码在 backend/dialogue_layer/）----
     # 置空 = 关闭引擎，面试走原链路（题库策略 + P3 评估）；填 "a11" = 启用引擎：
     # 出题、追问、评分全部委托 8005 服务，本后端只负责镜像落库。
     # 引擎已启用但未就绪（/health 的 bank_loaded / scorer_ready / llm_configured 任一为假）

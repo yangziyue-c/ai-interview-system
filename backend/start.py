@@ -27,7 +27,7 @@ PORT = "8001"
 EVALUATOR_PORT = "8002"
 FRONTEND_PORT = "5273"  # 演示前端（frontend_test/）静态服务端口（避开 P4 Vite 联调用的 5173）
 RAG_PORT = "8003"       # RAG 语义检索服务（V5 知识库，backend/rag/）
-DIALOGUE_PORT = "8005"  # AI 对话层引擎（P2 交付的 A11，backend/dialogue_layer/）
+DIALOGUE_PORT = "8005"  # AI 对话层引擎（P5 交付的 A11，backend/dialogue_layer/）
 HEALTH_WAIT_SECONDS = 30  # 主后端就绪的最长等待时间
 PIP_INDEX = "https://pypi.tuna.tsinghua.edu.cn/simple"
 # 主后端 + P3 评估服务所需的全部第三方库（缺任一则触发 pip install）
@@ -178,7 +178,7 @@ def dialogue_model_cached() -> bool:
 def build_dialogue_env() -> dict:
     """AI 对话层子进程的环境变量
 
-    这些值原本散在 A11 的 run.ps1 里（PowerShell 脚本，默认路径指向 2 号的机器），
+    这些值原本散在 A11 的 run.ps1 里（PowerShell 脚本，默认路径指向交付方本机），
     这里用本项目的位置重新注入。API key 只从 .env 读、只经环境变量传给子进程，
     不写任何新文件、不打印。
     """

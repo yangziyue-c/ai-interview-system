@@ -9,17 +9,17 @@ AI 模拟面试训练系统（FastAPI 异步 + SQLAlchemy 2.0，5 人小组项�
 | 成员 | 职责 | 代码/文档位置 |
 | :--- | :--- | :--- |
 | P1 | 主后端 + 集成 | `backend/app/` |
-| P2 | 面试官出题算法 + AI 对话层 | `backend/interviewer_new/`（V5 版；旧 `backend/interviewer/` 已冻结留档）；`backend/dialogue_layer/`（独立服务 8005，见「AI 对话层引擎」节） |
+| P2 | 面试官出题算法 | `backend/interviewer_new/`（V5 版；旧 `backend/interviewer/` 已冻结留档） |
 | P3 | AI 评估服务 | `backend/evaluator_new/`（独立 Flask 进程，端口 8002；旧 `backend/evaluator/` 留档） |
 | P4 | 前端 | `frontend/`（⚠️ 当前**仅有 README.md**、正式代码未交付；构建产物将拷 `backend/static/` 同端口挂载） |
-| P5 | 知识库 | `backend/rag/数据/*-v5.json`（5012 题）+ 向量库；服务代码 `backend/rag/代码/` |
+| P5 | 知识库 + AI 对话层 | `backend/rag/数据/*-v5.json`（5012 题）+ 向量库；服务代码 `backend/rag/代码/`；`backend/dialogue_layer/`（独立服务 8005，见「AI 对话层引擎」节） |
 
 对接文档在 `docs/reports/`：4 份独立对接文档 `REPORT_TO_P2/P3/P4/P5.md`，
 另有 `REPORT_TEAM_V5_LAYOUT_AND_API.md`（目录归属与各成员 API 清单）、`REPORT_TO_P5_V5_PACKAGE_REVIEW.md`。
 **P2/P3 现行权威为 `REPORT_TO_P2_INTERVIEWER_NEW.md` / `REPORT_TO_P3_EVALUATOR_NEW.md`**；
 `REPORT_TO_P2.md` 与 `REPORT_TO_P3.md` 顶部均已挂 V5 指引横幅、正文为 V4 口径，仅留档参考。接口唯一权威 `docs/API.md`。
 **P2 修改算法只动 `backend/interviewer_new/`**（其 README 有算法速览与与旧版差异），
-P3 只动 `backend/evaluator_new/`，P5 只产 `backend/rag/数据/*-v5.json` 与向量库；
+P3 只动 `backend/evaluator_new/`，P5 只动 `backend/rag/` 与 `backend/dialogue_layer/`；
 `backend/app/` 是集成层，别把成员代码塞进来。
 **目录归属与各成员 API 清单见 `docs/reports/REPORT_TEAM_V5_LAYOUT_AND_API.md`**。
 **竞赛提交材料**（项目概要介绍 / 项目简介 PPT / 项目详细方案）按模块分册存放于 `docs/submission/`，
@@ -99,7 +99,7 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
   `tests/test_api.py::test_weights_match_csv` 机器校验两者一致——改 CSV 或权重必须同步跑该测试）
 - 老库启动自愈：`adaptability_score` 为 0 时用 expression_score 近似回填（database.py init_db）
 
-### AI 对话层引擎（可选链路：P2 的 A11，`backend/dialogue_layer/`）
+### AI 对话层引擎（可选链路：P5 的 A11，`backend/dialogue_layer/`）
 
 - 独立 FastAPI 服务（**8005**，源码一行未改），`start.py` 在 RAG 之后拉起；开关 `DIALOGUE_ENGINE=a11`
   （`.env`，默认空 = 关）。开启后出题/追问/五维评分全部委托它，主后端只镜像落库
