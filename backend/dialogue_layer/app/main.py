@@ -192,9 +192,11 @@ def _build_app() -> FastAPI:
                     config.THIS_PORT, len(config.JOBS), config.TOTAL_QUESTIONS)
         logger.info("LLM_MOCK=%s  RERANKER_MOCK=%s  SCORER_DEVICE=%s",
                     config.LLM_MOCK, config.RERANKER_MOCK, config.SCORER_DEVICE)
-        # 两个开关的默认值是相反的（KG 默认开、RAG 默认关），且都受内存约束，
-        # 所以启动时必须打出来 —— 不然「为什么没有参考片段」要靠翻代码猜。
-        logger.info("A11_KG=%s  A11_RAG=%s", config.A11_KG, config.A11_RAG)
+        # 几个开关的默认值不一样（KG 默认开、RAG **代码默认关**但交付包模板设开、
+        # 4a 知识库默认开），且都受内存约束，所以启动时必须打出来 ——
+        # 不然「为什么没有参考片段」要靠翻代码猜。
+        logger.info("A11_KG=%s  A11_RAG=%s  A11_KB_REC=%s",
+                    config.A11_KG, config.A11_RAG, config.A11_KB_REC)
         logger.info("=" * 62)
 
         # 1) 题库

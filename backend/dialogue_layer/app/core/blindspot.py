@@ -6,6 +6,12 @@ blindspot.py · 知识盲区诊断（纯结构化，不加 LLM 调用）
 
     knowledge_points —— 扁平明细：每个考过的知识点考了几次、哪几轮、考成什么样
     domains          —— 领域汇总：哪个领域薄弱
+    recommendations  —— 学习资源推荐（赛题 4a）：把薄弱考点接到资源样例文件上
+
+⚠️ 后两张表是加法，第三张（recommendations）**只在 /finish 与 /result 里出现**
+   —— diagnose() 只被 session.finish() 调用，所以「交卷前不泄题」是结构上封住的。
+   A11_RECOMMEND=0 时该键整个不出现（与加这个功能之前逐字节相同）。
+   它的实现全在 resources.py，本文件只负责「挑出薄弱考点、把结果挂上去」。
 
 为什么是**扁平表 + 小汇总**两张，而不是一棵嵌套的树：3 号既要「薄弱领域 top-3」
 （要汇总）又要「哪个知识点没覆盖」（要明细）。纯嵌套会逼它自己去遍历；
@@ -35,6 +41,7 @@ from typing import Optional
 from app import config
 from app.core import kg as kgmod
 from app.core.kg import UNCLASSIFIED
+from app.core.resources import recommend
 
 # ============================================================
 # 软标签：不是知识点，诊断时必须滤掉
@@ -115,11 +122,16 @@ def _avg_five_dim(rounds_facts: list[dict]) -> dict:
     return out
 
 
-def diagnose(rounds: list, kg=None) -> dict:
+def diagnose(rounds: list, kg=None, job: Optional[str] = None) -> dict:
     """
-    纯函数：list[RoundRecord] + KGIndex|None → 诊断结构。
+    纯函数：list[RoundRecord] + KGIndex|None (+ 岗位名) → 诊断结构。
 
     kg=None 时**不抛异常**，全部归入「未归类」、domain_known=0.0，键名不变。
+
+    `job` **只透给 4a 的知识库检索做岗位过滤**，不参与本函数的任何统计口径
+    （kp_total / domain_known / hit 判定都与它无关）。不传（None）时行为
+    与加这个参数之前**逐字节相同** —— 所以冒烟测试里那十处
+    `diagnose([...], kg)` 的调用一个都不用改。
     """
     facts: list[tuple[object, dict]] = [(r, _round_facts(r)) for r in rounds]
 
@@ -243,6 +255,15 @@ def diagnose(rounds: list, kg=None) -> dict:
     # 薄弱的排前面 —— 3 号要的就是「薄弱领域 top-3」
     dom_list.sort(key=lambda x: (-x["kps_weak"], -x["kps_total"], x["domain"]))
 
+    # ---------- 学习资源推荐（赛题 4a；加法，不影响上面任何字段）----------
+    # 只在这一个地方算 —— diagnose() 只被 /finish 调用（session.py:1635），
+    # 所以 `recommendations` 天然只出现在 /finish 与 /result 里，不会在
+    # /next、/chat 期间漏给考生（设计稿 §5 那条边界）。
+    # 关掉开关（A11_RECOMMEND=0）时**键整个不出现**，与加这个功能之前逐字节相同。
+    kp_list = sorted(kps.values(),
+                     key=lambda e: (e["rounds"][0] if e["rounds"] else 0, e["kp_id"]))
+    rec_out = recommend(kp_list, job=job) if config.A11_RECOMMEND else None
+
     n_kp = len(kps) or 0
     summary = {
         "rounds_total": len(rounds),
@@ -260,13 +281,31 @@ def diagnose(rounds: list, kg=None) -> dict:
                                    if rounds else 0.0),
         "kg_available": kg is not None,
     }
+    if rec_out is not None:
+        # 推荐能不能用、为什么空 —— 与 kg_error / rag_error 同一条纪律：
+        # 「关掉」和「坏了」必须分得开，否则 3 号 会把「没配好」读成「这场没盲区」。
+        summary.update({
+            "recommend_enabled": True,
+            "recommend_ready": rec_out["ready"],
+            "recommend_candidates": rec_out["candidates"],   # 够格的候选数（可能 > 展示数）
+            "recommend_error": rec_out["error"],
+            # 知识库那一层（4a 的「真知识库」参考）。同样是「关掉 / 没装 /
+            # 跑了但没命中」三态可分：kb_refs_total=0 且 kb_error="" 就是「跑通了，
+            # 这一场没有够分的片段」，不是故障。
+            "kb_enabled": rec_out["kb_enabled"],
+            "kb_ready": rec_out["kb_ready"],
+            "kb_refs_total": rec_out["kb_refs_total"],
+            "kb_error": rec_out["kb_error"],
+        })
 
-    return {
+    out = {
         "summary": summary,
         "domains": dom_list,
-        "knowledge_points": sorted(
-            kps.values(), key=lambda e: (e["rounds"][0] if e["rounds"] else 0, e["kp_id"])),
+        "knowledge_points": kp_list,
     }
+    if rec_out is not None:
+        out["recommendations"] = rec_out["items"]
+    return out
 
 
 def _level_of(kg, kp_id: str, title: str) -> tuple[str, str]:

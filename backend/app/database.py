@@ -176,6 +176,13 @@ async def init_db() -> None:
             "engine_meta",
             "ALTER TABLE reports ADD COLUMN engine_meta JSON",
         )
+        # 成长档案摘要（对话层 /finish 的顶层 digest，原样回传给 /growth 用）
+        await conn.run_sync(
+            _ensure_column,
+            "reports",
+            "digest",
+            "ALTER TABLE reports ADD COLUMN digest JSON",
+        )
         # 注：原「题库 V4 第 16 列 expression_points」的补列语句已随 V5 换代删除——
         # 该列在新表结构中不存在，留着会在每次启动把已删列 ALTER 回来。
         # questions 的结构变更走 scripts/import_question_bank.py --rebuild，

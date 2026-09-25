@@ -4,9 +4,11 @@ from pathlib import Path
 
 from fastapi import APIRouter, UploadFile
 
+from app.adapters import get_dialogue_adapter
+from app.adapters.ai_dialogue import EngineError
 from app.api.deps import CurrentUser
 from app.config import settings
-from app.core.exceptions import BadRequestError
+from app.core.exceptions import BadRequestError, ServiceUnavailableError
 from app.core.upload_rules import (
     ALLOWED_AVATAR_EXT,
     AVATAR_SUBDIR,
@@ -39,6 +41,51 @@ async def upload_audio(user: CurrentUser, file: UploadFile) -> dict:
     (upload_dir / saved_name).write_bytes(content)
 
     return ok({"url": f"/uploads/{saved_name}"}, "上传成功")
+
+
+@router.post("/audio/asr", response_model=dict, summary="语音转写（音频进，文字 + 表达指标 + 地址出）")
+async def transcribe_audio(user: CurrentUser, file: UploadFile) -> dict:
+    """转写录音，并把它存下来（省掉第二次上传）
+
+    与 `/audio` 的分工：那个只管存（返回 url），这个把「转写」和「存」一次做完——
+    录音最终要作为 `audio_url` 随答案提交，所以文案与地址一起返回，
+    前端一个文件只传一次。
+
+    引擎不可用时明确报 503，不静默返回空文本——空文本会被当成「考生没说话」，
+    这种静默失败比一次报错难查得多。
+    """
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in _ALLOWED_EXT:
+        raise BadRequestError(
+            f"不支持的音频格式 {ext or '(无扩展名)'}，支持: {', '.join(sorted(_ALLOWED_EXT))}"
+        )
+
+    content = await file.read()
+    if len(content) > _MAX_BYTES:
+        raise BadRequestError(f"文件超过 {settings.MAX_UPLOAD_SIZE_MB}MB 限制")
+
+    try:
+        data = await get_dialogue_adapter().transcribe(
+            file.filename or "", content, file.content_type or ""
+        )
+    except EngineError as exc:
+        raise ServiceUnavailableError(f"语音转写不可用：{exc}") from exc
+
+    upload_dir = Path(settings.UPLOAD_DIR)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    saved_name = f"{user.id}_{uuid.uuid4().hex[:12]}{ext}"
+    (upload_dir / saved_name).write_bytes(content)
+
+    payload = {
+        key: data.get(key)
+        for key in (
+            "text", "duration_ms", "audio_ms", "segments", "pauses", "pause_total_ms",
+            "asr_model", "elapsed_ms", "loudness", "loudness_cv", "tail_ratio",
+            "emotion", "emotion_score", "emotion_dist",
+        )
+    }
+    payload["url"] = f"/uploads/{saved_name}"
+    return ok(payload, "转写完成")
 
 
 @router.post("/avatar", response_model=dict, summary="上传头像图片（jpg/png/webp，≤2MB）")

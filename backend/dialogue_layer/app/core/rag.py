@@ -15,7 +15,11 @@ rag.py · RAG 参考片段（只读，只喂给面试官）
      二者只能选一 —— 所以 RagIndex.search() 的结果存在 RoundRecord.rag_refs
      上（repr=False、不序列化），只有白名单四键的 rag_meta 进 raw。
 
-默认关闭，原因见 config.A11_RAG 的注释（内存放不下，不是保守）。
+**代码默认**关闭，原因见 config.A11_RAG 的注释（内存放不下，不是保守）；
+但**交付包模板 `环境变量.模板.ps1:24` 设的是 `=1`**，dot-source 之后就是开着的。
+两个默认并存没问题，混成一句「默认关」才是问题。另注意：开了之后取到的是
+**题库派生索引**里「同岗位同难度的其他问法」，**不是知识库文档正文**（知识库接的是
+4a，见 app/core/kb.py）。
 """
 import ctypes
 import importlib.util
@@ -33,8 +37,19 @@ logger = get_logger(__name__)
 # 的响应体里不含它们。
 #
 # 实测（不是猜的）：
-#   「原题」层    6/6 条 document 都含这两个词（它就是 题目 + 答题要点 + 示例话术）
-#   「语义变体」层 0/6 —— 它是问法改写，第 2、3 行是得分点摘录，但**不含**这两个词
+#   ⚠️ 2026-09-25 更正：旧注释写的「「原题」层 6/6 条都含这两个词」是**抽样偏差**。
+#   全量扫 74,011 条：「原题」80/5012（**1.6%**）、「语义变体」175/17390（1.0%），
+#   而且**从不出现在第一行**。那 6/6 全落在**行为素质题**（57/495）与**项目经历题**
+#   （23/599）上；技术知识题 0/2835、场景应用题 0/1083 —— 当时抽到的正好是前者。
+#   真正的危险来源与这两个词无关：`document = 题目.strip() + "\n" + 参考答案.strip()`
+#   —— 这一句**在盘上可核**：`D:\A11-Data\rag_code_for_teacher\01_建向量库_build.py:96`
+#   （RAG 线交接文档里管它叫 `build_v5_rag_v2.py`，**本机没有那个名字的文件**）。
+#   **第一个 `\n` 之后就是参考答案正文**。
+#   ⇒ 金丝雀本身仍然有效（一旦出现就说明摘到了答案段），但**别再用它当
+#     「document 里有没有答案」的判据** —— 判据是「有没有跨过第一个换行」，
+#     那正是 `_snippet_head()` 与 `A11_RAG_HEAD_ONLY` 在做的事。
+#   ⇒ 同理 README **§11.5**（不是 §11.6，那句在 §11.5 的第 3 条）那句「6/6」
+#     也已一并更正 —— 复算脚本 `_tmp_rag_eff_canaryscan.py`，可随时重跑对一遍。
 # RAG_LAYERS 默认含「原题」，所以这个金丝雀守的是真正危险的那一层。
 #
 # ⚠️ 它是**次级**检查：唯一能把片段原文带出去的结构是 RoundRecord.rag_refs，
@@ -79,6 +94,37 @@ def free_mb() -> Optional[int]:
 # ============================================================
 # 片段截断
 # ============================================================
+def _snippet_head(text: str, limit: int) -> str:
+    """
+    **只取第一个换行之前那一行** —— 即「题目/问法本身」，一个字的答案是进不来的。
+
+    为什么另开一个函数而不是给 `_snippet` 加参数：`_snippet` 的
+    「首行优先**填满** 150 字预算」是 `smoke_test.py:1648-1670` 的**精确值**断言，
+    动它 = 动一条已冻结的口径。这里只**新增**，老函数一个字符不改。
+
+    为什么需要它（实读索引得出的，不是推测）：
+      `document = 题目.strip() + "\n" + 参考答案.strip()`，**第一个 `\n` 是唯一稳定的
+      分隔符**，之后全是答案型内容（含 80/5012 的「答题要点/示例话术」字样）。
+      `_snippet` 在题面短的时候会把第 2 行起一起拼进来 ⇒ 材料里混着**别的题的答案**。
+      而 `rag.format_block` 输出的每一行**不带层名**，「原题（含答案）」与
+      「语义变体（纯问法）」在 prompt 里长得一模一样 ⇒ 无法只授权后者。
+      切掉答案之后，材料在**结构上**不再含答案，才谈得上给一个"借角度"的窄授权。
+
+    ⚠️ 边界（如实记）：`题目` 字段**自身偶尔含 `\n`**（`java-rag-v2.jsonl` 31,875 行里
+       59 行，约 0.2%）⇒「取第一行」是 **99.8% 可靠，不是绝对**。冒烟用**夹具**逐字
+       定死行为，不去断言真索引的统计性质。
+    """
+    s = (text or "").strip()
+    if not s or limit <= 0:
+        return ""
+    first = s.split("\n", 1)[0].strip()
+    if not first:
+        return ""
+    if len(first) > limit:
+        return first[:limit].rstrip() + "…"
+    return first
+
+
 def _snippet(text: str, limit: int) -> str:
     """
     **首行优先**截断。
@@ -221,7 +267,8 @@ class RagIndex:
 
     # ---------- 检索 ----------
     def search(self, query: str, job: str, difficulty: str,
-               exclude_id: Optional[str] = None, n: Optional[int] = None) -> list[dict]:
+               exclude_id: Optional[str] = None, n: Optional[int] = None,
+               head_only: bool = False) -> list[dict]:
         """
         检索同岗位 / 同难度 / 指定层的参考片段。
 
@@ -231,6 +278,11 @@ class RagIndex:
 
         exclude_id 用来丢掉**自身命中**：拿题目原文去检索，top1 就是它自己
         （实测 dist 0.2537），自己参考自己没有意义。
+
+        head_only=True 时用 `_snippet_head()`（**只留题面那一行，切掉参考答案**）。
+        默认 False = 改动前的行为；调用方是 `session.py`，由 `A11_RAG_HEAD_ONLY` 决定。
+        **出参形状不变**（仍是 id/question_id/layer/distance/text 五个键）——
+        `raw.rounds[].rag` 的键在冒烟里是**精确相等**断言，不许改形状。
         """
         if not self.usable:
             return []
@@ -243,8 +295,12 @@ class RagIndex:
                 # 值是 list → memory_retriever 的 _where_matches 当成 $in 处理
                 "对应层级": list(config.RAG_LAYERS),
             }
-            # 多取一条，好在丢掉自身命中之后仍然凑得满 n 条
-            res = self.retriever.query([qv], n_results=n + 1, where=where)
+            # ⚠️ 取**一池**候选，不是 n+1 条 —— 丢自身命中是在取回来之后做的，
+            #    而同一道题在 `原题` + `语义变体` 两层里占 3~6 条记录。实测只取
+            #    n+1=4 条时，9/10 次是「4 条全是这道题自己」→ 丢完剩 0 条，片段
+            #    注入率只有 1/10；加深到 17 条才 6/6 有命中（见 config.RAG_CAND）。
+            res = self.retriever.query([qv], n_results=max(n + 1, config.RAG_CAND),
+                                       where=where)
         except Exception:
             # 单轮检索失败不该影响这一轮面试 —— 少一份参考材料而已
             logger.exception("RAG 检索失败，本轮将不带参考片段")
@@ -255,7 +311,8 @@ class RagIndex:
             meta = (res.get("metadatas") or [{}])[i] or {}
             if exclude_id and str(meta.get("原题ID")) == str(exclude_id):
                 continue
-            txt = _snippet(doc, config.RAG_SNIPPET_CHARS)
+            txt = (_snippet_head(doc, config.RAG_SNIPPET_CHARS) if head_only
+                   else _snippet(doc, config.RAG_SNIPPET_CHARS))
             if not txt:
                 continue
             out.append({

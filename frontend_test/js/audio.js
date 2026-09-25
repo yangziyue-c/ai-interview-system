@@ -1,18 +1,20 @@
 /* ============================================================
- * 语音模块（对照 REPORT_TO_P4 的正确语音流程）：
+ * 语音模块：
  *
  *   按住说话 → 松开
- *     ① Web Speech API 语音转写 → 文本填入输入框（可手动修改）
- *     ② MediaRecorder 录制 webm → 点发送时上传 /api/v1/uploads/audio 拿 data.url
- *     ③ 提交答案：answer=转写文本，audio_url=data.url
+ *     ① MediaRecorder 录制 webm
+ *     ② 松开后整段音频交给后端 `/uploads/audio/asr`：后端调 AI 对话层的
+ *        本地语音模型转写，**一次调用同时返回文本与 audio_url**
+ *     ③ 文本经 onTranscript 填进输入框，考生可自行修改后再发送
+ *     ④ 提交答案时直接用 result.url，同一个文件不重复上传
  *
- * 两项能力相互独立：浏览器不支持转写也能录音上传，反之亦然。
+ * 转写失败（引擎未就绪等）由调用方提示考生手动输入，音频仍可在提交时
+ * 单独上传——两条路互不阻塞。
  * ============================================================ */
 
 const Voice = {
   // 能力探测（仅在 https 或 localhost 等安全上下文下可用）
   supported: {
-    stt: !!(window.SpeechRecognition || window.webkitSpeechRecognition),
     rec: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
   },
 
@@ -23,64 +25,35 @@ const Voice = {
   /** 错误回调（参数：提示文本） */
   onError: null,
 
-  _recognition: null,
   _recorder: null,
   _stream: null,
   _chunks: [],
-  _finalText: "",
   _recording: false,
   _stopResolve: null,
   _stopPromise: null,
+  _recSeq: 0,
 
-  /** 待上传的录音：{ blob, name }；发送答案前调用 upload() 上传 */
+  /** 最近一次转写的结果：{ text, url, duration_ms, ... }；null = 本轮还没转写 */
+  result: null,
+  /** 待转写 / 待上传的录音：{ blob, name } */
   pending: null,
 
   /** 开始（按住说话时调用） */
   start() {
     if (this._recording) return;
-    if (!this.supported.stt && !this.supported.rec) {
-      this.onError && this.onError("当前浏览器不支持语音功能，请使用文本输入");
+    if (!this.supported.rec) {
+      this.onError && this.onError("当前浏览器不支持录音，请使用文本输入");
       return;
     }
     this._recording = true;
-    this._finalText = "";
     this._chunks = [];
-    this._stopPromise = null; // 仅录音场景创建（upload 需等录音真正落盘）
-    this.pending = null; // 丢弃上一段未发送的录音，避免错配到本条答案
-    this._session = (this._session || 0) + 1; // 会话代际：迟到转写结果按代际丢弃
-    this._recSeq = (this._recSeq || 0) + 1; // 录音代际：旧录音会话的迟到回调按代际丢弃
+    this._stopPromise = null; // transcribe / audioUrl 需等录音真正落盘
+    this.pending = null;      // 丢弃上一段未发送的录音，避免错配到本条答案
+    this.result = null;       // 上一轮的转写结果同样作废
+    this._recSeq += 1;        // 录音代际：旧录音会话的迟到回调按代际丢弃
     this.onStateChange && this.onStateChange(true);
 
-    // ① 语音转写：只取最终识别结果，识别结束后统一回调
-    if (this.supported.stt) {
-      // 捕获本次会话代际（不能晚到回调里再读 this._session，那会让守卫恒真失效）
-      const sttSession = this._session;
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const rec = new SR();
-      rec.lang = "zh-CN";
-      rec.continuous = true;
-      rec.interimResults = false;
-      rec.maxAlternatives = 1;
-      rec.onresult = (e) => {
-        // 识别引擎在 stop 之后仍会补发迟到结果，按代际丢弃上一段语音的残文
-        if (sttSession !== this._session) return;
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (e.results[i].isFinal) this._finalText += e.results[i][0].transcript;
-        }
-      };
-      rec.onend = () => this._flushTranscript(sttSession);
-      rec.onerror = () => {
-        // aborted / no-speech 属正常结束，静默处理
-      };
-      this._recognition = rec;
-      try {
-        rec.start();
-      } catch (e) {
-        /* 状态残留时忽略 */
-      }
-    }
-
-    // ② 录音：webm/opus，后端支持 mp3/wav/webm/m4a/ogg/aac/flac
+    // 录音：webm/opus，后端支持 mp3/wav/webm/m4a/ogg/aac/flac
     if (this.supported.rec) {
       const recSession = this._recSeq; // 本次录音的代际令牌（与异步回调配对）
       this._stopPromise = new Promise((r) => (this._stopResolve = r));
@@ -123,46 +96,42 @@ const Voice = {
     }
   },
 
-  /** 停止（松开时调用） */
+  /** 停止录音（松开时调用）；转写交给随后的 transcribe() */
   stop() {
     if (!this._recording) return;
     this._recording = false;
     this.onStateChange && this.onStateChange(false);
     try {
-      this._recognition && this._recognition.stop();
-    } catch (e) {}
-    try {
       this._recorder && this._recorder.stop();
     } catch (e) {}
-    // 先把手头已有文本回调出去；识别引擎在 stop 后仍会补发最后一小段 final 结果
-    // （说完立刻松手时最后一句话依赖它），给一个短暂窗口让 onend 完成落定，
-    // 窗口过后推进代际，此后一切迟到残文被丢弃
-    this._flushTranscript(this._session);
-    clearTimeout(this._stopTimer);
-    this._stopTimer = setTimeout(() => {
-      this._flushTranscript(this._session);
-      this._session++;
-    }, 800);
   },
 
-  /** 上传待传录音，返回音频相对地址（无录音返回 null） */
-  async upload() {
+  /** 松开后调用：把录音交给后端转写，文本走 onTranscript 回调
+   *
+   *  结果（含 audio_url）存在 this.result，提交答案时用 audioUrl() 取，
+   *  同一个文件不会上传两次。失败时抛错，由调用方提示考生手动输入。
+   */
+  async transcribe() {
+    if (this.result) return this.result; // 同一段录音只转写一次
+    if (this._stopPromise) await this._stopPromise;
+    if (!this.pending) return null;
+    const { blob, name } = this.pending;
+    const data = await Api.transcribeAudio(blob, name);
+    this.pending = null;
+    this.result = data;
+    this.onTranscript && this.onTranscript(data.text || "");
+    return data;
+  },
+
+  /** 提交答案时取音频地址：转写过就复用，否则单独上传（无录音返回 null） */
+  async audioUrl() {
+    if (this.result && this.result.url) return this.result.url;
     if (this._stopPromise) await this._stopPromise;
     if (!this.pending) return null;
     const { blob, name } = this.pending;
     this.pending = null;
     const data = await Api.uploadAudio(blob, name);
     return data.url;
-  },
-
-  _flushTranscript(session) {
-    // 代际不匹配 = 上一段语音的迟到结果，丢弃（防止残文混入下一题答案）
-    if (session !== this._session) return;
-    if (this._finalText) {
-      const text = this._finalText;
-      this._finalText = "";
-      this.onTranscript && this.onTranscript(text);
-    }
   },
 
   _releaseStream() {

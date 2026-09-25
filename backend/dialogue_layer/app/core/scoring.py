@@ -205,6 +205,9 @@ class LLMScorer:
             # 原来这里是 ctx.get("reranker_score", 50) —— 缺省值 50 意味着
             # reranker 挂掉时会凭空空降一个「客观命中 50 分」给评分模型当真。
             reranker_note=ctx.get("reranker_note") or "（无客观匹配信息）",
+            # 表达客观测量（用时/语速/停顿/填充词）。缺省值与上面那条同款：
+            # 宁可说"没有"，也不给一个假的数字。规则文字由 session.pace_note() 拼。
+            pace_note=ctx.get("pace_note") or "（无客观测量数据）",
         )
         try:
             data = self.llm.chat_json(SYSTEM_SCORER, [{"role": "user", "content": user}])

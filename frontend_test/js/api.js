@@ -131,4 +131,11 @@ const Api = {
     fd.append("file", blob, filename);
     return request("/uploads/audio", { formData: fd });
   },
+
+  // 语音转写：后端调 AI 对话层做本地识别，一次调用同时返回文本与 audio_url
+  transcribeAudio: (blob, filename) => {
+    const fd = new FormData();
+    fd.append("file", blob, filename);
+    return request("/uploads/audio/asr", { formData: fd });
+  },
 };

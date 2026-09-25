@@ -29,19 +29,31 @@ from typing import Generator, Optional
 
 from app import config
 from app.core import blindspot, question_bank as qb
+from app.core import asr as asrmod
+from app.core import kb as kbmod
 from app.core import kg as kgmod
 from app.core import rag as ragmod
 from app.core.llm import get_llm
 from app.core.prompts import (
     ACTION_DESC, CLOSE_DIRECTIVE, DEEPEN_BLOCK, DEEPEN_BLOCK_EMPTY,
     FINAL_SUMMARY, HINT_BLOCK, HINT_BLOCK_CLOSE, HINT_BLOCK_EMPTY,
-    INTERVIEWER_SYSTEM, OPENING_LINE, RAG_BLOCK, RAG_BLOCK_EMPTY,
-    ROUND_CONTEXT, SWAP_LINE, SYSTEM_SUMMARY,
+    INTERVIEWER_SYSTEM, INTRO_BLOCK, INTRO_SNIPPET_MAX, KB_ASIDE,
+    OPENING_LINE, OPENING_LINE_INTRO, PERSONA_STYLE_LABELS, RAG_BLOCK,
+    RAG_BLOCK_EMPTY,
+    RAG_BLOCK_LEGACY, RAG_KB_BLOCK, RAG_KB_BLOCK_EMPTY, RAG_KB_BLOCK_LEGACY,
+    ROUND_CONTEXT, SWAP_LINE, SYSTEM_SUMMARY, persona_style_block,
 )
 from app.core.scoring import get_scorer
 from app.logging_conf import get_logger
 
 logger = get_logger(__name__)
+
+# 两块素材的**新/旧契约文本**由 `A11_RAG_TASK` 选：默认（"1"）用新文本（给了「被允许的用法」），
+# "0" 逐字回到改动前的「只作背景参考：不要照念、不要向考生透露、不要拿来出新题」。
+# 选择放在这里而不是 `prompts.py`，是为了让 `prompts.py` 保持**纯模板**（不 import config）
+# —— 冒烟要能把两套文本**各自直接渲染**出来比对，那是「开关全关 ⇒ 与改动前逐字节相同」的证明。
+RAG_BLOCK_ACTIVE = RAG_BLOCK if config.RAG_TASK else RAG_BLOCK_LEGACY
+RAG_KB_BLOCK_ACTIVE = RAG_KB_BLOCK if config.RAG_TASK else RAG_KB_BLOCK_LEGACY
 
 # ---------- phase 常量 ----------
 PHASE_START = "awaiting_start"
@@ -132,6 +144,10 @@ class AttemptRecord:
     #                                          不压 band，故意如此）
     repeat: bool = False
     repeat_sim: float = 0.0
+    # ---- 语音作答的表达指标（加法；文字作答时恒为 SPEECH_EMPTY 那个形状）----
+    # 由 asr.derive_speech() 从「净时长 + 段级时间戳 + 转写文本」算出来的一组**数字**，
+    # 全部键恒在、空值用 None。转写原文不进这里（它已作为 answer 存在）。
+    speech: dict = field(default_factory=lambda: dict(asrmod.SPEECH_EMPTY))
 
     def match_note(self) -> str:
         """
@@ -180,6 +196,10 @@ class AttemptRecord:
             # 调 REPEAT_SIM 的唯一依据（光看 repeat 布尔值调不了阈值）。
             "repeat": self.repeat,
             "repeat_sim": self.repeat_sim,
+            # ---- 语音作答的表达指标（加法；键恒在）----
+            # 一组纯数字：净时长 / 语速 / 长停顿 / 填充词。没有语音时
+            # used=false、其余为 None —— 「没用语音」与「语速是 0」必须能分开。
+            "speech": self.speech,
             "band_disagree": bool(self.judge_ok and self.judge_band
                                   and self.judge_band != self.reranker_band),
         }
@@ -232,6 +252,13 @@ class RoundRecord:
     #    repr=False 且**绝不进 to_raw()** —— raw 由 /finish 与 /result 返回，
     #    前端可见。要文本就别要安全，二者只能选一。
     rag_refs: list[dict] = field(default_factory=list, repr=False)
+    # ⚠️ 知识库检索到的**片段原文**（来自 `ai-reference` 那 6 份 md，不是题库）。
+    #    与 rag_refs 同一条纪律：repr=False 且**绝不进 to_raw()**。
+    #    这一份比 rag_refs 更需要小心：它按**本轮检索词**检索（赛题 6.2b），
+    #    默认检索词是**考生刚说的那段话**；另有一档（`A11_RAG_KB_QUERY_SRC=miss`，
+    #    保留的实验档）用**他没答到的得分点**，那一档命中的极可能就是本题标准答案
+    #    所在的章节 ⇒ **无论哪一档**都不许露给前端。
+    kb_refs: list[dict] = field(default_factory=list, repr=False)
     # 可序列化的白名单元信息，四个键**结构上不可能夹带文本**。
     #
     # 默认值就带齐四个键、而不是空 dict：RAG **默认是关的**，若关掉时给 {}，
@@ -241,6 +268,17 @@ class RoundRecord:
     rag_meta: dict = field(default_factory=lambda: {
         "used": False, "hit_ids": [], "layers": [], "distances": [],
     })
+    # 知识库那一路的元信息。**键名与 rag_meta 刻意不同**：知识库没有「层级」，
+    # 硬套 layers/distances 会误导读的人；改成 sources/scores，形状一一对应，
+    # 3 号那边的解析逻辑可以照搬。
+    kb_meta: dict = field(default_factory=lambda: {
+        "used": False, "hit_ids": [], "sources": [], "scores": [],
+    })
+    # ---- 语音作答的表达指标（加法，有默认值）----
+    # 轮次级：取**最后一次带语音的回答**的那一份（追问后再说话，以最新为准）。
+    # 与 exchanges[].speech 同一份数据 —— 这里是为了让「按轮看表达」不用先遍历
+    # exchanges。形状与 SPEECH_EMPTY 逐键相同，文字作答时 used=false。
+    speech: dict = field(default_factory=lambda: dict(asrmod.SPEECH_EMPTY))
     # 评分结果（finish 时填）
     five_dim: Optional[dict] = None
     comment: str = ""
@@ -291,6 +329,156 @@ class RoundRecord:
         traj = " → ".join(f"{a.reranker_score:g}" for a in self.attempts)
         return (f"各次回答覆盖率（满分 100）：{traj}。"
                 "注意看**首答到追问之后的变化** —— 那才是「应变能力」的主要依据。")
+
+    # ---------- 表达：客观测量（赛题 3b）----------
+    # 这一段是「**不用 ASR 也能算**」的那两条（用时 vs 建议用时、答题长度）+
+    # 由 ASR 指标拼出的那一段。设计出处：多模态接入方案.md §5.1 / §5.2。
+    @property
+    def used_sec(self) -> Optional[float]:
+        """
+        整轮用时（秒）：出题 → 本轮收尾。没收尾（还在追问中）时为 None。
+
+        ⚠️ **它不是「考生说了多久」**。这条链路是同步 SSE，这段时间里混着
+        「reranker 打分 + 判档 + 生成面试官回复」的服务端耗时（实测数秒级）。
+        拿它冒充说话时长会得出一个离谱的语速 —— 语速只能用 ASR 的
+        `duration_ms`（见 speech）。这里就按「整轮耗时」如实用。
+        """
+        if self.closed_at is None:
+            return None
+        return round(self.closed_at - self.asked_at, 1)
+
+    @property
+    def est_sec(self) -> int:
+        """题库给的「建议用时(分)」换算成秒。0 = 题库没给这一题（不是 0 秒的基准）。"""
+        return int(self.est_minutes or 0) * 60
+
+    @property
+    def over_ratio(self) -> Optional[float]:
+        """
+        用时 ÷ 建议用时。>1 = 超时，<1 = 提前答完。
+        None = 数据不足（没建议用时，或本轮还没收尾）—— **不是 0**。
+        """
+        u, e = self.used_sec, self.est_sec
+        if u is None or e <= 0:
+            return None
+        return round(u / e, 2)
+
+    def pace_note(self) -> str:
+        """
+        给评分模型的「表达客观测量」摘要 —— 与 `reranker_note()` 同一个位置、
+        同一套写法（一句事实 + 几条使用规则），只是量的东西不同。
+
+        为什么要有它：五维里的「沟通表达 / 应变能力」本来只能靠模型读文本印象，
+        现在给它一组**测出来的数**（用时 / 语速 / 停顿 / 填充词），这一维从
+        「凭印象」变成「有数的判断」。**评分模型不改、五维结构不改、权重不改。**
+
+        ⚠️ 三条使用规则与 reranker_note 那三条同构（划边界 / 承认它会错 /
+           冲突以内容为准），而且这里还多一层必要：**这些数字天生偏向"鼓励快"**。
+           不写死「答得快不等于答得好」，一个求稳的模型很容易把「30 秒答完」
+           读成「干脆利落」。所以规则写在返回值里，跟着数据一起进 prompt。
+        """
+        lines: list[str] = []
+        u, e = self.used_sec, self.est_sec
+        if u is None:
+            lines.append("本轮尚未收尾，没有用时数据。")
+        elif e > 0:
+            lines.append(
+                f"整轮用时 {u:.0f} 秒（出题到本轮收尾），本题库建议用时 "
+                f"{e / 60:.0f} 分钟（={e} 秒），实际约为建议的 {u / e * 100:.0f}%。")
+        else:
+            lines.append(
+                f"整轮用时 {u:.0f} 秒（出题到本轮收尾）；"
+                "本题库没给建议用时，**没有基准可比**，不要自行假设快慢。")
+
+        sp = self.speech or asrmod.SPEECH_EMPTY
+        if sp.get("used"):
+            bits = []
+            if sp.get("duration_ms") is not None:
+                bits.append(f"净说话 {sp['duration_ms'] / 1000:.1f} 秒")
+            if sp.get("chars_per_min") is not None:
+                bits.append(f"语速 {sp['chars_per_min']:.0f} 字/分")
+            if sp.get("pauses") is not None:
+                bits.append(f"长停顿（>{asrmod.PAUSE_MIN_MS / 1000:g} 秒）"
+                            f"{sp['pauses']} 次")
+            if sp.get("filler_rate") is not None:
+                bits.append(f"填充词（嗯/那个/然后…）{sp['fillers']} 个、"
+                            f"占字数 {sp['filler_rate'] * 100:.1f}%")
+            # 韵律（2026-09-25 加法）。⚠️ **只报相对量，不报 `loudness` 的绝对值**：
+            #    RMS 的绝对水平由麦克风增益 / 说话距离 / 房间混响决定 —— 同一个人
+            #    换台机器能差几倍。把它当数喂进 prompt，等于递过去一个「看起来像
+            #    测量值、其实跨设备不可比」的数，模型一定会拿它推音量大小。
+            #    绝对量留在 `/asr` 里（诊断与前端展示用），不进评分 prompt。
+            if sp.get("loudness_cv") is not None:
+                bits.append(f"段间音量起伏（变异系数）{sp['loudness_cv']:.2f}")
+            if sp.get("tail_ratio") is not None:
+                bits.append(f"收尾音量/全段均值 {sp['tail_ratio']:.2f}")
+            lines.append("本次为**语音作答**（转写模型 %s）：%s。"
+                         % (sp.get("asr_model") or "ASR", "，".join(bits) or "（无可比值）"))
+
+            # 情感分布与融合档位：**单起一段**，因为这里有两个必须现场说清的口径
+            # （模型是什么料训的、档位是谁算的），混在上一行里说不下。
+            emo = sp.get("emotion_dist") or {}
+            if emo:
+                try:
+                    ranked = sorted(emo.items(), key=lambda kv: -float(kv[1]))
+                except (TypeError, ValueError):
+                    ranked = list(emo.items())
+                lines.append(
+                    "情感模型（SER）给出的分布：%s。⚠️ 这是**语音情感**，"
+                    "**不是自信度**；该模型在英语、表演式情感语料上训练，"
+                    "**在中文上没有标注数据可验证**，且实测对平淡的中文语音也"
+                    "给出高置信（3 段合成中文语音全部判 happy、置信 0.71~0.95）"
+                    "—— 即它在域外输入上**过度自信**。所以它在这里**只作原始观察**，"
+                    "**不参与**下面那个档位的计算；**禁止**据此判断考生"
+                    "「当时是什么心情」。"
+                    % "，".join(f"{k} {float(v) * 100:.0f}%" for k, v in ranked))
+            band = sp.get("confidence")
+            if band:
+                # ⚠️ 只喂韵律两指标 —— 与 `derive_speech` 里那次调用**必须同一套参数**，
+                #    否则依据句会与实际算出的档位对不上（那是最难查的一类错）。
+                _b, basis = asrmod.confidence_band(sp.get("loudness_cv"),
+                                                   sp.get("tail_ratio"))
+                lines.append(
+                    "「语气自信度」融合档位：**%s**（依据：%s）。"
+                    "⚠️ 这个档位是**用上面那些数按写死的规则算出来的**，"
+                    "既不是模型输出，也不是心理测量意义上的自信度量表；"
+                    "**只由音量是否平稳、收尾是否收得住这两件事决定**。"
+                    "（音量的**绝对**大小、语速、情感模型的标签，都不参与 —— "
+                    "前两者跨设备/跨习惯不可比，后者在中文上不可信。）"
+                    % (band, "；".join(basis) or "无可用信号"))
+        else:
+            lines.append("本次为**文字作答**，没有语速/停顿/填充词数据"
+                         "（语音未启用，或前端没走 /asr）—— 不要凭空猜这些数。")
+
+        # 使用规则。前三条恒在（划边界 / 快≠好 / 冲突以内容为准），
+        # 第四条随**数据的有无**而变 —— 因为「有多弱」这件事本身取决于有没有语音。
+        rules = [
+            "使用规则：",
+            "- 它**只**与「沟通表达」「应变能力」有关，与第一维、逻辑思维、"
+            "岗位匹配度**无关**，不要拿它推那三维。",
+            "- **答得快不等于答得好，答得慢不等于答得差**：语速快可能只是说得浅，"
+            "语速慢可能是在讲细节；题目难度与个人说话习惯都会影响这些数字。"
+            "**禁止**因为用时短就给高分、或因为用时长/停顿多就判低分。",
+            "- 只有当它与你**从问答内容**得出的判断方向一致时，才可以引用它当旁证；"
+            "若两者冲突，**以内容为准**，并在 errors 里写明原因。",
+        ]
+        if not sp.get("used"):
+            rules.append(
+                "- 本次没有语速/停顿数据，整轮用时这一条**更弱**：那段时间里还混着"
+                "服务端打分与生成回复的耗时，不要把它当成考生思考或说话的时长。")
+        # 第五条同样是**条件式**（只有语音作答且算出了档位才出现）——
+        # ⚠️ 前三条共用规则一个字都不能改：它们是 16 场已归档真 LLM 对照的输入，
+        #    而那些对照全是文字作答。`sp.get("used")` 为假时这一条不会加，
+        #    所以文字作答的 pace_note **逐字节不变**（这条约束有基线断言守着）。
+        if sp.get("used") and sp.get("confidence"):
+            rules.append(
+                "- 「语气自信度」那个档位**天生比别的数字更容易被误用**：它已经是一个"
+                "**结论**，不是一个测量值。**禁止**因为它是「偏高」就给高分、"
+                "因为「偏低」就扣分 —— 它与「沟通表达」有关，**与第一维、逻辑思维、"
+                "岗位匹配度无关**。只在它与内容判断方向一致时当旁证，冲突以内容为准。")
+        rules.append("（表达分析只做语音与文本，**不做**摄像头与肢体语言。）")
+        lines.append("\n".join(rules))
+        return "\n".join(lines)
 
     @property
     def reranker_5(self) -> Optional[float]:
@@ -355,6 +543,15 @@ class RoundRecord:
             "core_keywords": self.keywords,
             "asked_at": round(self.asked_at, 3),
             "closed_at": round(self.closed_at, 3) if self.closed_at else None,
+            # ---- 表达：客观测量（加法）----
+            # 用时那三条是**派生**的（asked_at/closed_at/est_minutes 本来就在上面
+            # 这几行里），在这里给出来只是免得 3 号 和前端各算一遍、还算岔了。
+            # ⚠️ used_sec 是「整轮耗时」，不是「说话时长」（混着服务端耗时）——
+            #    语速/停顿只在 speech 里，且只可能来自 ASR。
+            "used_sec": self.used_sec,
+            "est_sec": self.est_sec,
+            "over_ratio": self.over_ratio,
+            "speech": self.speech,
             "reranker_score": self.last_score,
             "reranker_ok": self.last_ok,
             # ---- 一致性校验（加法，不改任何评分）----
@@ -367,6 +564,10 @@ class RoundRecord:
             #    而 raw 会返回给前端。这里只出白名单四键的 rag_meta。
             "deepen_directions": self.deepen,
             "rag": self.rag_meta,
+            # ⚠️ self.kb_refs 同样**不在这里**（理由同上，而且更硬：
+            #    它按**本轮检索词**检索，默认就是**他没答到的得分点** ——
+            #    命中的极可能就是**本题答案所在的那一章节**）。
+            "rag_kb": self.kb_meta,
             "pick_level": self.pick_level,
             "kp_overlap": self.kp_overlap,
             # 这一阶段允许的难度集合 + 为什么是它。diffs_planned 是**候选范围**，
@@ -649,14 +850,39 @@ def hint_for(action: str, record: RoundRecord) -> Optional[str]:
 # ============================================================
 class InterviewSession:
     def __init__(self, job: str, intro: str = "",
-                 llm=None, scorer=None):
+                 llm=None, scorer=None, persona_style=None):
         if job not in config.JOBS:
             raise UnknownJob(f"未知岗位：{job!r}；可选：{config.JOBS}")
         self.session_id = uuid.uuid4().hex[:8]
         self.job = job
+        # ⚠️ 这里是**原文**（未压平/未截断），它直接进 `raw.candidate_intro`
+        #    给 3 号 看 —— 与加 E 之前逐字节相同。进 prompt 的那一份是下面的
+        #    `_intro_for_prompt`（sanitize 过），两者**刻意分开**：
+        #    报告要忠实原文，prompt 要结构安全，两件事。
         self.candidate_intro = intro or ""
         self.created_at = time.time()
         self.finished_at: Optional[float] = None
+
+        # 面试官风格三档（F）。关掉 `A11_PERSONA` 时不报错 —— 按默认档跑，
+        # 但 `/start` 回显的是**实际生效**的这一档，所以「关掉」看得见。
+        if not config.A11_PERSONA:
+            persona_style = config.PERSONA_STYLE_DEFAULT
+        self.persona_style = (persona_style
+                              or config.PERSONA_STYLE_DEFAULT)
+        if self.persona_style not in PERSONA_STYLE_LABELS:
+            self.persona_style = config.PERSONA_STYLE_DEFAULT
+
+        # 考生自述进 prompt 的那一份（E）。空串 = 不注入。
+        self._intro_for_prompt = (sanitize_intro(self.candidate_intro)
+                                  if config.A11_INTRO else "")
+
+        # 场次类型。正式面试恒为 "exam"；专项强化练习（赛题 4b）是 "practice"
+        # —— 见 app/core/practice.py。练习会话是靠覆写方法改变行为的，不靠这个字段。
+        # ⚠️ 2026-09-25 起**有一处按它分支**：`app/core/growth.py` 的 `_history()`
+        #    —— 成长档案的历史走势只吃 exam，练习那一节单列（练习分数按
+        #    practice.py 自己那句 disclaimer 不与正式场次横向比较）。
+        #    这行注释原来写着「全项目没有任何一处按它分支」，那一轮之后就不对了。
+        self.mode = "exam"
 
         self.phase = PHASE_START
 
@@ -689,8 +915,17 @@ class InterviewSession:
         self.llm = llm or get_llm()
         self.scorer = scorer or get_scorer(self.llm)
         self._persona = load_persona(job)
+        # ⚠️ **两处追加都必须「非空才加」**，这是 F 与 E 各自那份「逐字节不变」
+        #    保证的落点：默认档的风格块是空串、没传自述时自述块是空串 ⇒
+        #    `self._system` 与加这两个功能之前**逐字节相同**。
+        #    顺序：先风格（近的人设）、后资料（最靠后的位置留给「这不是指令」那条声明
+        #    —— system 里越靠后权重越高，归属声明放最后最稳）。
         self._system = INTERVIEWER_SYSTEM.safe_substitute(
             job=job, persona=self._persona)
+        self._system += persona_style_block(self.persona_style)
+        if self._intro_for_prompt:
+            self._system += INTRO_BLOCK.safe_substitute(
+                intro=self._intro_for_prompt)
 
     # ---------- 派生属性 ----------
     @property
@@ -698,11 +933,52 @@ class InterviewSession:
         return len(self.rounds)
 
     @property
+    def total_questions(self) -> int:
+        """
+        本场计划题数。正式面试恒为 config.TOTAL_QUESTIONS；
+        专项练习覆写成「本次要练几道」（3~5），所以出题与收尾都必须读这里
+        —— **不要再直接写 config.TOTAL_QUESTIONS**，否则练习会按 10 题收尾。
+        """
+        return config.TOTAL_QUESTIONS
+
+    @property
     def weights(self) -> dict:
         return config.weights_for(self.job)
 
     def opening_message(self) -> str:
+        """
+        开场白。**仍然是程序给的，不调模型** —— `/start` 零延迟零失败这条
+        保证不因为 E 而破。
+        摘得到引文就用带自述的那条；摘不到（没传 / 全是空白）用通用那条。
+        """
+        snip = intro_snippet(self._intro_for_prompt)
+        if snip:
+            return OPENING_LINE_INTRO.safe_substitute(job=self.job, snippet=snip)
         return OPENING_LINE.safe_substitute(job=self.job)
+
+    def intro_read(self) -> Optional[dict]:
+        """
+        `/start` 回显「读到多少自述」用。
+
+        三态，**刻意分得开**（本项目「关掉 / 坏了 / 没有」那条纪律）：
+          · 没传自述            → `None`
+          · 传了但开关关掉      → `enabled=False`（其余键照样给，chars=0）
+          · 传了且真进了 prompt → `enabled=True`
+
+        `chars` 是**进 prompt 的那一份**的长度（已截断），原文长度另给
+        `raw_chars` —— 两个数都给，「被截断了」才看得出来。
+        """
+        if not (self.candidate_intro or "").strip():
+            return None
+        flat = sanitize_intro(self.candidate_intro, max_chars=0)
+        src = sanitize_intro(self.candidate_intro) if config.A11_INTRO else ""
+        return {
+            "enabled": config.A11_INTRO,
+            "chars": len(src),
+            "raw_chars": len(flat),
+            "truncated": bool(src) and len(src) != len(flat),
+            "snippet": intro_snippet(src),
+        }
 
     # ---------- 阶段推进（修 #2）----------
     def _trajectory(self) -> list[str]:
@@ -790,25 +1066,18 @@ class InterviewSession:
                         self.session_id, self.current_round.question_id)
             return self._question_payload(self.current_round)
 
-        if self.questions_asked >= config.TOTAL_QUESTIONS:
+        if self.questions_asked >= self.total_questions:
             self.phase = PHASE_NEXT
-            logger.info("sid=%s 计划内 %d 题已问完", self.session_id, config.TOTAL_QUESTIONS)
+            logger.info("sid=%s 计划内 %d 题已问完", self.session_id, self.total_questions)
             return self._finished_payload("plan_complete",
-                                         f"题目已全部问完（{config.TOTAL_QUESTIONS} 题），请调用 /finish 结束面试。")
+                                         f"题目已全部问完（{self.total_questions} 题），请调用 /finish 结束面试。")
 
         # 顺序是有意义的：先读阶段 → 再抽题 → 把阶段名冻结进记录 → 最后才推进
         stage_name, _planned, difficulties, adapt_note = self._current_stage()
         stage_index = min(self.stage_idx, len(config.STAGE_RULES) - 1)
 
-        # 出题避重：把两个档位的过滤器注入题库。题库层**不知道图谱的存在** ——
-        # 它只收到两个接受单题的谓词（见 question_bank.sample 的说明）。
-        accept = accept_relaxed = None
-        if self.kg is not None:
-            accept, accept_relaxed = self._overlap_filters()
-
         trace: dict = {}
-        raw = qb.sample(self.job, difficulties, self.asked_pids,
-                        accept=accept, accept_relaxed=accept_relaxed, trace=trace)
+        raw = self._pick_question(difficulties, trace)
         if raw is None:
             self.phase = PHASE_NEXT
             logger.warning("sid=%s 题库已抽空", self.session_id)
@@ -858,7 +1127,8 @@ class InterviewSession:
         # 检索与注入是两件事 —— 这个区分是 close 轮禁令能成立的前提。
         if self.rag is not None:
             refs = self.rag.search(rec.question, self.job, rec.difficulty,
-                                   exclude_id=qid)
+                                   exclude_id=qid,
+                                   head_only=config.RAG_HEAD_ONLY)
             rec.rag_refs = refs
             rec.rag_meta = {
                 "used": bool(refs),
@@ -879,6 +1149,26 @@ class InterviewSession:
                     len(km), len(deepen), rec.rag_meta.get("used"),
                     rec.diffs_planned, rec.adapt_note)
         return self._question_payload(rec)
+
+    # ---------- 抽题（唯一的「选哪道题」入口，练习模式覆写它） ----------
+    def _pick_question(self, difficulties: set, trace: dict) -> Optional[dict]:
+        """
+        抽下一题。**默认实现 = 原来的 qb.sample 调用，逐字节未改**。
+
+        为什么抽成一个方法：专项强化练习（`practice.PracticeSession`）要换的
+        只有「选哪道题」这一件事 —— 追问、判档、评分、复读守卫、覆盖度统计
+        全都该原样复用。把它抽出来之后，练习侧只需覆写这一个方法，
+        `ask_next_question` 的其余部分（冻结阶段名、cov.add、RAG 检索、
+        KG 深挖方向、幂等 return）一个字节都不用抄第二遍。
+
+        出题避重：把两个档位的过滤器注入题库。题库层**不知道图谱的存在** ——
+        它只收到两个接受单题的谓词（见 question_bank.sample 的说明）。
+        """
+        accept = accept_relaxed = None
+        if self.kg is not None:
+            accept, accept_relaxed = self._overlap_filters()
+        return qb.sample(self.job, difficulties, self.asked_pids,
+                         accept=accept, accept_relaxed=accept_relaxed, trace=trace)
 
     # ---------- 知识图谱辅助（KG 关掉/失败时全部不参与） ----------
     def _kp_map_of(self, qid: str, raw: dict) -> dict:
@@ -927,7 +1217,7 @@ class InterviewSession:
             "stage": rec.stage,
             "stage_index": rec.stage_index,
             "q_index": rec.round_no,
-            "total": config.TOTAL_QUESTIONS,
+            "total": self.total_questions,
             "difficulty": rec.difficulty,
             "question_id": rec.question_id,
             "question": rec.question,
@@ -946,7 +1236,7 @@ class InterviewSession:
             "reason": reason,
             "message": message,
             "q_index": self.questions_asked,
-            "total": config.TOTAL_QUESTIONS,
+            "total": self.total_questions,
             "phase": self.phase,
         }
 
@@ -1001,11 +1291,19 @@ class InterviewSession:
                 j_band, j_why, j_ok = None, "", False
         return sc, j_band, j_why, j_ok
 
-    def submit_answer(self, answer: str) -> Generator[dict, None, None]:
+    def submit_answer(self, answer: str,
+                      speech: Optional[dict] = None) -> Generator[dict, None, None]:
         """
         yield {"type":"token","text":...}。
         结束后的状态推进在 finally 里做 —— 哪怕 LLM 中途失败、或客户端断开，
         本轮也一定会收尾，不会把会话卡在 awaiting_answer。
+
+        `speech`（加法，可选）：考生用语音作答时，前端把 `/asr` 返回的那几个
+        **数字**（`duration_ms` / `segments` / `asr_model` / `pauses` /
+        `pause_total_ms`）原样带回来。
+        不传 = 文字作答，行为与加这个参数之前**逐字节相同**。
+        它只派生表达指标（语速/停顿/填充词），**不参与**判档、评分、复读守卫
+        —— 语音与手打的唯一区别就是多了这几个数，评分链路完全共用。
         """
         answer = (answer or "").strip()
         if self.phase == PHASE_DONE:
@@ -1017,6 +1315,35 @@ class InterviewSession:
 
         rec = self.current_round
         attempt_no = len(rec.attempts) + 1
+
+        # 0) 语音作答的表达指标（需要的话）。转写文本就是 answer 本身 ——
+        #    前端不再单独传文本，免得出现「message 与转写不一致」这种没法查的岔子。
+        sp = dict(asrmod.SPEECH_EMPTY)
+        if speech:
+            try:
+                sp = asrmod.derive_speech(
+                    answer,
+                    duration_ms=speech.get("duration_ms"),
+                    segments=speech.get("segments"),
+                    asr_model=speech.get("asr_model") or "",
+                    audio_ms=speech.get("audio_ms"),
+                    # `/asr` 在音频上量好的停顿（原样带回来的），优先采信
+                    pauses=speech.get("pauses"),
+                    pause_total_ms=speech.get("pause_total_ms"),
+                    # 韵律 + 情感（2026-09-25）：同样是 `/asr` 在音频上量好的，
+                    # **原样采信**。`confidence` 不在这里传 —— 它由 `derive_speech`
+                    # 内部用这几个数融合出来（见 `confidence_band`）。
+                    loudness=speech.get("loudness"),
+                    loudness_cv=speech.get("loudness_cv"),
+                    tail_ratio=speech.get("tail_ratio"),
+                    emotion=speech.get("emotion"),
+                    emotion_score=speech.get("emotion_score"),
+                    emotion_dist=speech.get("emotion_dist"),
+                )
+            except Exception:
+                # 派生失败绝不能挡住作答：日志留痕，这一轮按文字作答记。
+                logger.exception("sid=%s 语音指标派生失败，本轮按文字作答记录",
+                                 self.session_id)
 
         # 1) 客观命中分 + LLM 判档 —— **并行**发起
         sc, judge_band, judge_why, judge_ok = self._score_and_judge(answer, rec)
@@ -1059,7 +1386,7 @@ class InterviewSession:
         #    压过"换题"：一个在复述旧答案的人，不是"没学过"。
         if band == BAND_SWAP and self._can_swap():
             yield from self._swap_round(rec, answer, attempt_no, sc,
-                                        r_band, judge_band, judge_why, judge_ok)
+                                        r_band, judge_band, judge_why, judge_ok, sp)
             return
 
         action = decide_action(band, rec, repeat)
@@ -1075,8 +1402,13 @@ class InterviewSession:
             judge_ok=judge_ok, judge_why=judge_why, fuse_rule=fuse_rule,
             band=band,
             repeat=repeat, repeat_sim=repeat_sim,
+            speech=sp,
         )
         rec.attempts.append(attempt)
+        # 轮次级 speech 跟着**最后一次带语音的回答**走（后面再补一次文字追问，
+        # 不会把已经测到的语速擦掉）。
+        if sp.get("used"):
+            rec.speech = dict(sp)
 
         # 3) 组装本轮 system（本轮指令放 system，不放进消息列表 —— 修 #1：
         #    原来把考生原话既 append 进历史又塞进 prompt，同一句出现两次）
@@ -1095,15 +1427,136 @@ class InterviewSession:
         # 而收尾轮的提问倾向是上下文里概率最高的续写；给 close 轮递"问什么"
         # 的素材，是在把一个已知 0/10 的机制往 10/10 推）。
         # degrade 一并排除：那个动作要的是**收拢**，灌"可拓展方向"与它反向。
+        # 知识库材料的**末尾旁白**（只在本轮 L1/L2 且检索到时才有值）。
+        # 默认空串 = 「一条都不加」——这是 `A11_RAG=0` 那条基线能成立的前提：
+        # 借不到编码器时这一轮的消息列表必须与改动前**逐字节相同**。
+        kb_narration = ""
+        # ⚠️ `rag_kb_block` 必须在这里给默认值，不能只在 `if kb_refs:` 里赋值 ——
+        #    `kb_refs` 为空（`A11_RAG=0` 借不到编码器、或回答太短没检索）时
+        #    下面 `ROUND_CONTEXT.safe_substitute` 会直接 UnboundLocalError，
+        #    整条 /chat 500。（加这个默认值时冒烟 22 项红，就是这个原因。）
+        rag_kb_block = RAG_KB_BLOCK_EMPTY
         if action in ("L1", "L2"):
             deepen_block = (DEEPEN_BLOCK.safe_substitute(
                 directions="、".join(d["title"] for d in rec.deepen))
                 if rec.deepen else DEEPEN_BLOCK_EMPTY)
-            rag_block = (RAG_BLOCK.safe_substitute(
+            rag_block = (RAG_BLOCK_ACTIVE.safe_substitute(
                 refs=ragmod.format_block(rec.rag_refs))
                 if rec.rag_refs else RAG_BLOCK_EMPTY)
+            # ---- 知识库背景参考（赛题 6.1b + 6.2b）----
+            # 这是**本场的第二次检索，与上面那次是两个来源、两个时机**，别合并：
+            #   · 上面那次：**出题时**按**题面**检索**题库**派生索引（rag.py），
+            #     结果在 rec.rag_refs —— 「这道题还可能怎么问」；
+            #   · 这一次：**作答后**按**本轮检索词**检索**真知识库**（kb.py，
+            #     ai-reference 那 6 份 md）—— 「这个点，材料里是怎么说的」。
+            #     ⚠️ 检索词**默认就是考生刚说的那段话**（= 赛题 6.2)b 字面）；另有保留的
+            #        实验档设 `A11_RAG_KB_QUERY_SRC=miss` 改用**他没答到的得分点**（见下）。
+            # 为什么非等在这儿：出题那一刻考生还没开口，「根据学生回答的关键词
+            # 进行智能追问」（赛题 6.2b）在当时**没有 key 可循**。
+            #
+            # ⚠️ 走 `lookup_interview()`（只借不载、绝不抛异常）。**借不到编码器就是空**——
+            #    实现见 kb.py 的 `_load_borrow_only()`，它刻意不置 `_ready_ev` 闩：
+            #    否则面试期置了闩又没借到编码器，交卷后 4a 就永远加载不上了
+            #    （静默少东西、连错误都不报）。
+            #
+            # ---- 检索词从哪来（2026-09-25 晚加档、当晚深夜改回默认）----
+            # **默认 = 考生刚说的那段话**（原样透传 `answer`，= 赛题 6.2)b 的字面口径）。
+            # 另有一档**保留的实验档** `A11_RAG_KB_QUERY_SRC=miss`：改用**他没答到的得分点**
+            # （`sc["base_miss"]` 在前、`adv_miss` 在后）。那一档的实验动机是「拿考生回答
+            # 检索捞回来的是同义反复（他刚说过的话的另一份说法），换成漏点后材料本身就是
+            # 缺口」—— ⚠️ **实测两档都 0 改善，且事后查明面试官每轮本来就拿着本题全部
+            # 得分点（`ROUND_CONTEXT`），缺口信息对它是冗余投喂** ⇒ 按赛题字面选了默认档。
+            # **选档理由与那轮对照的数字只写在 `config.RAG_KB_QUERY_SRC` 那段**，这里不复制。
+            # ⚠️ 时机（只对 `miss` 档有意义）：漏点在 `session.py:1223` 的 `score_answer()`
+            #    里就算好了（比这一行早一百多行），而且是**本轮**的，不是上一轮的。
+            #    默认档根本不读它，所以「拿错轮次的漏点」这类风险只在切到 `miss` 时存在。
+            # ⚠️ 拼装规则在 `kb.interview_query()` 里（**纯函数**）—— 离线重放与预检脚本
+            #    共用同一个，别在这边另写一份，否则「重放对上了」只证明复制品一致。
+            # ⚠️ `kb_src` 只进下面那行**日志**（是元数据）：`rag_kb` 的四键白名单**不许加键**
+            #    （冒烟里有断言），而且脱敏档下 `raw` 只有占位键。
+            kb_query, kb_src = kbmod.interview_query(
+                answer, sc.get("base_miss"), sc.get("adv_miss"))
+            kb_refs = kbmod.lookup_interview(kb_query, self.job)
+            rec.kb_refs = kb_refs
+            rec.kb_meta = {
+                "used": bool(kb_refs),
+                "hit_ids": [r.get("kb_id") for r in kb_refs],
+                "sources": [r.get("来源仓库") for r in kb_refs],
+                "scores": [r.get("score") for r in kb_refs],
+            }
+            # ---- 材料**放哪**：system 里的块，还是末尾 user 旁白（2026-09-25）----
+            # `A11_RAG_KB_ASIDE=1`（默认）⇒ 材料进旁白、system 里那块留**空串**；
+            # =0 ⇒ 留 system = 改动前的位置。**两种情况下材料都只出现一次**。
+            #
+            # 为什么试末尾：本项目实测**末尾 user 轮是最强的杠杆**（收尾轮 0/10 vs
+            # system 全套改法的 4/10~10/10）。⚠️ 但那条证明的是「末尾能**放大指令**」，
+            # 不是「内容放末尾也有效」—— 所以这是一次**机制实验**：
+            # 先跑 `_tmp_rag_eff_mech.py` 量照念率与误归属率，不合格就设回 "0"。
+            #
+            # 预算：旁白里材料自己的硬顶是 `RAG_KB_ASIDE_MAX_CHARS`（300），
+            # 比 system 那块（600）小；而且旁白**只带最相关的那一条**（system 带 2 条）。
+            #
+            # ⚠️ 为什么 `max_chars` 不能再往下压（实测，2026-09-25）：`format_block` 是
+            #    **整条丢**（`total + len(line) > limit: break`，见 kb.py:519），
+            #    而一条 line = 前缀「1. 〔仓库、章节标题〕」+ 片段正文，其中**章节标题
+            #    可能是一整段**（实测最长前缀 443 字），片段正文自己还含换行。
+            #    真实索引 20,396 条里，单行长度的分布是「200~240 占 61%」，
+            #    但最长的一条 **643 字**。所以预算压到 240 时，那几条会**整条丢**、
+            #    `material` 变成空串 —— 材料没了而 `raw.rag_kb.hit_ids` 照旧记 2 条，
+            #    **没有任何断言会红**。300 能让 98.6% 的记录装下第一条。
+            material = ""
+            kb_injected = 0
+            kb_where = "none"
+            if kb_refs:
+                if config.RAG_KB_ASIDE:
+                    material = kbmod.format_block(
+                        kb_refs[:1], max_chars=config.RAG_KB_ASIDE_MAX_CHARS)
+                    if material:
+                        kb_narration = KB_ASIDE.safe_substitute(kb_aside=material)
+                        kb_where = "aside"
+                        rag_kb_block = RAG_KB_BLOCK_EMPTY
+                if not material:
+                    # 旁白放不下（那 ~1.4%）⇒ **回退到 system**，而不是把材料丢掉。
+                    # 位置是这一轮要实验的变量，**少一段材料不是** —— 丢掉的话新臂在
+                    # 这些轮里凭空少一份材料，两臂的差就掺进了「有没有材料」这个无关因素。
+                    material = kbmod.format_block(kb_refs)
+                    kb_where = "system(回退)" if config.RAG_KB_ASIDE else "system"
+                    rag_kb_block = (RAG_KB_BLOCK_ACTIVE.safe_substitute(kb_refs=material)
+                                    if material else RAG_KB_BLOCK_EMPTY)
+                # 实际进 prompt 的**条数**（≤ len(kb_refs)）：`format_block` 是整条丢，
+                # 而 `kb_meta.hit_ids` 记的是**检索到**的条数 —— 两个口径不同，
+                # 所以这一行把「注入几条」也打出来，供日后调字数时对照。
+                # ⚠️ 只能数「行首是 `数字. `」的那些 —— 片段正文自己带换行，
+                #    按 `split("\n")` 数会把一条算成三条（2026-09-25 修）。
+                kb_injected = sum(1 for ln in material.split("\n")
+                                  if re.match(r"^\d+\. ", ln))
+                # 命中才打（每场最多 10 题 × 2 轮，量可控）。
+                # ⚠️ 这一行的用处是**不依赖 `raw` 的旁证**：脱敏档下 `raw` 只有占位键，
+                #    而 `A11_RAG=0`（借不到编码器）时这条通路也是「什么都没发生」——
+                #    两者从 `raw` 上分不开，服务日志能分开。
+                # ⚠️ 2026-09-25 改口径：`片段=` 从 `len(rag_kb_block)`（旁白档下恒为 0！）
+                #    改成**材料本身**的长度。行尾的 `注入=` 是**追加**的，既有
+                #    「知识库背景参考 n=…」的正则不做锚定 ⇒ 不会被打断。
+                # ⚠️ 2026-09-25 晚再加两个**行尾**字段（同一理由：追加在尾部不会打断既有正则）：
+                #      `词源=`  —— `answer`（**默认**，原样透传考生回答）/ `miss`（保留的
+                #                 实验档，用漏点当检索词）/ `answer_fallback`（**只可能在
+                #                 `miss` 档出现**：漏点一条都没有 = 他全答到了，退回回答）。
+                #                 切到 `miss` 时，回退率是「那一档有没有被稀释」的**分母**。
+                #      `漏点=`  —— base+adv 的**条数**与检索词**字数**，看清 adv 有没有占满
+                #                 （L1 轮的 `adv_miss` 常常 = 全部进阶点，见 kb.query_from_misses）。
+                # ⚠️⚠️ **绝不许为排障把 `kb_query` 打进来** —— 那是得分点**原文**，
+                #    会把答案写进 `logs\`。只打元数据（条数/字数）。要查原文请走离线重放。
+                logger.info("sid=%s round=%d attempt=%d 知识库背景参考 n=%d 来源=%s "
+                            "片段=%d字 注入=%d 位置=%s 词源=%s 漏点=%d+%d条/%d字",
+                            self.session_id, rec.round_no, attempt_no, len(kb_refs),
+                            "、".join(sorted({(r.get("来源仓库") or "?")
+                                              for r in kb_refs})),
+                            len(material), kb_injected, kb_where, kb_src,
+                            len(sc.get("base_miss") or []), len(sc.get("adv_miss") or []),
+                            len(kb_query))
         else:
             deepen_block, rag_block = DEEPEN_BLOCK_EMPTY, RAG_BLOCK_EMPTY
+            rag_kb_block = RAG_KB_BLOCK_EMPTY
 
         system = self._system + ROUND_CONTEXT.safe_substitute(
             question=rec.question,
@@ -1113,6 +1566,7 @@ class InterviewSession:
             hint_block=hint_block,
             deepen_block=deepen_block,
             rag_block=rag_block,
+            rag_kb_block=rag_kb_block,
         )
 
         # 4) 消息列表 = 真实对话流（含面试官说过的话）+ 本次回答，回答只出现一次
@@ -1126,6 +1580,15 @@ class InterviewSession:
             # 收尾轮的临时旁白：只发这一次请求，**不写进 transcript**
             # （切片出来的 messages 是新列表，+ 不会污染 transcript）
             messages = messages + [{"role": "user", "content": CLOSE_DIRECTIVE}]
+        elif kb_narration:
+            # 知识库材料的**末尾 user 旁白**（只有 L1/L2 且检索到材料时才非空）。
+            # ⚠️ 顺序硬要求：**先切片、后追加**。反过来的话，`TRANSCRIPT_LIMIT` 到达之后
+            #    这条旁白会被下一次切片挤出窗口 —— **间歇消失**（前几轮有、后面没有），
+            #    是最难查的一类 bug。这里 `messages` 是切片出来的**新列表**，
+            #    `+` 不会污染 `self.transcript` ⇒ 旁白不进对话历史、下一轮不会重复出现。
+            # ⚠️ 与 close 互斥（kb_narration 只在 L1/L2 赋值），用 elif 是把这个互斥
+            #    写在代码里，而不是靠"反正不会同时发生"。
+            messages = messages + [{"role": "user", "content": kb_narration}]
 
         # 5) 流式要面试官的话
         collected, llm_ok = "", True
@@ -1148,7 +1611,7 @@ class InterviewSession:
 
     def _swap_round(self, rec: RoundRecord, answer: str, attempt_no: int, sc: dict,
                     r_band: str, judge_band: Optional[str], judge_why: str,
-                    judge_ok: bool) -> Generator[dict, None, None]:
+                    judge_ok: bool, sp: Optional[dict] = None) -> Generator[dict, None, None]:
         """
         换题出路：把这**一整轮作废**，让考生换一道别的方向的题。
 
@@ -1188,8 +1651,13 @@ class InterviewSession:
             fuse_rule="judge_swap",
             band=BAND_SWAP,
             interviewer_reply=SWAP_LINE, llm_ok=True,
+            # 表达指标与正常路径同一份（这一轮虽然作废，但仍会进 swapped_rounds
+            # 的报告 —— 报告里那一轮用时/语速不该是空的）。
+            speech=sp or dict(asrmod.SPEECH_EMPTY),
         )
         rec.attempts.append(attempt)
+        if sp and sp.get("used"):
+            rec.speech = dict(sp)
         rec.swapped = True
         rec.swap_reason = judge_why or "判档判定该方向未接触过"
         rec.open = False
@@ -1324,6 +1792,10 @@ class InterviewSession:
                     # 传摘要而不是裸分：reranker 失败时它会明说「不可用」，
                     # 而不是把默认分 50 当成真实结果递下去。
                     "reranker_note": rec.reranker_note(),
+                    # 表达客观测量（用时 vs 建议用时 / 语音作答时的语速·停顿·
+                    # 填充词）。与 reranker_note 同一个位置、同一套写法：
+                    # 它只是**证据**，不给它单独一维、不改任何权重。
+                    "pace_note": rec.pace_note(),
                 })
                 return rec, data, err
             except Exception as e:
@@ -1377,9 +1849,9 @@ class InterviewSession:
             # 他最后还是答满了 10 题，那条 note 不该出现。
             why = "；".join(r.swap_reason for r in self.swapped_rounds if r.swap_reason)
             notes.append(f"本场换过 {self.swaps_used} 题（原因：{why or '考生表示不熟悉'}），"
-                         f"被换掉的题不计入 {config.TOTAL_QUESTIONS} 题")
-        if self.questions_asked < config.TOTAL_QUESTIONS:
-            notes.append(f"只问了 {self.questions_asked}/{config.TOTAL_QUESTIONS} 题")
+                         f"被换掉的题不计入 {self.total_questions} 题")
+        if self.questions_asked < self.total_questions:
+            notes.append(f"只问了 {self.questions_asked}/{self.total_questions} 题")
 
         # 知识图谱 / RAG 的降级也如实点名 —— 但只在**失败**时提。
         # 「关掉」是配置，「失败」是故障，两者混为一谈会让 3 号误以为
@@ -1419,7 +1891,19 @@ class InterviewSession:
         raw = {
             "session_id": self.session_id,
             "job": self.job,
+            # 场次类型：exam（正式面试）/ practice（专项强化练习，赛题 4b）。
+            # 只进 raw 供 3 号 分辨报告。
+            # ⚠️ 2026-09-25 起**有一处按它分支**了：`app/core/growth.py` 的
+            #    `_history()` —— 成长档案的走势只吃 exam，练习那一节单列。
+            #    理由见 practice.py 文件头第 1 条（练习分数不与正式场次可比）。
+            "mode": self.mode,
             "candidate_intro": self.candidate_intro,
+            # 面试官风格三档里**实际生效**的那一档（F，2026-09-25）。
+            # 只进 raw 供 3 号 分辨「这场是怎么问的」—— 报告里能看出同一岗位
+            # 不同风格下的分数分布，否则那批数据又是一堆「只能靠行为反推」的读数。
+            # ⚠️ 它**只出、不进**：全项目没有任何一处读它来分支
+            #    （与 `mode` 不同 —— 那个有一处分支了，见 __init__ 里的注释）。
+            "persona_style": self.persona_style,
             "started_at": round(self.created_at, 3),
             "finished_at": round(self.finished_at, 3),
             "duration_sec": round(self.finished_at - self.created_at, 1),
@@ -1472,7 +1956,8 @@ class InterviewSession:
             },
             # 第一维的题型构成（固定两键）。five_dim_avg["技术水平"] 混型时要看这里。
             "dim1_labels": dim1_labels,
-            "blindspots": blindspot.diagnose(self.rounds, self.kg),
+            # self.job 只透给 4a 的知识库检索做岗位过滤（见 blindspot.diagnose）
+            "blindspots": blindspot.diagnose(self.rounds, self.kg, self.job),
         }
 
         envelope = {
@@ -1491,6 +1976,50 @@ class InterviewSession:
             "raw": raw,
             "cached": False,
         }
+
+        # ---- 成长档案摘要（加法：**顶层新键**，raw 里一个键都不动）----
+        # 错题本 / 考点地图 / 历史成绩追踪（赛题 4）要的那份「成绩单摘要」，
+        # 由 1 号 存进他的库、之后回传给 `POST /growth` 做聚合。见 app/core/growth.py。
+        #
+        # ⚠️ 函数内 import：growth 在模块层 import 了本模块的 SessionError，
+        #    模块层互相 import 会成环。
+        # ⚠️ 为什么挂在 /finish 的响应里、而不是单开一个端点：1 号 交卷时就**顺手**
+        #    拿到了要存档的那份，不用多一次往返；`/result/{sid}` 是同一个 FinishResp，
+        #    自动也有。
+        # ⚠️ 关掉开关时是 **None**，不是 `{}` 也不是「这个键不存在」：
+        #    None =「本次响应不含摘要」，{} =「有摘要但它是空的」—— 两者必须分得开，
+        #    否则 1 号 会把「没开」存成一堆空档案。
+        # ⚠️ 它是 `raw` 之外**第一个无论 A11_RAW_DETAIL 都会出门**的新字段，
+        #    所以必须白名单构造（build_digest 全程 .get()，且**绝不抛** ——
+        #    它挂了会把整场面试的收口打挂）。
+        if config.A11_GROWTH:
+            from app.core import growth as growmod
+            envelope["digest"] = growmod.build_digest(envelope)
+        else:
+            envelope["digest"] = None
+
+        # ⚠️ 上面这个开关是**交卷那一刻**读的，不是每次应答时读的 —— 与
+        #    `A11_RAW_DETAIL`（每次组响应时读，所以同一场能翻档重读）**不一样**：
+        #    摘要一旦生成就存在 `_result` 里，之后改这个开关不会让已交卷的场次
+        #    变出/变没摘要。本项目的 env 改动本来就要重启进程才生效，所以这是
+        #    有意的：存档的那份摘要在交卷那一刻就定稿，事后翻档不会让 1 号
+        #    存过的和重新读到的两个版本对不上。
+
+        # ---- 复盘清单（加法：**顶层新键**，给考生看的）----
+        # `summary` 那段话是**评价**；考生看完知道自己「中上」，不知道差在哪、下一步做什么。
+        # 考点级的诊断（hit）本来就有，但只在 `raw.blindspots` 里 —— 脱敏档下他看不到。
+        # 这份清单把诊断搬出来、翻成人话，再配一个今天就能做的动作。见 app/core/review.py。
+        # ⚠️ 与 digest 同款：白名单构造、绝不抛、`raw` 一个键都不动、不受 A11_RAW_DETAIL
+        #    影响、开关是**交卷那一刻**读的（理由同上）。
+        # ⚠️ 严格说 review 可以**从 digest 派生**（考点那部分同源）。仍然让它自己读 `raw`：
+        #    digest 会在 `A11_GROWTH=0` 时整份关掉，而「给考生看复盘」不该被
+        #    「给 1 号存档」那个开关连坐 —— 两个功能各自能单独关。
+        if config.A11_REVIEW:
+            from app.core import review as reviewmod
+            envelope["review"] = reviewmod.build_review(envelope)
+        else:
+            envelope["review"] = None
+
         self._result = envelope
         logger.info("sid=%s finish rounds=%d scored=%d failed=%d total=%s 耗时 %.1fs",
                     self.session_id, len(scorable),
@@ -1555,3 +2084,67 @@ def load_persona(job: str) -> str:
         text = "你是一位资深技术面试官，风格严厉但公正，直击原理，不绕弯子，喜欢追问到底。"
     _PERSONA_CACHE[job] = text
     return text
+
+
+# ============================================================
+# 考生自述（简历）的预处理（E，2026-09-25）
+# ============================================================
+# 两件事，都是**纯函数**（冒烟直接 import 断言，不烧 LLM）：
+#   `sanitize_intro()` 把自述压成能安全放进 prompt 的一段纯文本；
+#   `intro_snippet()`  从里面摘一句短引文给开场白用。
+#
+# ⚠️ 为什么第一件是安全件而不是美化件：自述是**考生可控的自由文本**，
+#    而它要进 system。system 里多一个换行就多一个「新的一段指令」的位置 ——
+#    `_CTRL_RE` 把换行/制表/零宽字符全部压成单个空格，所以它**只能**是一句话，
+#    伪造不出新的段落结构。这是结构性的，不靠提示词自觉。
+_CTRL_RE = re.compile(r"[\x00-\x1f\x7f​-‏  ﻿]+")
+_WS_RE = re.compile(r"\s+")
+# 开场白引文要剥掉的开头寒暄（只在**最前面**剥一次，不碰正文里的同形词）
+_SNIPPET_GREET_RE = re.compile(r"^(大家好|各位好|你们好|你好|您好|面试官好|考官好)[，,、:： ]*")
+
+
+def sanitize_intro(text, max_chars=None) -> str:
+    """
+    考生自述 → 进 prompt 的安全形态。空/全空白返回空串（调用方据此不注入）。
+
+    ① 控制字符与换行压成单空格（**防伪造段落**，见上）
+    ② 连续空白折叠
+    ③ 截到 `max_chars`，截断处补一个省略号 —— 不留半个字，也不静默变短
+    """
+    if not text:
+        return ""
+    cap = config.INTRO_MAX_CHARS if max_chars is None else int(max_chars)
+    s = _WS_RE.sub(" ", _CTRL_RE.sub(" ", str(text))).strip()
+    if cap > 0 and len(s) > cap:
+        s = s[:cap].rstrip() + "……"
+    return s
+
+
+def intro_snippet(text, limit=None) -> str:
+    """
+    从自述里摘一句短引文，给开场白用。摘不到就回空串。
+
+    取**第一句**（按中英文句读切）而不是前 N 个字：
+    「做过三年订单系统。另外我……」的前一句是身份，后一句常是套话。
+    切不出句读就退回整段的前 N 个字符。
+
+    ⚠️ **逗号不算句读** —— 所以「我做过三年订单系统，熟悉 JVM 调优。」是**一句**，
+    截到 40 字为止。这是刻意的：中文简历的第一句常常是「身份 + 技术栈」一长句，
+    按逗号切会把最该被引用的那半句丢掉。
+
+    另外剥掉开头的寒暄（「大家好」「您好」「面试官好」之类）：引文要接在
+    「我看了你的自我介绍，其中提到「…」」后面，开头挂一句「大家好」读起来很怪。
+    """
+    lim = INTRO_SNIPPET_MAX if limit is None else int(limit)
+    s = sanitize_intro(text, max_chars=0)      # 0 = 不截断，先拿全量再决定
+    if not s:
+        return ""
+    # ⚠️ 顺序要紧：**先剥寒暄再切句**。反过来会踩「大家好！我做过…」——
+    #    第一个句读落在寒暄里，切出来的 head 是「大家好」，剥完就剩空串。
+    src = _SNIPPET_GREET_RE.sub("", s, count=1).strip("，,、:： ！!。.？?；;")
+    head = re.split(r"[。！？；!?;]", src, maxsplit=1)[0].strip("，,、:： ")
+    if not head:
+        return ""
+    if len(head) > lim:
+        head = head[:lim].rstrip()
+    return head

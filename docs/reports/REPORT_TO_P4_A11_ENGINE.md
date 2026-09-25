@@ -71,3 +71,44 @@ HTTP 状态码是 **503**。请把它和 500 分开处理：这不是「后端�
 不需要，按现有契约继续开发。
 
 `docs/API.md` 已同步这三处加法，开工前 `git pull` 核对一遍即可。若你打算把「本场由哪个链路评的」显示给用户，用 `engine` 字段；若打算给成长曲线加链路筛选，接口已经支持。
+
+## 五、第三版追加（2026-09-25）
+
+对话层换了新版（端点 6 → 10），本项目对外**新增两个接口**，可择机接入；已有的契约仍然一个字没变。
+
+### 5.1 `POST /uploads/audio/asr` 语音转写
+
+```
+POST /uploads/audio/asr    multipart/form-data，字段名 file
+```
+
+返回转写文本、表达指标，以及可直接提交的 `url`：
+
+```json
+{ "code": 0, "message": "转写完成", "data": {
+  "text": "线程的状态包括新建、就绪、运行、阻塞和终止……",
+  "url": "/uploads/12_ab3f9c2d.webm",
+  "duration_ms": 16878, "audio_ms": 16878, "segments": [ ... ],
+  "pauses": 0, "pause_total_ms": 0, "elapsed_ms": 3804,
+  "loudness": 0.0622, "loudness_cv": 0.331, "tail_ratio": 1.05,
+  "emotion": null, "emotion_score": null, "emotion_dist": null,
+  "asr_model": "faster-whisper-…(int8)"
+} }
+```
+
+要点：
+
+- **一次调用同时给文本与地址**，同一个文件不用传两次；`url` 直接填提交答案的 `audio_url`。
+- 转写有错字是正常形态（模型 small + int8）：把文本填进输入框、**让考生改**后再发送。
+- `emotion*` 三项本部署恒为 `null`；`loudness*` 与 `tail_ratio` 是音量三指标，与情感无关。
+- 引擎未就绪时返回 **503（50300）**，提示语是「语音转写不可用：…」。**不要当空文本处理**，那会被当成「考生没说话」。
+
+演示前端（`frontend_test/js/audio.js`）已切到这个流程：松开话筒就上传转写，文本填进输入框，地址存在 `Voice.result.url` 供提交时复用。你的正式前端可以参考它的用法，也可以自行决定交互。
+
+### 5.2 `GET /reports/archive` 成长档案
+
+错题本 / 考点地图 / 历史成绩 / 提升路径，按岗位聚合（`?position=`，不传则取最近一场的岗位）。只有引擎链路评的场次才有档案；**没有档案或引擎不可用时返回 `available:false` + `notice`，不是错误**，界面照 notice 提示即可。
+
+### 5.3 还没接的
+
+对话层的「专项练习」「参考答案」与 `/finish` 返回的 `review`（复盘清单）尚未接到主后端接口，等你要做对应界面时再一起接。

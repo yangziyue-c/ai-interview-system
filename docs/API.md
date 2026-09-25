@@ -410,6 +410,36 @@ GET /reports/study-plan?position=backend&recent=3   // 按岗位聚合
 
 ---
 
+### 4.6 成长档案（错题本 / 考点地图 / 历史成绩）
+
+```
+GET /reports/archive
+GET /reports/archive?position=backend&limit=50
+```
+
+| 参数 | 说明 |
+| :--- | :--- |
+| position | 岗位 code（可选，不传 = 最近一场已结束面试的岗位）。档案按岗位算，一次只聚合同一岗位的场次 |
+| limit | 最多取几场（可选，默认 50，上限 100；对话层侧上限 100 份） |
+
+把该用户已存档的**成长档案摘要**（每场结束时的 `digest`）原样回传给 AI 对话层，取回四视图：
+
+```json
+{ "code": 0, "message": "ok", "data": {
+  "available": true,
+  "position": "backend",
+  "record_count": 12,
+  "wrong_book": { "total": 4, "items": [ ... ] },   // 错题本
+  "kp_map": { ... },                                 // 考点地图
+  "history": { "exam": { "sessions": 12, "timeline": [ ... ] } },  // 历史成绩
+  "plan": { ... },                                   // 能力提升路径
+  "skipped": []
+} }
+```
+
+- 只有**引擎链路**的场次有档案（原链路没有）；一场都没有时 `available=false` 且 `notice` 说明原因，这不是错误。
+- 对话层不可用时同样返回 `available=false`（口径与 `5.3 RAG 语义检索` 一致），不返回 5xx。
+
 ## 5. 题库
 
 题库数据来自 `questions` 表（由 `backend/scripts/import_question_bank.py` 从
@@ -534,7 +564,34 @@ POST /uploads/audio        Content-Type: multipart/form-data
 
 `url` 为相对路径，完整地址 = 当前服务地址 + url（如 `http://localhost:8001/uploads/12_ab3f9c2d.mp3`）。上传后可直接访问该 URL 播放/下载，提交答案时把 `url` 填入 `audio_url` 字段供 P3 语音识别评估。
 
-### 6.2 上传头像
+### 6.2 语音转写（音频进，文字 + 表达指标 + 地址出）
+
+```
+POST /uploads/audio/asr    Content-Type: multipart/form-data
+                           file: 录音文件（与 6.1 同一套格式与大小限制）
+```
+
+把录音交给 AI 对话层做**本地**语音转写，并把音频存下来（一次调用同时给文本与地址，同一个文件不用传两次）：
+
+```json
+{ "code": 0, "message": "转写完成", "data": {
+  "text": "线程的状态包括新建、就绪、运行、阻塞和终止……",
+  "url": "/uploads/12_ab3f9c2d.webm",
+  "duration_ms": 16878, "audio_ms": 16878,
+  "segments": [ { "start": 0.0, "end": 6.0, "text": "…" } ],
+  "pauses": 0, "pause_total_ms": 0,
+  "asr_model": "faster-whisper-…(int8)", "elapsed_ms": 3804,
+  "loudness": 0.0622, "loudness_cv": 0.331, "tail_ratio": 1.05,
+  "emotion": null, "emotion_score": null, "emotion_dist": null
+} }
+```
+
+- `url` 可直接填入提交答案的 `audio_url`，用法与 6.1 的返回值相同。
+- 转写有错字是正常形态：前端把文本填进输入框、**由考生自行修改**后再发送。
+- `emotion*` 三项本部署恒为 `null`（情感模型未就位）；`loudness*` 与 `tail_ratio` 是音量三指标，与情感无关。
+- 对话层未就绪时返回 **503（50300）**，不返回空文本——空文本会被当成「考生没说话」。
+
+### 6.3 上传头像
 
 ```
 POST /uploads/avatar       Content-Type: multipart/form-data
@@ -555,7 +612,7 @@ POST /uploads/avatar       Content-Type: multipart/form-data
 > 服务端会校验**文件头**：把 `.html` 改名成 `.png` 会被拒（否则静态服务会照
 > `image/png` 托管任意内容）。`avatar_url` 也只接受 `/uploads/avatars/` 下的站内路径。
 
-### 6.3 上传并解析简历
+### 6.4 上传并解析简历
 
 ```
 POST /resumes              Content-Type: multipart/form-data
@@ -610,7 +667,7 @@ POST /resumes              Content-Type: multipart/form-data
 >
 > `text` 可供面试出题「结合简历提问」使用（一期未接，约定见 P2 对接文档）。
 
-### 6.4 获取最近一次简历
+### 6.5 获取最近一次简历
 
 ```
 GET /resumes/latest
@@ -625,7 +682,7 @@ GET /resumes/latest
 > 多次上传保留历史（append-only），`latest` 取最近一份；按 id 读历史用 `GET /resumes/{resume_id}`，
 > 返回同一结构。
 
-### 6.5 下载简历原文件
+### 6.6 下载简历原文件
 
 ```
 GET /resumes/{resume_id}/file

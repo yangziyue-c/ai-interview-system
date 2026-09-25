@@ -32,7 +32,19 @@ class Report(Base):
     # 引擎链路的报告明细（会话 ID、参与评分轮次、partial/notes、盲区摘要等）。
     # 只做留痕与事后核对，不进考生可见文案——notes 是引擎的内部口径，
     # 该说的话引擎已经拼进了 summary。
-    engine_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="引擎报告明细")
+    # ⚠️ `none_as_null=True`：JSON 类型的默认行为把 Python 的 None 存成 **JSON 的
+    #    `null` 字面量**（不是 SQL NULL），于是 `IS NOT NULL` 会把「原链路场次」
+    #    也算成「有明细」。档案接口据此筛过一场，就是被这一点坑的。
+    engine_meta: Mapped[dict | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True, comment="引擎报告明细"
+    )
+
+    # 引擎链路的成长档案摘要（单场 4~6KB）。对话层侧是**白名单构造、绝不含得分点原文**，
+    # 存档后原样回传给 `POST /growth` 就能得到错题本 / 考点地图 / 历史成绩。
+    # 单独一列而不是塞进 engine_meta：回传要的是**原样**的 digest，不能掺别的东西。
+    digest: Mapped[dict | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True, comment="成长档案摘要（引擎链路）"
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

@@ -57,6 +57,8 @@ DIALOGUE_IMPORT_CHECK = (
 DIALOGUE_HF_HOME = BASE_DIR / ".hf_cache"
 # 平铺的本地模型目录（魔搭下载的布局；CrossEncoder 可直接加载目录路径）
 DIALOGUE_MODEL_DIR = DIALOGUE_HF_HOME / "bge-reranker-v2-m3"
+# 语音转写模型（faster-whisper 的 CTranslate2 格式，同样走本地目录）
+DIALOGUE_ASR_MODEL = DIALOGUE_HF_HOME / "faster-whisper-small"
 
 
 def sh(cmd: str) -> subprocess.CompletedProcess:
@@ -202,6 +204,26 @@ def build_dialogue_env() -> dict:
     # 平铺的本地模型目录优先：魔搭下载不写 HF 缓存布局，用路径直接喂给 CrossEncoder
     if any(DIALOGUE_MODEL_DIR.glob("*.safetensors")):
         env["RERANKER_MODEL"] = str(DIALOGUE_MODEL_DIR)
+    # 语音转写：同样用本地目录。本机连不上 huggingface.co，用仓库名会卡在下载上，
+    # 所以「本地有模型」才开 ASR；没有就关掉——关了只是 /asr 返 503，面试不受影响。
+    if DIALOGUE_ASR_MODEL.is_dir() and any(DIALOGUE_ASR_MODEL.glob("*.bin")):
+        env["A11_ASR_MODEL"] = str(DIALOGUE_ASR_MODEL)
+    else:
+        env["A11_ASR"] = "0"
+    # 情感模型（superb/wav2vec2-base-superb-er）在魔搭上找不到，暂关。
+    # 转写与语速 / 停顿 / 音量三组表达指标不受影响，只是没有情感那几项。
+    env["A11_ASR_EMOTION"] = "0"
+    # ASR 的内存门槛：引擎默认 1200MB（保守，宁拒不 OOM）。本机整机 15.2GB，
+    # 演示时 reranker 常驻 2.3GB、还有主后端与浏览器，1200MB 往往凑不出来。
+    # whisper-small（int8）实测加载约 500MB，800 留了余量；外部显式设这个
+    # 环境变量可以覆盖本值（要更保守就调回去）。
+    env.setdefault("A11_ASR_MIN_FREE_MB", "800")
+    # 学习资源样例（4a 的素材源）：指到项目内那一份
+    resources = DIALOGUE_DIR / "数据" / "学习资源样例.json"
+    if resources.exists():
+        env["A11_RESOURCES_JSON"] = str(resources)
+    # raw 明细保持脱敏（A11_RAW_DETAIL=0 是引擎的默认档）：得分点原文不出门。
+    # 要全量明细（比如给 3 号出评估报告）才在外部设 1，本项目不设。
     # DeepSeek 三项复用本项目 .env 的 LLM_* 配置（LLM 直连与对话层引擎本就用同一套）
     for dialogue_key, project_key in (
         ("DEEPSEEK_API_KEY", "LLM_API_KEY"),

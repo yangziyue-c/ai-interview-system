@@ -160,10 +160,48 @@ class DialogueEngineAdapter:
         }
 
     async def finish(self, session_id: str) -> dict:
-        """结束并出分：five_dim_avg / total_score_100 / summary / raw …"""
+        """结束并出分：five_dim_avg / total_score_100 / summary / digest / raw …"""
         return await self._call_json(
             "/finish", {"session_id": session_id}, settings.DIALOGUE_FINISH_TIMEOUT_SECONDS
         )
+
+    async def growth(self, position: str, records: list[dict]) -> dict:
+        """把若干场的 digest 原样喂回引擎，取错题本 / 考点地图 / 历史成绩
+
+        records 是各场 `/finish` 顶层 digest 的原样列表（引擎侧上限 100 份、
+        单份 64KB）。这一路是纯计算、不调 LLM，30 秒预算足够。
+        """
+        return await self._call_json(
+            "/growth",
+            {"job": self._job_of(position), "records": records},
+            settings.DIALOGUE_START_TIMEOUT_SECONDS,
+        )
+
+    async def transcribe(self, filename: str, content: bytes, content_type: str) -> dict:
+        """把一段音频交给引擎做本地转写（multipart 进、文字与表达指标出）
+
+        ⚠️ 首次调用会触发引擎侧懒加载 ASR 模型，可能返回「还在加载」——
+        那是正常形态（`ok=false` + `detail` 写明），不是故障，前端可稍后重试。
+        """
+        if not self.base_url:
+            raise EngineUnavailableError("对话层引擎未配置（DIALOGUE_ENGINE_URL 为空）")
+        path = "/asr"
+        files = {"file": (filename or "answer.webm", content, content_type or "application/octet-stream")}
+        timeout = settings.DIALOGUE_ASR_TIMEOUT_SECONDS
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await asyncio.wait_for(
+                    client.post(f"{self.base_url}{path}", files=files), timeout=timeout
+                )
+        except asyncio.TimeoutError:
+            raise EngineUnavailableError(f"对话层 {path} 超时（>{timeout:.0f}s）") from None
+        except httpx.HTTPError as exc:
+            raise EngineUnavailableError(f"对话层 {path} 网络错误：{exc}") from exc
+        body = self._decode(resp, path)
+        # 引擎的 /asr 用 ok 字段表达成功与否（缺模型、还在加载都走 ok=false）
+        if not body.get("ok"):
+            raise EngineError(body.get("error") or body.get("detail") or "语音转写失败")
+        return body
 
     # ---------------- 内部 ----------------
     def _job_of(self, position: str) -> str:

@@ -328,7 +328,7 @@ Views.interview = {
     }
 
     const total = App.TOTAL_ROUNDS;
-    const canVoice = Voice.supported.stt || Voice.supported.rec;
+    const canVoice = Voice.supported.rec; // 转写由后端做，只看麦克风能力
 
     return `
     <div class="chat-room">
@@ -411,9 +411,10 @@ Views.interview = {
       const removeThinking = showThinking();
 
       let audioUrl = null;
-      if (Voice.pending) {
+      // 松开时已转写过 → 地址就在 Voice.result 里，直接复用不二次上传
+      if (Voice.pending || (Voice.result && Voice.result.url)) {
         try {
-          audioUrl = await Voice.upload();
+          audioUrl = await Voice.audioUrl();
           audioUrl && App.toast("录音已上传", "ok");
         } catch (err) {
           App.toast("录音上传失败，将仅提交文本：" + err.message, "err");
@@ -503,7 +504,15 @@ Views.interview = {
         if (busy) return App.toast("面试官正在出题，请稍候", "err");
         Voice.start();
       };
-      const release = () => Voice.stop();
+      const release = () => {
+        if (!Voice._recording) return; // mouseleave 与 mouseup 会连着触发
+        Voice.stop();
+        // 松开就把这段音频交给后端转写：文本经 onTranscript 填进输入框，
+        // 地址留在 Voice.result 里供提交时复用（同一个文件不传两次）。
+        Voice.transcribe().catch((err) => {
+          App.toast("语音转写失败：" + err.message + "，请手动输入", "err");
+        });
+      };
       btnVoice.addEventListener("mousedown", press);
       btnVoice.addEventListener("touchstart", press, { passive: false });
       btnVoice.addEventListener("mouseup", release);

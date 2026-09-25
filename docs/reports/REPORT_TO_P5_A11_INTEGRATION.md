@@ -127,3 +127,31 @@ check_env.py   → 退出码 0；8 项 FAIL 全部是「原包默认路径未配
 
 1. 上述三处偏离（版本不降级、魔搭下载、题库复用）你是否认可；有异议我改。
 2. 你文档里「判档真超时的耗时行为」与「9 场对照重跑」两条欠账，要不要在本项目的环境上补测。
+
+## 六、第三版（2026-09-25）追加回执
+
+你这一版把端点从 6 个扩到 10 个（新增 `/asr`、`/practice`、`/growth`、`/model_answer`），`/finish` 多了 `digest` 与 `review`，`core/` 多了 7 个模块。本项目已按新版更新，追加回执如下。
+
+### 已做
+
+| 项 | 结果 |
+| :--- | :--- |
+| 代码与数据 | `app/`（29 文件）、`smoke_test.py`、`check_env.py`、`dump_prompt.py`、`build_kb_index.py`、`web/`、`数据/学习资源样例.json` 全量替换，**代码零改动** |
+| 冒烟测试 | **通过 2854 项，失败 0 项**（LLM_MOCK=1 / RERANKER_MOCK=1 / A11_KG=1 / A11_RAG=0 / A11_ASR=0；项数比文档区间少几项是因为这一轮按你的提示关掉了 ASR） |
+| 依赖 | 补装 `faster-whisper==1.2.1`、`ctranslate2==4.8.2`、`av==18.1.0`；`python-multipart` 与 `onnxruntime` 环境里已有（后者是 1.30.0，比 pin 的 1.29.0 高一个小版本，未降级） |
+| 模型 | reranker 2.27GB + whisper-small 464MB，均从 ModelScope 下载（本机 hf-mirror 与 huggingface.co 都不通） |
+| 语音验证 | 真音频（Windows SAPI 合成中文）实测：模型加载 1.6 秒、17 秒音频转写 4.6 秒、语言识别 zh 置信 1.00。经本项目 `/uploads/audio/asr` 转发的链路同样通了（`duration_ms` / `loudness` / `pause_total_ms` 都有值） |
+| 成长档案 | 每场 `/finish` 的顶层 `digest` 已落库（实测一场 7170 字节），`GET /reports/archive` 把它**原样**回传给 `/growth`，取回了 `wrong_book` / `kp_map` / `history` / `plan` 四视图 |
+| 学习资源 | `/health` 的 `resource_ready=true`、`resource_kps=25`，素材源就是你包里的 `学习资源样例.json` |
+
+### 四处如实说明
+
+1. **情感模型没装上**：`superb/wav2vec2-base-superb-er` 在 ModelScope 上查不到（`superb/...` 与 `AI-ModelScope/...` 两种命名都试过，都是 404 record not found）。本部署设 `A11_ASR_EMOTION=0`，`emotion*` 恒为 `null`；转写与语速 / 停顿 / 音量三组指标不受影响。你那边若有该模型的可用镜像地址，或认为可以换一个模型（标签是动态读 `id2label` 的，理论上可换），请告知。
+2. **ASR 内存门槛按本机下调**：你的默认是 1200MB。本机整机 15.2GB，演示时 reranker 常驻约 2.3GB，1200MB 常常凑不出来（被拒时的原文是「空闲内存 289MB < 门槛 1200MB」）。独立进程实测 whisper-small（int8）加载约 500MB，所以本项目注入 `A11_ASR_MIN_FREE_MB=800`（外部可用环境变量覆盖）。这是本机适配，不是对你的门槛有异议。
+3. **`raw` 保持你的脱敏默认档**：不设 `A11_RAW_DETAIL`（用默认 0）。本项目只从 `raw` 取摘要写 `reports.engine_meta`，得分点原文不入库、不出接口。
+4. **尚未接入的端点**：`/practice`、`/model_answer` 与 `/finish` 的 `review` 还没接到本项目接口。它们是给考生的出口，等前端做对应界面时一并接；`digest` → `/growth` 这条链已经通了，是它们的基础。
+
+### 待你确认
+
+- 上面第 1、2 条两处偏离是否认可；情感模型若必须上，请给可用的下载源。
+- 你清单里给 1 号的三条硬阻塞，前两条（接口契约差异、五维权重真值源）的最新口径是否仍是上一版的答复（无差异、与本项目《评估维度.csv》逐格一致）。

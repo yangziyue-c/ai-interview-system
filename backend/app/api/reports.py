@@ -7,6 +7,8 @@ from fastapi import APIRouter, Query, Request
 from sqlalchemy import or_, select
 from sqlalchemy.orm import load_only
 
+from app.adapters import get_dialogue_adapter
+from app.adapters.ai_dialogue import EngineError
 from app.api.deps import CurrentUser, DbSession, get_owned_interview
 from app.config import settings
 from app.core.exceptions import BadRequestError, ConflictError
@@ -74,6 +76,69 @@ async def get_growth(
         for interview, report in result.all()
     ]
     return ok(points)
+
+
+@router.get("/archive", response_model=dict, summary="成长档案（错题本 / 考点地图 / 历史成绩）")
+async def get_archive(
+    user: CurrentUser,
+    db: DbSession,
+    position: str | None = Query(default=None, description="按岗位筛选（不传=最近一场的岗位）"),
+    limit: int = Query(default=50, ge=1, le=100, description="最多取几场的档案（引擎侧上限 100）"),
+) -> dict:
+    """把已存档的成长档案摘要原样回传给对话层，取回四视图
+
+    档案按**岗位**算（考点与权重都跟岗位走），所以一次只喂同一岗位的场次；
+    不传 position 时取最近一场已结束面试的岗位。
+    引擎不可用时返回 available=false 而不是 500——与 /rag/search 的透传口径一致。
+    """
+    conditions = [
+        Interview.user_id == user.id,
+        Interview.status == InterviewStatus.FINISHED.value,
+        Report.digest.is_not(None),  # 只喂引擎链路存下来的摘要，原链路没有
+    ]
+    if position:
+        conditions.append(Interview.position == position)
+
+    result = await db.execute(
+        select(Interview.position, Report.digest)
+        .join(Report, Report.interview_id == Interview.id)
+        .where(*conditions)
+        .order_by(Interview.finished_at.desc())
+        # 不传岗位时多取一些：下面要按「最近一场的岗位」再筛一遍
+        .limit(limit if position else 200)
+    )
+    rows = result.all()
+    if not rows:
+        return ok({
+            "available": False,
+            "position": position or "",
+            "record_count": 0,
+            "notice": "还没有成长档案：需要至少一场由 AI 对话层引擎评分的面试",
+            "wrong_book": None, "kp_map": None, "history": None, "plan": None,
+        })
+
+    job_position = position or rows[0].position
+    records = [row.digest for row in rows if row.position == job_position][:limit]
+
+    try:
+        data = await get_dialogue_adapter().growth(job_position, records)
+    except EngineError as exc:
+        return ok({
+            "available": False,
+            "position": job_position,
+            "record_count": len(records),
+            "notice": f"对话层暂时不可用：{exc}",
+            "wrong_book": None, "kp_map": None, "history": None, "plan": None,
+        })
+
+    payload: dict = {
+        "available": True,
+        "position": job_position,
+        "record_count": len(records),
+    }
+    for key in ("ok", "wrong_book", "kp_map", "history", "plan", "skipped"):
+        payload[key] = data.get(key)
+    return ok(payload)
 
 
 @router.get("/latest", response_model=dict, summary="最近一次面试的改进建议（个人中心用）")

@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     DIALOGUE_START_TIMEOUT_SECONDS: float = 30.0
     DIALOGUE_CHAT_TIMEOUT_SECONDS: float = 120.0
     DIALOGUE_FINISH_TIMEOUT_SECONDS: float = 180.0
+    # 语音转写：模型在引擎侧**懒加载**（不调就不加载），首次调用要等它就位
+    # （引擎自己只等 A11_ASR_WAIT_SEC=12 秒，超时就返回「还在加载」而不是死等）。
+    # 60 秒覆盖的是「模型已在内存」后的正常转写，CPU 上一段 60 秒内的音频约数秒。
+    DIALOGUE_ASR_TIMEOUT_SECONDS: float = 60.0
     # 健康探测结果缓存秒数：引擎状态会变（模型预热完成、服务挂掉），取值不宜过大
     DIALOGUE_HEALTH_CACHE_SECONDS: float = 30.0
 

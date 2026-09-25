@@ -14,7 +14,7 @@ from app.adapters.ai_dialogue import EngineError, parse_sse_text
 from app.config import settings
 from app.core.engine_report import build_engine_meta, build_engine_report
 from app.database import async_session
-from app.models import QARecord
+from app.models import QARecord, Report
 
 BASE = "/api/v1"
 
@@ -203,6 +203,9 @@ class _FakeEngine:
         self.total = total
         self.asked = 0
         self.turns = 0
+        # 记录调用入参，供断言「原样回传」「确实转发」这类行为
+        self.growth_calls: list[list[dict]] = []
+        self.transcribed_bytes = 0
 
     async def is_ready(self, **_) -> bool:
         return True
@@ -233,17 +236,43 @@ class _FakeEngine:
         }
 
     async def finish(self, session_id: str) -> dict:
-        return _finish_payload()
+        payload = _finish_payload()
+        # 顶层 digest（成长档案摘要）——引擎侧白名单构造，这里给个最小形状
+        payload["digest"] = {"digest_version": 1, "job": payload["job"], "sessions": 1}
+        return payload
+
+    async def growth(self, position: str, records: list[dict]) -> dict:
+        self.growth_calls.append(records)
+        return {
+            "ok": True, "job": position, "record_count": len(records), "skipped": [],
+            "wrong_book": {"total": 2}, "kp_map": {"nodes": 3},
+            "history": {"exam": {"sessions": len(records)}}, "plan": {"steps": 1},
+        }
+
+    async def transcribe(self, filename: str, content: bytes, content_type: str) -> dict:
+        self.transcribed_bytes = len(content)
+        return {
+            "ok": True, "text": "这是转写出来的文字", "duration_ms": 3000, "audio_ms": 3000,
+            "segments": [], "pauses": 0, "pause_total_ms": 0,
+            "asr_model": "fake", "elapsed_ms": 10,
+        }
 
 
 @pytest.fixture
 def engine_mode(monkeypatch):
-    """开引擎开关 + 换假适配器"""
+    """开引擎开关 + 换假适配器
+
+    三个模块各自 `from app.adapters import get_dialogue_adapter`，所以三处的
+    模块级名字都要换——只换 interviews 会让 reports/uploads 仍去连真服务。
+    """
     from app.api import interviews as interviews_api
+    from app.api import reports as reports_api
+    from app.api import uploads as uploads_api
 
     fake = _FakeEngine()
     monkeypatch.setattr(settings, "DIALOGUE_ENGINE", "a11")
-    monkeypatch.setattr(interviews_api, "get_dialogue_adapter", lambda: fake)
+    for module in (interviews_api, reports_api, uploads_api):
+        monkeypatch.setattr(module, "get_dialogue_adapter", lambda: fake)
     return fake
 
 
@@ -375,3 +404,88 @@ async def test_growth_carries_engine_and_can_filter(client: AsyncClient, monkeyp
     assert [p["interview_id"] for p in only_eng] == [eng_id]
     # 非法值不报错，返回空序列（与 position 参数的既有口径一致）
     assert (await client.get(f"{BASE}/reports/growth?engine=nope", headers=headers)).json()["data"] == []
+
+
+# ============================================================
+# 成长档案（digest 落库 + 回传）与语音转写
+# ============================================================
+async def _run_engine_interview(client: AsyncClient, headers: dict) -> int:
+    """跑完一场引擎链路面试，返回 interview_id"""
+    d = (await client.post(f"{BASE}/interviews", json={"position": "backend"}, headers=headers)).json()["data"]
+    iid = d["interview"]["id"]
+    for _ in range(10):
+        body = (await client.post(
+            f"{BASE}/interviews/{iid}/answers", json={"answer": "我的回答。"}, headers=headers,
+        )).json()["data"]
+        if body["finished"]:
+            break
+    return iid
+
+
+async def test_engine_finish_stores_digest_and_archive_serves_it(client: AsyncClient, engine_mode):
+    """引擎链路：digest 落库，档案接口把它原样喂回引擎"""
+    headers = await _auth_headers(client, "digest")
+    iid = await _run_engine_interview(client, headers)
+
+    async with async_session() as session:
+        digest = (await session.execute(
+            select(Report.digest).where(Report.interview_id == iid)
+        )).scalar()
+    assert isinstance(digest, dict) and digest.get("digest_version") == 1
+
+    arch = (await client.get(f"{BASE}/reports/archive", headers=headers)).json()["data"]
+    assert arch["available"] is True
+    assert arch["record_count"] == 1
+    assert arch["position"] == "backend"
+    assert arch["wrong_book"] == {"total": 2}
+    # 「原样回传」是这条链的硬要求：喂回引擎的必须就是库里那一份
+    assert engine_mode.growth_calls[-1] == [digest]
+
+
+async def test_archive_without_digest_says_so(client: AsyncClient):
+    """原链路场次没有 digest：档案接口说「还没有」，不报错也不假装有"""
+    headers = await _auth_headers(client, "nodigest")
+    d = (await client.post(f"{BASE}/interviews", json={"position": "backend"}, headers=headers)).json()["data"]
+    iid = d["interview"]["id"]
+    await client.post(f"{BASE}/interviews/{iid}/answers", json={"answer": "回答"}, headers=headers)
+    await client.post(f"{BASE}/interviews/{iid}/finish", headers=headers)
+
+    arch = (await client.get(f"{BASE}/reports/archive", headers=headers)).json()["data"]
+    assert arch["available"] is False
+    assert "还没有成长档案" in arch["notice"]
+    assert arch["wrong_book"] is None
+
+
+async def test_transcribe_endpoint_forwards_audio_to_engine(client: AsyncClient, engine_mode):
+    """语音转写：音频经主后端转给引擎，返回文本与可提交的地址"""
+    headers = await _auth_headers(client, "asr")
+    audio = b"\x1aE\xdf\xa3" + b"fake-webm-payload" * 4
+    r = await client.post(
+        f"{BASE}/uploads/audio/asr",
+        files={"file": ("answer.webm", audio, "audio/webm")}, headers=headers,
+    )
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["text"] == "这是转写出来的文字"
+    assert data["duration_ms"] == 3000
+    assert data["url"].startswith("/uploads/")   # 转写顺带存盘，提交答案时不用再传一次
+    assert engine_mode.transcribed_bytes == len(audio)
+
+
+async def test_transcribe_reports_engine_failure(client: AsyncClient, monkeypatch):
+    """引擎不可用时转写明确报 503，不返回空文本（空文本会被当成「考生没说话」）"""
+    from app.adapters.ai_dialogue import EngineError
+    from app.api import uploads as uploads_api
+
+    class _DeadEngine:
+        async def transcribe(self, *a, **kw):
+            raise EngineError("语音模型不可用：空闲内存不足")
+
+    monkeypatch.setattr(uploads_api, "get_dialogue_adapter", lambda: _DeadEngine())
+    headers = await _auth_headers(client, "asrdead")
+    r = await client.post(
+        f"{BASE}/uploads/audio/asr",
+        files={"file": ("answer.webm", b"x" * 64, "audio/webm")}, headers=headers,
+    )
+    assert r.status_code == 503
+    assert r.json()["code"] == 50300

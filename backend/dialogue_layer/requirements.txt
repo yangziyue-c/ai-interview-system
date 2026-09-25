@@ -18,6 +18,10 @@
 fastapi==0.141.1
 uvicorn==0.52.4
 pydantic==2.13.5
+# ⚠️ 必需，不是可选：`POST /asr` 用 multipart 收音频（`File(...)` / `Form(...)`），
+#    缺了它 **FastAPI 在注册路由时就抛 RuntimeError** —— 服务整个起不来，
+#    而且报错发生在启动阶段（不是调 /asr 的时候）。漏过一次，别再漏。
+python-multipart==0.0.32
 
 # ---- LLM（OpenAI 兼容接口，指向 DeepSeek）----
 openai==3.17.0
@@ -30,12 +34,39 @@ transformers==4.49.0
 numpy==2.5.2
 
 # ---- RAG ----
-# ⚠️ 本框架的 RAG 是「默认关、按需开」：设 A11_RAG=1 才启用，缺件时**静默降级**
-#    （面试照常，只是不带参考片段）。它真正需要的是三个文件 ——
+# ⚠️ 口径是**两段**，别混成一句「默认关」：
+#    · 代码默认关：`app/config.py:402` 的 `A11_RAG = "0"`；
+#    · 交付包模板设开：`环境变量.模板.ps1` 写的是 `$env:A11_RAG = "1"`，dot-source 之后即开。
+#    部署时用的是模板，所以「按包办事」就是开着的。两个值**都不动**（模板本来就是给部署用的），
+#    混成一句才有问题 —— 1 号当初就是照「不开」处理的。
+#    开了之后注入面试官 prompt 的是**题库派生索引**里的「同岗位同难度的其他问法」，
+#    **不是知识库文档正文** —— 74,011 条索引是按题库建的（config.RAG_LAYERS）。
+#    知识库文档接的是 4a 学习资源（见 app/core/kb.py），不在面试 prompt 这条链上。
+#    缺件时**静默降级**（面试照常，只是不带参考片段）。它真正需要的是三个文件 ——
 #    memory_retriever.py + all_records.pkl + memory_index.npz —— 而不是 chromadb，
 #    换机器要一起搬。清单见 交付说明-后端.md 的「换机器部署清单」一节，
 #    或直接在包根跑 check_env.py 自检。
 chromadb==1.5.9
+
+# ---- 4a 的知识库检索（可选件，见 app/core/kb.py）----
+# **不引入任何新依赖**：只用到上面已列的 numpy + sentence-transformers（编码器就是
+# config.RAG_ENCODER 那个 bge-m3，A11_RAG=1 时直接借用 rag.py 已在内存里的那份，不额外加载）。
+# 它需要的是 `kb_records.pkl` + `kb_index.npz` 两个索引文件，由包内 build_kb_index.py 生成，
+# **索引本身不进交付包**（可再生）。没有索引 = 纯无操作，输出与没有这个功能时逐字节相同。
+
+# ---- 语音输入（2a / 3b）----
+# 本地语音转写。**缺了不影响面试**：`/asr` 返 503 asr_unavailable，
+# 文字作答与其余端点一个字节都不受影响（`/health.asr_error` 会写明原因）。
+# 但 `A11_ASR` 默认是开的，所以换机器想要语音输入就得装上 —— 它不是可选项。
+# 下面 4 条是它的传递依赖，一起锁住（本机实测通过的那一组）：
+#   faster-whisper → ctranslate2（推理引擎）/ av（解码任意音频）/ onnxruntime（VAD）
+# ⚠️ VAD 那条不是可有可无：语速的分母（净语音时长）与「停顿」次数都靠它量，
+#    没有它只能退回「whisper 段跨度之和」—— 实测那段会把静音算进去，
+#    同一份音频的语速从 216 字/分掉到 122 字/分（见 app/core/asr.py 的注释）。
+faster-whisper==1.2.1
+ctranslate2==4.8.2
+av==18.1.0
+onnxruntime==1.29.0
 
 # ---- 测试 ----
 # smoke_test.py 两种模式都用 httpx：
