@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="390" viewBox="0 0 1000 390">
+<rect width="1000" height="390" fill="#ffffff"/>
+<rect x="60.5" y="60" width="253" height="280" rx="12" fill="#ffffff" stroke="#e4e8f2" stroke-width="1.5"/>
+<clipPath id="c0"><rect x="60.5" y="60" width="253" height="48" rx="12"/></clipPath>
+<rect x="60.5" y="60" width="253" height="48" fill="#4f6ef7" clip-path="url(#c0)"/>
+<text x="187" y="91" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">入口</text>
+<circle cx="82.5" cy="138" r="3.2" fill="#4f6ef7"/>
+<text x="94.5" y="142" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">鉴权：JWT（HS256）</text>
+<circle cx="82.5" cy="194" r="3.2" fill="#4f6ef7"/>
+<text x="94.5" y="198" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">口令：bcrypt 加盐哈希</text>
+<circle cx="82.5" cy="250" r="3.2" fill="#4f6ef7"/>
+<text x="94.5" y="254" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">上传：白名单 + 文件头</text>
+<circle cx="82.5" cy="306" r="3.2" fill="#4f6ef7"/>
+<text x="94.5" y="310" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">分享：128 位随机码</text>
+<line x1="325.5" y1="200" x2="353.5" y2="200" stroke="#4f6ef7" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M 353.5 195.04 L 361.5 200 L 353.5 204.96 Z" fill="#4f6ef7"/>
+<rect x="373.5" y="60" width="253" height="280" rx="12" fill="#ffffff" stroke="#e4e8f2" stroke-width="1.5"/>
+<clipPath id="c1"><rect x="373.5" y="60" width="253" height="48" rx="12"/></clipPath>
+<rect x="373.5" y="60" width="253" height="48" fill="#4f6ef7" clip-path="url(#c1)"/>
+<text x="500" y="91" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">存储</text>
+<circle cx="395.5" cy="138" r="3.2" fill="#4f6ef7"/>
+<text x="407.5" y="142" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">简历存私有目录</text>
+<circle cx="395.5" cy="194" r="3.2" fill="#4f6ef7"/>
+<text x="407.5" y="198" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">不进任何静态挂载</text>
+<circle cx="395.5" cy="250" r="3.2" fill="#4f6ef7"/>
+<text x="407.5" y="254" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">只存文件名不存路径</text>
+<circle cx="395.5" cy="306" r="3.2" fill="#4f6ef7"/>
+<text x="407.5" y="310" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">目录已进忽略清单</text>
+<line x1="638.5" y1="200" x2="666.5" y2="200" stroke="#4f6ef7" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M 666.5 195.04 L 674.5 200 L 666.5 204.96 Z" fill="#4f6ef7"/>
+<rect x="686.5" y="60" width="253" height="280" rx="12" fill="#ffffff" stroke="#e4e8f2" stroke-width="1.5"/>
+<clipPath id="c2"><rect x="686.5" y="60" width="253" height="48" rx="12"/></clipPath>
+<rect x="686.5" y="60" width="253" height="48" fill="#4f6ef7" clip-path="url(#c2)"/>
+<text x="813" y="91" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">出口</text>
+<circle cx="708.5" cy="138" r="3.2" fill="#4f6ef7"/>
+<text x="720.5" y="142" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">越权：资源 + 用户双条件</text>
+<circle cx="708.5" cy="194" r="3.2" fill="#4f6ef7"/>
+<text x="720.5" y="198" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">非本人返回「不存在」</text>
+<circle cx="708.5" cy="250" r="3.2" fill="#4f6ef7"/>
+<text x="720.5" y="254" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">分享：过期与不存在同提示</text>
+<circle cx="708.5" cy="306" r="3.2" fill="#4f6ef7"/>
+<text x="720.5" y="310" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">头像地址只收站内路径</text>
+</svg>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="384" viewBox="0 0 1000 384">
+<rect width="1000" height="384" fill="#ffffff"/>
+<text x="44" y="40" font-size="13.5" font-weight="400" fill="#7a8296" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">面试状态机（表驱动，非法转换返回 409）</text>
+<rect x="70" y="64" width="213.333" height="88" rx="12" fill="#f2f4fa"/>
+<text x="176.667" y="104" font-size="17" font-weight="700" fill="#7a8296" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">idle</text>
+<text x="176.667" y="130" font-size="14" font-weight="400" fill="#7a8296" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">待开始</text>
+<line x1="293.333" y1="108" x2="374.333" y2="108" stroke="#4f6ef7" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M 374.333 102.42 L 383.333 108 L 374.333 113.58 Z" fill="#4f6ef7"/>
+<text x="338.333" y="142" font-size="12" font-weight="400" fill="#7a8296" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">开始面试</text>
+<rect x="393.333" y="64" width="213.333" height="88" rx="12" fill="#4f6ef7"/>
+<text x="500" y="104" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">in_progress</text>
+<text x="500" y="130" font-size="14" font-weight="400" fill="#ffffff" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">进行中</text>
+<line x1="616.667" y1="108" x2="697.667" y2="108" stroke="#4f6ef7" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M 697.667 102.42 L 706.667 108 L 697.667 113.58 Z" fill="#4f6ef7"/>
+<text x="661.667" y="142" font-size="12" font-weight="400" fill="#7a8296" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">达到轮数上限</text>
+<text x="661.667" y="157" font-size="12" font-weight="400" fill="#7a8296" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">或主动结束</text>
+<rect x="716.667" y="64" width="213.333" height="88" rx="12" fill="#eef1ff" stroke="#4f6ef7" stroke-width="1.5"/>
+<text x="823.333" y="104" font-size="17" font-weight="700" fill="#3a54d6" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">finished</text>
+<text x="823.333" y="130" font-size="14" font-weight="400" fill="#3a54d6" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">已结束</text>
+<text x="44" y="182" font-size="12" font-weight="400" fill="#7a8296" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">finished 为终态，不可再转</text>
+<text x="44" y="244" font-size="13.5" font-weight="400" fill="#7a8296" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">七轮对话闭环（1 道开场题 + 最多 6 轮追问）</text>
+<rect x="70" y="262" width="173" height="76" rx="10" fill="#eef1ff"/>
+<text x="156.5" y="306" font-size="14" font-weight="700" fill="#3a54d6" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">开始面试</text>
+<line x1="251" y1="300" x2="283" y2="300" stroke="#4f6ef7" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M 283 295.04 L 291 300 L 283 304.96 Z" fill="#4f6ef7"/>
+<rect x="299" y="262" width="173" height="76" rx="10" fill="#eef1ff"/>
+<text x="385.5" y="296" font-size="14" font-weight="700" fill="#3a54d6" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">第 1 轮</text>
+<text x="385.5" y="318" font-size="14" font-weight="700" fill="#3a54d6" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">开场题</text>
+<line x1="480" y1="300" x2="512" y2="300" stroke="#4f6ef7" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M 512 295.04 L 520 300 L 512 304.96 Z" fill="#4f6ef7"/>
+<rect x="528" y="262" width="173" height="76" rx="10" fill="#eef1ff"/>
+<text x="614.5" y="296" font-size="14" font-weight="700" fill="#3a54d6" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">第 2~7 轮</text>
+<text x="614.5" y="318" font-size="14" font-weight="700" fill="#3a54d6" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">动态追问</text>
+<line x1="709" y1="300" x2="741" y2="300" stroke="#4f6ef7" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M 741 295.04 L 749 300 L 741 304.96 Z" fill="#4f6ef7"/>
+<rect x="757" y="262" width="173" height="76" rx="10" fill="#4f6ef7"/>
+<text x="843.5" y="306" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">自动生成报告</text>
+</svg>
