@@ -289,6 +289,13 @@ body {
 .list-item:last-child { border-bottom: none; }
 .list-item .mark { flex-shrink: 0; }
 .summary-text { font-size: 14px; color: #3a4256; }
+/* 考后复盘（报告页）：漏点分组标题 + 底部口径说明 */
+.review-sub { font-size: 13px; font-weight: 600; color: #3a4256; margin: 14px 0 6px; }
+.review-caveats {
+  margin-top: 12px; padding-top: 10px;
+  border-top: 1px dashed #e6e9f2;
+  font-size: 12px; line-height: 1.75; color: #3a4256; opacity: .62;
+}
 .growth-wrap canvas { max-width: 100%; }
 .growth-empty { text-align: center; color: var(--text-sub); font-size: 13px; padding: 24px 0; }
 

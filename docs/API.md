@@ -253,6 +253,7 @@ GET /reports/{interview_id}
     "strengths": ["回答内容充实……"],
     "weaknesses": ["个别问题可再深入……"],
     "suggestions": ["继续深挖技术原理……"],
+    "review": { "headline": "……", "gaps": [], "counts": {} },   // 考后复盘清单（见 4.7）；原链路为 null
     "created_at": "2026-08-25T21:00:00"
   }
 }
@@ -439,6 +440,40 @@ GET /reports/archive?position=backend&limit=50
 
 - 只有**引擎链路**的场次有档案（原链路没有）；一场都没有时 `available=false` 且 `notice` 说明原因，这不是错误。
 - 对话层不可用时同样返回 `available=false`（口径与 `5.3 RAG 语义检索` 一致），不返回 5xx。
+
+### 4.7 考后复盘清单（给考生看的）
+
+不单开接口：它随 `4.1 获取面试报告` 的 `review` 字段一起返回。
+
+```json
+"review": {
+  "review_version": 1,
+  "headline": "这场覆盖了 17 个考点：17 个答到了。",
+  "gaps": [ { "kp_id": "…", "title": "CAP 理论", "domain": "分布式基础", "rounds": [3],
+              "missed_base": 2, "missed_adv": 1,
+              "advice": "第 3 题问到了它，这次没答到。" } ],
+  "covered": [ … ],
+  "uncovered": [ … ],
+  "actions": [ { "kind": "practice", "kp_id": "…", "title": "CAP 理论",
+                 "text": "专门练「CAP 理论」：出 3 道同类题，练完给前后对比。" } ],
+  "counts": { "topics_seen": 17, "topics_hit": 17, "topics_missed": 0,
+              "topics_uncovered": 0, "kps_raw": 19, "rounds_asked": 10, "rounds_scored": 10 },
+  "caveats": [ "「没答到」是判分系统对「这一轮回答」的判定（未达及格线）……" ]
+}
+```
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `headline` | 一句话总结，可直接展示 |
+| `gaps` | 判为「没答到」的考点，每条带一句 `advice`（已写好的人话） |
+| `covered` / `uncovered` | 答到的 / 这场判不了的（同结构，无 `advice`） |
+| `actions` | 下一步动作，`text` 是给考生看的文案，`kind` + `kp_id` 是给前端挂钩子用的（如跳专项练习） |
+| `counts` | 全是整数，没有任何百分比或「掌握度」 |
+| `caveats` | 口径说明（几条固定文案），建议一并展示 |
+
+- 只有**引擎链路**的场次有它；原链路场次与引擎关掉该功能时是 `null`（不是空对象），前端据此决定要不要画这一块。
+- 文案都已由后端拼好，前端直接展示即可；`gaps` 为空时不显示那一组。
+- 演示前端（`frontend_test/`）的报告页已渲染这一块。
 
 ## 5. 题库
 

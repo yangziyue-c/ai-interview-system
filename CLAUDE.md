@@ -123,6 +123,9 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
   ⚠️ 该 JSON 列**必须带 `none_as_null=True`**——默认行为会把 Python 的 None 存成 JSON 的
   `null` 字面量，于是「原链路场次没有档案」会被 `IS NOT NULL` 误判成「有」。
   `GET /reports/archive` 把已存的 digest 原样回传给引擎的 `/growth`，取错题本 / 考点地图 / 历史成绩
+- **复盘清单**：`/finish` 的顶层 `review` 存进 `reports.review`，随报告接口（`/reports/{id}`）返回；
+  演示前端的报告页已渲染成「考后复盘」卡片。与 digest 同款：JSON 列要 `none_as_null`，
+  `null` = 引擎关掉了该功能（不是「空清单」）
 - 题库复用 `backend/rag/数据/`（与 A11 自带那份已逐字段核对一致），不拷第二份；
   模型缓存 `backend/.hf_cache`（已 gitignore）：reranker 2.27GB + whisper-small 464MB，
   下载与环境清单见 `dialogue_layer/README-集成说明.md`

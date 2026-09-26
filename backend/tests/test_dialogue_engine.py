@@ -239,6 +239,18 @@ class _FakeEngine:
         payload = _finish_payload()
         # 顶层 digest（成长档案摘要）——引擎侧白名单构造，这里给个最小形状
         payload["digest"] = {"digest_version": 1, "job": payload["job"], "sessions": 1}
+        # 顶层 review（给考生看的复盘清单）
+        payload["review"] = {
+            "review_version": 1, "session_id": session_id, "job": payload["job"], "mode": "",
+            "headline": "这场覆盖了 3 个考点：2 个答到了、1 个没答到。",
+            "gaps": [{"kp_id": "k1", "title": "CAP 理论",
+                      "advice": "第 3 题问到了它，这次没答到。"}],
+            "covered": [], "uncovered": [],
+            "actions": [{"kind": "practice", "kp_id": "k1", "title": "CAP 理论",
+                         "text": "专门练「CAP 理论」：出 3 道同类题。"}],
+            "counts": {"topics_seen": 3, "topics_hit": 2, "topics_missed": 1},
+            "caveats": ["「没答到」是判分系统对「这一轮回答」的判定。"],
+        }
         return payload
 
     async def growth(self, position: str, records: list[dict]) -> dict:
@@ -454,6 +466,30 @@ async def test_archive_without_digest_says_so(client: AsyncClient):
     assert arch["available"] is False
     assert "还没有成长档案" in arch["notice"]
     assert arch["wrong_book"] is None
+
+    # 原链路场次也没有复盘清单（review 是引擎链路的产物）
+    rep = (await client.get(f"{BASE}/reports/{iid}", headers=headers)).json()["data"]
+    assert rep["review"] is None
+
+
+async def test_engine_report_carries_review(client: AsyncClient, engine_mode):
+    """复盘清单：落库并透出到报告接口"""
+    headers = await _auth_headers(client, "review")
+    iid = await _run_engine_interview(client, headers)
+
+    async with async_session() as session:
+        stored = (await session.execute(
+            select(Report.review).where(Report.interview_id == iid)
+        )).scalar()
+    assert isinstance(stored, dict) and stored["review_version"] == 1
+
+    rep = (await client.get(f"{BASE}/reports/{iid}", headers=headers)).json()["data"]
+    review = rep["review"]
+    assert review["headline"].startswith("这场覆盖了")
+    assert review["counts"]["topics_missed"] == 1
+    assert review["gaps"][0]["advice"]          # 每条漏点都带一句给考生的话
+    assert review["actions"][0]["text"]         # 下一步动作的文案
+    assert review["caveats"]                    # 口径说明不能空
 
 
 async def test_transcribe_endpoint_forwards_audio_to_engine(client: AsyncClient, engine_mode):

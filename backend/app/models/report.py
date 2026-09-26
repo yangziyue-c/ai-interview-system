@@ -46,6 +46,13 @@ class Report(Base):
         JSON(none_as_null=True), nullable=True, comment="成长档案摘要（引擎链路）"
     )
 
+    # 给考生看的复盘清单（漏点 + 下一步）。引擎侧白名单构造、不含得分点原文。
+    # 为 null 表示引擎关掉了该功能（`A11_REVIEW=0`），不是「有清单但是空的」——
+    # 两者混同会让前端把「没开」画成一张空卡片。
+    review: Mapped[dict | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True, comment="复盘清单（引擎链路）"
+    )
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     interview = relationship("Interview", back_populates="report")

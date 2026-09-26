@@ -555,6 +555,29 @@ Views.report = {
            ${items.map((s) => `<div class="list-item"><span class="mark" style="color:${color}">${mark}</span><span>${Helpers.esc(s)}</span></div>`).join("")}</div>`
         : "";
 
+    // 考后复盘（引擎链路才有：原链路场次、以及引擎关掉该功能时都是 null）
+    const reviewHtml = (rv) => {
+      if (!rv || typeof rv !== "object") return "";
+      const counts = rv.counts || {};
+      const gaps = rv.gaps || [];
+      const actions = rv.actions || [];
+      const caveats = rv.caveats || [];
+      const nMissed = counts.topics_missed ?? gaps.length;
+      const sub = (t) => `<div class="review-sub">${t}</div>`;
+      const row = (mark, color, text) =>
+        `<div class="list-item"><span class="mark" style="color:${color}">${mark}</span><span>${Helpers.esc(text)}</span></div>`;
+      return `
+      <div class="card detail-section">
+        <div class="sec-title">🔍 考后复盘</div>
+        <div class="summary-text">${Helpers.esc(rv.headline || "")}</div>
+        ${gaps.length ? sub(`这些考点这次没答到（共 ${nMissed} 个）`) +
+          gaps.map((g) => row("!", "#f5a623", g.advice || g.title)).join("") : ""}
+        ${actions.length ? sub("下一步可以这样练") +
+          actions.map((a) => row("»", "#4f6ef7", a.text || a.title)).join("") : ""}
+        ${caveats.length ? `<div class="review-caveats">${caveats.map((c) => Helpers.esc(c)).join("<br>")}</div>` : ""}
+      </div>`;
+    };
+
     return `
       <div class="topbar">
         <button class="back" data-back>←</button>
@@ -575,6 +598,7 @@ Views.report = {
       ${listHtml("👍 你的优势", report.strengths, "✔", "#1fbf75")}
       ${listHtml("📌 待改进之处", report.weaknesses, "!", "#f5a623")}
       ${listHtml("📚 改进建议", report.suggestions, "»", "#4f6ef7")}
+      ${reviewHtml(report.review)}
       <div class="card detail-section">
         <div class="sec-title">📈 能力成长曲线</div>
         <div id="growth-box"></div>

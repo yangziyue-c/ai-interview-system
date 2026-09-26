@@ -89,23 +89,25 @@ async def _start_engine_interview(interview: Interview) -> str:
 
 async def _evaluate_via_engine(
     interview: Interview, qa_list: list[dict]
-) -> tuple[dict, dict, dict | None]:
+) -> tuple[dict, dict, dict | None, dict | None]:
     """引擎链路出报告：调 /finish，再换算成本项目 reports 口径
 
-    返回 (报告数据, 引擎明细, 成长档案摘要)：明细只进 reports.engine_meta、
-    摘要只进 reports.digest，两者都不进考生可见文案。
+    返回 (报告数据, 引擎明细, 成长档案摘要, 复盘清单)：明细只进 reports.engine_meta、
+    摘要只进 reports.digest、清单只进 reports.review。
     """
     try:
         payload = await get_dialogue_adapter().finish(interview.engine_session_id or "")
     except EngineError as exc:
         raise _engine_http_error(exc) from exc
-    # digest 为 null 表示引擎侧关掉了该功能（A11_GROWTH=0），不是「空档案」——
-    # 两者混同会让档案接口把「没开」当成「有摘要但是空的」。
+    # digest / review 为 null 表示引擎侧关掉了对应功能（A11_GROWTH=0 / A11_REVIEW=0），
+    # 不是「有内容但是空的」——两者混同会让前端把「没开」画成一张空卡片。
     digest = payload.get("digest")
+    review = payload.get("review")
     return (
         build_engine_report(interview.position, qa_list, payload),
         build_engine_meta(payload),
         digest if isinstance(digest, dict) else None,
+        review if isinstance(review, dict) else None,
     )
 
 
@@ -216,8 +218,9 @@ async def _finish_interview(db: DbSession, interview: Interview) -> Report:
     ]
     engine_meta: dict | None = None
     digest: dict | None = None
+    review: dict | None = None
     if interview.engine == ENGINE_A11:
-        data, engine_meta, digest = await _evaluate_via_engine(interview, qa_list)
+        data, engine_meta, digest, review = await _evaluate_via_engine(interview, qa_list)
     else:
         # 5 维契约由评估适配器归一化（缺失字段在适配器层补齐），这里直接消费
         data = await get_evaluator_adapter().evaluate(interview.position, qa_list)
@@ -236,6 +239,7 @@ async def _finish_interview(db: DbSession, interview: Interview) -> Report:
         suggestions=list(data.get("suggestions") or []),
         engine_meta=engine_meta,
         digest=digest,
+        review=review,
     )
     db.add(report)
     await db.commit()

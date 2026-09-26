@@ -27,6 +27,9 @@ class ReportOut(BaseModel):
     strengths: list[str]
     weaknesses: list[str]
     suggestions: list[str]
+    # 复盘清单（引擎链路的考生出口）：headline / gaps[] / covered[] / actions[] / caveats[]。
+    # 原链路场次与引擎关掉该功能时都是 null——前端据此决定要不要画这一块。
+    review: dict | None = None
     created_at: datetime
 
 

@@ -183,6 +183,13 @@ async def init_db() -> None:
             "digest",
             "ALTER TABLE reports ADD COLUMN digest JSON",
         )
+        # 复盘清单（对话层 /finish 的顶层 review，给考生看的漏点与下一步）
+        await conn.run_sync(
+            _ensure_column,
+            "reports",
+            "review",
+            "ALTER TABLE reports ADD COLUMN review JSON",
+        )
         # 注：原「题库 V4 第 16 列 expression_points」的补列语句已随 V5 换代删除——
         # 该列在新表结构中不存在，留着会在每次启动把已删列 ALTER 回来。
         # questions 的结构变更走 scripts/import_question_bank.py --rebuild，
