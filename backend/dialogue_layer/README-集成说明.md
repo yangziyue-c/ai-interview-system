@@ -66,7 +66,7 @@ cd backend/dialogue_layer && python app/main.py
 | `A11_KG` / `A11_RAG` | `1` / `0` | 知识图谱默认开，RAG 默认关 |
 | `RERANKER_MODEL` | `backend/.hf_cache/bge-reranker-v2-m3` | 本地模型目录（本机连不上 huggingface.co，用路径直喂） |
 | `A11_ASR_MODEL` | `backend/.hf_cache/faster-whisper-small` | 语音转写模型目录 |
-| `A11_ASR_EMOTION` | `0` | 情感模型在魔搭上没有，本部署关闭（转写与音量指标不受影响） |
+| `A11_ASR_EMOTION_MODEL` | `backend/.hf_cache/wav2vec2-base-superb-er` | 情感模型本地路径（权重由 P5 提供）。**必须显式指**：默认值是 HF 仓库名，而加载走 `local_files_only=True`，本机连不上 HF 时默认值必然失败 |
 | `A11_ASR_MIN_FREE_MB` | `800` | 转写的内存门槛（引擎默认 1200；本机 15.2GB 偏紧，按实测占用下调） |
 | `HF_HOME` | `backend/.hf_cache` | 模型缓存根 |
 | `HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE` | `1` | 强制离线，模型需提前下好 |
@@ -79,7 +79,7 @@ cd backend/dialogue_layer && python app/main.py
 
 本项目 conda 环境 `ai_interview` 里已有 `torch`、`fastapi`、`sentence-transformers`、`transformers`、`python-multipart`、`onnxruntime`，另外补装了语音转写需要的 `faster-whisper`、`ctranslate2`、`av`。
 
-不采用 A11 声明的版本锁（`sentence-transformers==4.1.0`、`transformers==4.49.0`）：共享环境里的 8003 RAG 服务也用这两个包，按其版本锁降级会连累 RAG。当前环境是 `sentence-transformers 6.0.1` + `transformers 5.17.0`，桩模式冒烟测试 2854 项全过；真模型路径由 `/health` 的 `scorer_ready` 与 `/asr` 的实际调用判定。
+不采用 A11 声明的版本锁（`sentence-transformers==4.1.0`、`transformers==4.49.0`）：共享环境里的 8003 RAG 服务也用这两个包，按其版本锁降级会连累 RAG。当前环境是 `sentence-transformers 6.0.1` + `transformers 5.17.0`，桩模式冒烟测试 **2854 项 0 失败**（那一轮 `A11_ASR=0`，关掉 ASR 会少 18 项断言、跳过而非失败；判据是「失败 0 项」，比 ASR 开着少 18 项不是异常）；真模型路径由 `/health` 的 `scorer_ready` 与 `/asr` 的实际调用判定。
 
 模型权重不在仓库里，首次使用需要下载。本机实测 `hf-mirror.com` 与 `huggingface.co` 都连不上，改从 ModelScope 下载：
 
@@ -93,6 +93,14 @@ python -c "from modelscope import snapshot_download as d; \
 ```
 
 两个模型共约 2.7GB（reranker 2.27GB + whisper-small 464MB）。`start.py` 会把这两个目录作为模型路径传给子进程，不必再设别的变量。
+
+第三个模型是情感模型（`wav2vec2-base-superb-er`，361MB）：**它不在魔搭上**，权重由 P5 直接提供（2026-09-26 的《集成答复与情感模型权重》包）。照同样的放法解成平铺目录：
+
+```
+backend/.hf_cache/wav2vec2-base-superb-er/     ← 5 个文件，合计 378,367,709 字节
+```
+
+`start.py` 检测到这个目录后会注入 `A11_ASR_EMOTION_MODEL` 指过去（**必须显式指**，原因见环境变量表）。三个模型都不入 git，每台机器各自准备。
 
 若某天要直连 Hugging Face：`HF_ENDPOINT=https://hf-mirror.com` 配合 `HF_HUB_DISABLE_XET=1`（新版客户端默认走 Xet 后端，镜像站不支持会返 401）。
 
@@ -139,7 +147,7 @@ python -c "from modelscope import snapshot_download as d; \
 - 追问不推进题号，前端「第 N 题」在追问期间保持不变。
 - 引擎链路**不做 Mock 兜底**，失败即报错（503，错误码 50300）。
 - **语音转写有内存门槛**：引擎侧要求空闲内存不低于 `A11_ASR_MIN_FREE_MB`（本部署 800MB），不满足时 `/asr` 返 503 并说明原因，不会硬加载到 OOM。整机 15.2GB 且同时跑着 reranker（约 2.3GB）时，演示前建议关掉不必要的程序。
-- **情感分析未开**：`superb/wav2vec2-base-superb-er` 在魔搭上找不到，`emotion*` 恒为 `null`；转写与语速 / 停顿 / 音量三组指标不受影响。
+- **情感模型的标签别当结论**：权重已就位（P5 提供，SHA256 逐文件核对一致），但它是**英语表演情绪**数据训的，**中文上标签不可信**（实测中文 3/3 判 `hap`，与 P5 的实测一致）。我们只用它看分布波动，从不引用标签。演示口径：「有情感分布，中文看波动」，**不要说「情感识别很准」**。
 - 转写质量受模型规模限制（small + int8），有错字是正常形态，设计上就是让考生确认后再发送。
 - 引擎的 `L3` 追问素材、单题校准锚点等字段本框架未使用，属 A11 的既有边界。
 - `web/test_chat.html` 是 A11 自带的调试页，只连 8005，不经过主后端。
@@ -154,4 +162,5 @@ python -c "from modelscope import snapshot_download as d; \
 | `/asr` 返回「空闲内存不足」 | 腾出内存后重试，或调低 `A11_ASR_MIN_FREE_MB`；这是引擎的保护性拒绝，不是故障 |
 | `/asr` 返回「还在加载」 | 转写模型懒加载中，隔几秒重试即可 |
 | `/start` 报 `llm_unavailable` | `backend/.env` 的 `LLM_API_KEY` 未配置 |
-| 改完引擎代码想回归 | 在 `dialogue_layer/` 跑 `smoke_test.py`，判据是「失败 0 项」，项数随 KG / RAG / ASR 开关浮动（本机实测 2854），不必对齐某个数 |
+| 改完引擎代码想回归 | 在 `dialogue_layer/` 跑 `smoke_test.py`，判据是「失败 0 项」，项数随 KG / RAG / ASR 开关浮动（本机实测 2854，是 `A11_ASR=0` 的组合；ASR 开着是 2857~2872 区间），不必对齐某个数 |
+| `emotion*` 恒为 null | 看 `/health` 的 `emotion_enabled`（false = 没开）/ `emotion_ready`（false 且 error 为空 = 还没载过，懒加载）/ `emotion_error`（非空 = 真坏了，原文就是原因） |

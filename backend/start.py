@@ -59,6 +59,8 @@ DIALOGUE_HF_HOME = BASE_DIR / ".hf_cache"
 DIALOGUE_MODEL_DIR = DIALOGUE_HF_HOME / "bge-reranker-v2-m3"
 # 语音转写模型（faster-whisper 的 CTranslate2 格式，同样走本地目录）
 DIALOGUE_ASR_MODEL = DIALOGUE_HF_HOME / "faster-whisper-small"
+# 情感模型（wav2vec2，P5 于 2026-09-26 直接给的权重：HF 与魔搭都没有这个模型）
+DIALOGUE_EMOTION_MODEL = DIALOGUE_HF_HOME / "wav2vec2-base-superb-er"
 
 
 def sh(cmd: str) -> subprocess.CompletedProcess:
@@ -210,9 +212,14 @@ def build_dialogue_env() -> dict:
         env["A11_ASR_MODEL"] = str(DIALOGUE_ASR_MODEL)
     else:
         env["A11_ASR"] = "0"
-    # 情感模型（superb/wav2vec2-base-superb-er）在魔搭上找不到，暂关。
-    # 转写与语速 / 停顿 / 音量三组表达指标不受影响，只是没有情感那几项。
-    env["A11_ASR_EMOTION"] = "0"
+    # 情感模型：P5 于 2026-09-26 直接给了权重（HF 连不上、魔搭上没有这个模型）。
+    # ⚠️ 路径必须**显式指**：引擎的默认值是 HF 仓库名 superb/wav2vec2-base-superb-er，
+    # 而加载走 local_files_only=True（从不联网），默认值在本机必然失败——
+    # 而且失败形态是「直接报坏」，不是「慢慢下」。
+    if any(DIALOGUE_EMOTION_MODEL.glob("*.bin")):
+        env["A11_ASR_EMOTION_MODEL"] = str(DIALOGUE_EMOTION_MODEL)
+    else:
+        env["A11_ASR_EMOTION"] = "0"
     # ASR 的内存门槛：引擎默认 1200MB（保守，宁拒不 OOM）。本机整机 15.2GB，
     # 演示时 reranker 常驻 2.3GB、还有主后端与浏览器，1200MB 往往凑不出来。
     # whisper-small（int8）实测加载约 500MB，800 留了余量；外部显式设这个

@@ -582,13 +582,15 @@ POST /uploads/audio/asr    Content-Type: multipart/form-data
   "pauses": 0, "pause_total_ms": 0,
   "asr_model": "faster-whisper-…(int8)", "elapsed_ms": 3804,
   "loudness": 0.0622, "loudness_cv": 0.331, "tail_ratio": 1.05,
-  "emotion": null, "emotion_score": null, "emotion_dist": null
+  "emotion": "hap", "emotion_score": 0.545,
+  "emotion_dist": { "neu": 0.445, "hap": 0.545, "ang": 0.010, "sad": 0.00001 }
 } }
 ```
 
 - `url` 可直接填入提交答案的 `audio_url`，用法与 6.1 的返回值相同。
 - 转写有错字是正常形态：前端把文本填进输入框、**由考生自行修改**后再发送。
-- `emotion*` 三项本部署恒为 `null`（情感模型未就位）；`loudness*` 与 `tail_ratio` 是音量三指标，与情感无关。
+- `emotion*` 三项来自本地情感模型。⚠️ 该模型是**英语表演情绪**数据训的，**中文上标签不可信**（实测中文 3/3 判 `hap`）：只用它看分布起伏，别把标签当结论展示。
+- `loudness*` 与 `tail_ratio` 是音量三指标，与情感无关，中文上一样有效。
 - 对话层未就绪时返回 **503（50300）**，不返回空文本——空文本会被当成「考生没说话」。
 
 ### 6.3 上传头像

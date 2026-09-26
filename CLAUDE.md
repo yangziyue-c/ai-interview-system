@@ -112,9 +112,13 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
 - 报告：引擎 1~5 分制 ×20 换算（`app/core/engine_report.py`），三栏由主后端从引擎明细推导；
   `reports.engine_meta` **只存摘要**，引擎 raw 里的得分点原文不进本表
 - **语音转写**：`POST /uploads/audio/asr` 转发给引擎的 `/asr`（faster-whisper 本地模型），
-  一次调用同时返回文本与 `audio_url`（前端不必传两次）。情感模型在魔搭上没有、本部署关闭
-  （`A11_ASR_EMOTION=0`，`emotion*` 恒为 null）。引擎侧有内存门槛（start.py 注入
-  `A11_ASR_MIN_FREE_MB=800`）：内存不足时转写返 503 而不是硬加载到 OOM
+  一次调用同时返回文本与 `audio_url`（前端不必传两次）。情感模型权重由 P5 直接提供
+  （HF 与魔搭都没有这个模型），放在 `.hf_cache/wav2vec2-base-superb-er`，启动注入里用
+  `A11_ASR_EMOTION_MODEL` **显式指过去**——加载走 `local_files_only=True`，默认的 HF 仓库名
+  在本机必然失败，且失败形态是「直接报坏」而不是「慢慢下」。
+  ⚠️ 该模型是**英语表演情绪**数据训的，**中文上标签不可信**（实测中文 3/3 判 `hap`）：
+  只说「有情感分布、中文看波动」，**演示时别说「情感识别很准」**。
+  引擎侧另有内存门槛（start.py 注入 `A11_ASR_MIN_FREE_MB=800`）：内存不足时转写返 503 而不是硬加载到 OOM
 - **成长档案**：每场 `/finish` 的顶层 `digest` 存进 `reports.digest`。
   ⚠️ 该 JSON 列**必须带 `none_as_null=True`**——默认行为会把 Python 的 None 存成 JSON 的
   `null` 字面量，于是「原链路场次没有档案」会被 `IS NOT NULL` 误判成「有」。
