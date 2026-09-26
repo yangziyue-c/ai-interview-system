@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="468" viewBox="0 0 1000 468">
+<title>大学生求职失败的主要原因</title>
+<rect width="1000" height="468" fill="#ffffff"/>
+<rect x="44" y="36" width="5" height="30" rx="2.5" fill="#4f6ef7"/>
+<text x="62" y="58" font-size="28" font-weight="700" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">大学生求职失败的主要原因</text>
+<text x="62" y="88" font-size="13.5" font-weight="400" fill="#7a8296" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">调查显示，三项均与面试环节直接相关　·　多选题，占比之和大于 100%</text>
+<rect x="190" y="140" width="750" height="58" rx="8" fill="#f2f4fa"/>
+<rect x="190" y="140" width="694.4" height="58" rx="8" fill="#4f6ef7"/>
+<text x="170" y="175" font-size="17" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">简历不过关</text>
+<text x="866.4" y="175.5" font-size="18" font-weight="700" fill="#ffffff" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">50.84%</text>
+<rect x="190" y="226" width="750" height="58" rx="8" fill="#f2f4fa"/>
+<rect x="190" y="226" width="682.3" height="58" rx="8" fill="#4f6ef7"/>
+<text x="170" y="261" font-size="17" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">面试时太紧张</text>
+<text x="854.3" y="261.5" font-size="18" font-weight="700" fill="#ffffff" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">49.95%</text>
+<rect x="190" y="312" width="750" height="58" rx="8" fill="#f2f4fa"/>
+<rect x="190" y="312" width="675.6" height="58" rx="8" fill="#4f6ef7"/>
+<text x="170" y="347" font-size="17" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">表达沟通欠缺</text>
+<text x="847.6" y="347.5" font-size="18" font-weight="700" fill="#ffffff" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">49.46%</text>
+<line x1="44" y1="416" x2="940" y2="416" stroke="#e4e8f2" stroke-width="1"/>
+<text x="44" y="446" font-size="13" font-weight="400" fill="#7a8296" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">数据来源：中国青年报社联合粉笔调查（2025 年 1 月，北京 10 所高校 1011 名受访者）</text>
+</svg>
