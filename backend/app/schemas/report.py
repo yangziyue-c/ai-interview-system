@@ -27,6 +27,10 @@ class ReportOut(BaseModel):
     strengths: list[str]
     weaknesses: list[str]
     suggestions: list[str]
+    # 本场评分是否不完整（引擎链路有轮次未能完成评分时为 true，分数可能不全）。
+    # 原链路与评分完整的场次恒为 false。它是 reports.engine_meta 里的一个键，
+    # 由 report_out() 拉平成布尔下发——前端不必去解析明细 JSON。
+    partial: bool = False
     # 复盘清单（引擎链路的考生出口）：headline / gaps[] / covered[] / actions[] / caveats[]。
     # 原链路场次与引擎关掉该功能时都是 null——前端据此决定要不要画这一块。
     review: dict | None = None
@@ -34,15 +38,22 @@ class ReportOut(BaseModel):
 
 
 def report_out(report, interview) -> ReportOut:
-    """由「报告 + 其所属面试」构造响应对象（三处报告出口统一走这里）。
+    """由「报告 + 其所属面试」构造响应对象（五处报告出口统一走这里）。
 
     为什么不直接让 `ReportOut.model_validate(report)` 读 position：
     reports 表没有岗位列，而 Report.interview 这个 relationship 在 async 上下文里
     懒加载会抛 MissingGreenlet（`_finish_interview` 里新建的 Report 也没绑定过它）。
     故显式把 interview.position 注入——这样响应里的 position 永远非空。
+
+    partial 同理：它是 engine_meta 这个 JSON 列里的一个键，不是独立列，
+    在这里拉平成布尔。原链路场次 engine_meta 为 None，取不到即为 false。
     """
+    meta = report.engine_meta
     return ReportOut.model_validate(report).model_copy(
-        update={"position": interview.position}
+        update={
+            "position": interview.position,
+            "partial": bool(meta.get("partial")) if isinstance(meta, dict) else False,
+        }
     )
 
 

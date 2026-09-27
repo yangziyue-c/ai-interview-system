@@ -253,6 +253,7 @@ GET /reports/{interview_id}
     "strengths": ["回答内容充实……"],
     "weaknesses": ["个别问题可再深入……"],
     "suggestions": ["继续深挖技术原理……"],
+    "partial": false,            // 本场评分是否不完整（2026-09-27 新增）；原链路恒为 false
     "review": { "headline": "……", "gaps": [], "counts": {} },   // 考后复盘清单（见 4.7）；原链路为 null
     "created_at": "2026-08-25T21:00:00"
   }
@@ -266,6 +267,11 @@ GET /reports/{interview_id}
 > 不要再靠「从列表页带过来的内存变量」，那样一刷新页面岗位名就没了。
 > 结束面试的两个响应（`POST /interviews/{id}/answers` 的 `report`、
 > `POST /interviews/{id}/finish` 的 `report`）同样带该字段。
+>
+> `partial` 为 `true` 表示本场有轮次未能完成评分，分数可能不全，前端据此提示
+> 「评分不完整」。只有引擎链路（`DIALOGUE_ENGINE=a11`）会出现该情况，原链路恒为
+> `false`。它取自 `reports.engine_meta` 的内部明细，由接口拉平成布尔下发；
+> 前端不必去解析该 JSON，其中的 `notes`（引擎的换题留痕等）不对前端下发。
 
 ### 4.2 最近一次面试的改进建议（个人中心用）
 

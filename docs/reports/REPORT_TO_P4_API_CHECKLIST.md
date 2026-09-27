@@ -63,7 +63,8 @@
 | 面试会话 ID | `id` | 面试相关接口 |
 | 面试会话 ID | `interview_id` | 报告、成长曲线、学习计划接口 |
 | 知识点 ID | `kp_id` | 学习计划接口（新） |
-| 简历 ID | `resume_id` | 简历接口（新） |
+| 简历 ID | `id` | 简历对象（`POST /resumes`、`/resumes/latest`、`/resumes/{id}`） |
+| 简历 ID（路径参数） | `resume_id` | 下载接口路径 `/resumes/{resume_id}/file` |
 
 ---
 

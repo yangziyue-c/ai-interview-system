@@ -199,8 +199,9 @@ def test_engine_meta_keeps_notes_out_of_summary():
 class _FakeEngine:
     """按脚本走的假引擎：第 1 题追问一次，第 2 题答完即收尾"""
 
-    def __init__(self, total: int = 2) -> None:
+    def __init__(self, total: int = 2, partial: bool = False) -> None:
         self.total = total
+        self.partial = partial
         self.asked = 0
         self.turns = 0
         # 记录调用入参，供断言「原样回传」「确实转发」这类行为
@@ -236,7 +237,7 @@ class _FakeEngine:
         }
 
     async def finish(self, session_id: str) -> dict:
-        payload = _finish_payload()
+        payload = _finish_payload(partial=self.partial)
         # 顶层 digest（成长档案摘要）——引擎侧白名单构造，这里给个最小形状
         payload["digest"] = {"digest_version": 1, "job": payload["job"], "sessions": 1}
         # 顶层 review（给考生看的复盘清单）
@@ -340,10 +341,43 @@ async def test_engine_flow_mirrors_rounds_and_finishes(client: AsyncClient, engi
                 "expression_score", "adaptability_score", "match_score"):
         assert 0.0 <= report[key] <= 100.0
     assert report["strengths"] and report["weaknesses"] and report["suggestions"]
+    assert report["partial"] is False       # 假引擎报的是完整评分
 
     detail = (await client.get(f"{BASE}/interviews/{interview_id}", headers=headers)).json()["data"]
     assert detail["status"] == "finished"
     assert [qa["round"] for qa in detail["qa_records"]] == [1, 2]
+
+
+async def test_engine_partial_reaches_report(client: AsyncClient, engine_mode):
+    """引擎判「本场有轮次没评出分」时，报告里的 partial 为 true
+
+    前端拿它决定要不要提示「评分不完整」。字段掉在适配层的话，这条提示永远不出现，
+    而考生看到的分数其实是不全的——所以两个出口都要断言。
+    """
+    engine_mode.partial = True
+    headers = await _auth_headers(client, "partial")
+
+    started = await client.post(
+        f"{BASE}/interviews", json={"position": "backend"}, headers=headers
+    )
+    interview_id = started.json()["data"]["interview"]["id"]
+    await client.post(
+        f"{BASE}/interviews/{interview_id}/answers",
+        json={"answer": "回答。"},
+        headers=headers,
+    )
+
+    # 出口一：主动结束面试的响应
+    body = (
+        await client.post(f"{BASE}/interviews/{interview_id}/finish", headers=headers)
+    ).json()["data"]
+    assert body["report"]["partial"] is True
+
+    # 出口二：报告详情接口（报告页刷新走这条）
+    fetched = (
+        await client.get(f"{BASE}/reports/{interview_id}", headers=headers)
+    ).json()["data"]
+    assert fetched["partial"] is True
 
 
 async def test_engine_not_ready_blocks_start_and_leaves_no_session(client: AsyncClient, monkeypatch):

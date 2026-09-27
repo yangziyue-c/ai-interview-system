@@ -309,6 +309,8 @@ class TestInterviewFlow:
         for key in ("tech_score", "logic_score", "expression_score", "adaptability_score", "match_score"):
             assert 0 <= report[key] <= 100
         assert report["position"] == "backend"  # 报告直达接口也带岗位 code
+        # 原链路场次恒为 false：该字段目前只由引擎链路写入 engine_meta
+        assert report["partial"] is False
 
     async def test_manual_finish_and_growth(self, client: AsyncClient):
         """手动结束 → 报告生成 → 成长曲线含该次面试"""
