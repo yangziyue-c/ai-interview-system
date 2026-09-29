@@ -120,3 +120,81 @@ POST /uploads/audio/asr    multipart/form-data，字段名 file
 1. **请求超时不能设短**：对话层在外部大模型偶发卡住时**不返 5xx**，而是把超时预算跑完再收尾。所以前端的请求超时必须 **`/chat` ≥540 秒、`/finish` ≥360 秒**（整场最坏约 900 秒）。已归档实测是 `/chat` p50 3.1 秒 / p90 7.0 秒 / 最坏 25.2 秒——540 是兜底上限、不是常规耗时，但低于它会让正常场次被前端自己掐断。
 2. **`kind` 为「示范作答」时，`note` 必须渲染**：参考答案里那 991 篇的正文是照 STAR 骨架编的**通用示例**，不是真范文。不显示 `note`，考生会把虚构经历当范文背下去。这条适用于 `/model_answer`（尚未接入），接入时一并做。
 3. **`review` 已经接好了（2026-09-26）**：你不需要调对话层，直接读 `GET /reports/{id}` 返回里的 `review` 字段即可，契约见 `docs/API.md` 4.7 节。演示前端的报告页已经渲染成「考后复盘」卡片（漏点带 `advice`、下一步用 `actions[].text`、底部展示 `caveats`），文案都已由后端拼好，直接展示即可；`gaps` 为空时不显示那一组。
+
+## 六、2026-09-29 版追加（对话层端点 10 → 12）
+
+对话层又换了一版。本项目**新增两个转发接口**、**建面试多一个可选参数**；已有的契约仍然一个字没变。
+
+### 6.1 `POST /uploads/audio/tts` 面试官朗读
+
+```
+POST /uploads/audio/tts    { "text": "请讲讲你对 JVM 内存模型的理解。", "voice": "" }
+```
+
+把一段文本（通常是面试官的提问）合成语音，返回**本站地址**：
+
+```json
+{ "code": 0, "message": "朗读音频已生成", "data": {
+  "url": "/uploads/tts/12_ab3f9c2d.wav",
+  "content_type": "audio/wav", "bytes": 84320, "chars": 18
+} }
+```
+
+- `text` 上限 800 字；`voice` 留空用引擎默认音色。
+- 地址是**本站的**（不是对话层那台的），前端直接 `<audio src>` 播放即可。音频落在 `uploads/tts/`，与录音目录分开——它是临时产物，将来清理时删这一个目录，不会碰到要留档的录音。
+- 引擎未就绪或合成失败返回 **503（50300）**，**不返空音频**（空音频在前端表现为「播放了但没声音」）。
+
+### 6.2 `POST /body-language/analyze` 体态分析
+
+```
+POST /body-language/analyze
+{ "frames": [ { "timestamp_ms": 0, "landmarks": [ { "x": 0.51, "y": 0.32 } ] } ] }
+```
+
+摄像头画面**不出浏览器**：前端用 MediaPipe 在本地提关键点、画面即丢，上传的只有数字（一次 1~600 帧，坐标是 [0,1] 的归一化值）。**不接受图片、视频、音频**——这条边界后端不会放宽。
+
+```json
+{ "code": 0, "message": "分析完成", "data": { "score": 82.0, "notes": ["肩线平稳"] } }
+```
+
+- `score` **可能不存在**：证据不足（帧太少、镜头里看不到肩线）时引擎**不给分**，而不是给低分。**别在前端补 0**——镜头坏了不该等于考生体态差。
+- ⚠️ 该结果目前**未接入评分链路**，只作为独立信号返回。
+
+### 6.3 建面试支持简历模式
+
+```
+POST /interviews    { "position": "backend", "resume_text": "三年 Java 后端，做过订单系统…" }
+```
+
+带上 `resume_text`（≤6000 字）后，AI 对话层会按简历出题，考官 prompt 与开场白都会用到它。
+**仅在引擎模式下生效**；原链路传了会被忽略（那一条的出题只看岗位与轮次）。
+
+## 七、两套接口的对照：**别照抄 5 号的页面**
+
+P5 给的 `web/test_chat.html` 等三个页面是**直连 8005** 的调试页，调的是对话层自己的接口——与本项目的对外接口是两套。照它们实现会走偏，这里做一张对照：
+
+| 对话层（8005） | 本项目（8001） | 说明 |
+| :--- | :--- | :--- |
+| `POST /start` | `POST /interviews` | 建会话；对话层那一跳由主后端替你调 |
+| `POST /next` | —（无直接对应） | 下一题由 `POST /interviews/{id}/answers` 响应里的 `next_question` 带回 |
+| `POST /chat`（**SSE**） | `POST /interviews/{id}/answers` | 主后端内部消费 SSE，**对外是普通 JSON**，前端不需要 EventSource |
+| `POST /finish` | `POST /interviews/{id}/finish`（或答满自动结束） | |
+| `GET /result/{session_id}` | `GET /reports/{interview_id}` | **口径不同**：引擎 0-5，本项目 0~100 |
+| `POST /asr` | `POST /uploads/audio/asr` | 见 5.1 |
+| `POST /tts` | `POST /uploads/audio/tts` | 见 6.1 |
+| `POST /body-language/analyze` | `POST /body-language/analyze` | 见 6.2（请求/响应同形） |
+| `POST /growth` | `GET /reports/archive` | 见 5.2 |
+| `POST /practice` | —（未接） | 要做「专项练习」界面时再一起接 |
+| `POST /model_answer` | —（未接） | 同上（接入时记得渲染 `note`，见 5.4 第 2 条） |
+| `GET /health` | `GET /health` | 本项目自己的健康检查，与对话层无关 |
+
+**四处理念差异**，这是为什么不能照抄：
+
+| 维度 | 对话层 | 本项目 |
+| :--- | :--- | :--- |
+| 鉴权 | 无 | 全部要 `Authorization: Bearer`（只有注册/登录/岗位列表/分享免登录） |
+| 会话 | `session_id`，**存在内存里**，服务一重启就全丢 | `interview_id`，落数据库；历史、成长曲线、分享都靠它 |
+| 刷新恢复 | 页面刷新即丢（会话 ID 只在 JS 变量里，也没调 `/result` 恢复） | 用 `interview_id` 可以恢复（`GET /interviews/{id}`） |
+| 五维分数 | 0-5（步进 0.05） | **0~100** |
+
+另外，`resume_setup.html` 把简历存进浏览器 `localStorage`——那是调试页的做法。正式前端若要「记住简历」，存储位置与隐私口径得自己定；本项目另有 `/resumes` 一套接口，简历是落服务端的。
