@@ -9,6 +9,13 @@ from app.schemas.report import ReportOut
 class StartInterviewRequest(BaseModel):
     # 岗位由数据库 positions 表动态维护，存在性校验在服务层
     position: str = Field(max_length=32, description="面试岗位 code（见 GET /positions）")
+    # 简历模式：传了就走引擎的 resume 档，考官 prompt 与开场白都会用到它。
+    # 上限对齐引擎侧 A11_RESUME_MAX_CHARS（6000）；**仅引擎链路生效**——
+    # 原链路的出题不看简历，传了会被忽略（不报错，见 interviews.start_interview）。
+    resume_text: str | None = Field(
+        default=None, max_length=6000,
+        description="简历文本（可选，仅 AI 对话层引擎链路生效）",
+    )
 
 
 class AnswerRequest(BaseModel):

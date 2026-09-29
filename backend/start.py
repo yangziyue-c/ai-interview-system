@@ -56,11 +56,17 @@ DIALOGUE_IMPORT_CHECK = (
 # 模型缓存目录（bge-reranker-v2-m3 首次运行需联网下载，见 README-集成说明.md）
 DIALOGUE_HF_HOME = BASE_DIR / ".hf_cache"
 # 平铺的本地模型目录（魔搭下载的布局；CrossEncoder 可直接加载目录路径）
+# ⚠️ 2026-09-29 版起 reranker 默认走**在线**（硅基流动），本地这份只在没有
+#    SILICONFLOW_API_KEY 时作为回退，见 build_dialogue_env()。
 DIALOGUE_MODEL_DIR = DIALOGUE_HF_HOME / "bge-reranker-v2-m3"
-# 语音转写模型（faster-whisper 的 CTranslate2 格式，同样走本地目录）
-DIALOGUE_ASR_MODEL = DIALOGUE_HF_HOME / "faster-whisper-small"
+# 语音转写模型（SenseVoice，sherpa-onnx 格式；由 P5 的交接包提供，不入库）
+# 2026-09-29 版默认 provider=sensevoice，取代了旧版的 faster-whisper 目录
+DIALOGUE_SENSEVOICE_DIR = DIALOGUE_DIR / "数据" / "models" / "sensevoice-small"
 # 情感模型（wav2vec2，P5 于 2026-09-26 直接给的权重：HF 与魔搭都没有这个模型）
+# ⚠️ 仅在 provider 不是 sensevoice 时才会加载；默认档下情感标签由 SenseVoice 自己给
 DIALOGUE_EMOTION_MODEL = DIALOGUE_HF_HOME / "wav2vec2-base-superb-er"
+# 知识库检索索引（KB，懒加载：首次 /finish 或首次知识库检索才加载编码器）
+DIALOGUE_KB_DIR = DIALOGUE_DIR / "数据" / "kb_index"
 
 
 def sh(cmd: str) -> subprocess.CompletedProcess:
@@ -182,11 +188,15 @@ def dialogue_model_cached() -> bool:
 def build_dialogue_env() -> dict:
     """AI 对话层子进程的环境变量
 
-    这些值原本散在 A11 的 run.ps1 里（PowerShell 脚本，默认路径指向交付方本机），
-    这里用本项目的位置重新注入。API key 只从 .env 读、只经环境变量传给子进程，
-    不写任何新文件、不打印。
+    这些值原本散在 A11 的 run.ps1 / start_a11.ps1 里（PowerShell 脚本，默认路径
+    指向交付方本机），这里用本项目的位置重新注入。API key 只从 .env 读、只经环境
+    变量传给子进程，不写任何新文件、不打印。
     """
     env = dict(os.environ)
+    # 轻量 / 全功能：与 P5 的 start_a11.ps1 同一条口径——默认轻量（RAG 与 KB 关，
+     # 内存友好），在 .env 里设 DIALOGUE_FULL=1 开全功能（另需本地 bge-m3 编码器，
+     # 约 2.2GB 常驻）。这个键是项目自己的开关，不是引擎的，故不带 A11_ 前缀。
+    full = read_env_value("DIALOGUE_FULL") == "1"
     env.update({
         "FRAMEWORK_PORT": DIALOGUE_PORT,
         # 题库复用本项目的一份（内容已逐字段核对一致），避免两份数据将来漂移
@@ -195,25 +205,57 @@ def build_dialogue_env() -> dict:
         "A11_RAG_RETRIEVER_PY": str(DIALOGUE_DIR / "数据" / "rag" / "memory_retriever.py"),
         "RAG_MEM_DIR": str(DIALOGUE_DIR / "数据" / "rag"),  # 裸名，不能加 A11_ 前缀
         "A11_KG": "1",
-        "A11_RAG": "0",
+        "A11_RAG": "1" if full else "0",
+        # 知识库检索（KB）：两个消费方——面试时的证据通道、学习资源的知识库参考。
+        # 懒加载：索引在磁盘上也不会在启动时读进来，首次 /finish 才加载编码器。
+        "A11_KB_REC": "1" if full else "0",
+        "A11_RAG_KB": "1" if full else "0",
         "SCORER_DEVICE": os.environ.get("SCORER_DEVICE", "cpu"),
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
     })
+    if DIALOGUE_KB_DIR.is_dir():
+        env["A11_KB_DIR"] = str(DIALOGUE_KB_DIR)
     env["HF_HOME"] = os.environ.get("HF_HOME") or str(DIALOGUE_HF_HOME)
     env.setdefault("HF_HUB_OFFLINE", "1")
     env.setdefault("TRANSFORMERS_OFFLINE", "1")
-    # 平铺的本地模型目录优先：魔搭下载不写 HF 缓存布局，用路径直接喂给 CrossEncoder
-    if any(DIALOGUE_MODEL_DIR.glob("*.safetensors")):
-        env["RERANKER_MODEL"] = str(DIALOGUE_MODEL_DIR)
-    # 语音转写：同样用本地目录。本机连不上 huggingface.co，用仓库名会卡在下载上，
-    # 所以「本地有模型」才开 ASR；没有就关掉——关了只是 /asr 返 503，面试不受影响。
-    if DIALOGUE_ASR_MODEL.is_dir() and any(DIALOGUE_ASR_MODEL.glob("*.bin")):
-        env["A11_ASR_MODEL"] = str(DIALOGUE_ASR_MODEL)
+    # ---- 密钥：三家，由 P5 的 Private 交接包提供，只落 backend/.env（已 gitignore）----
+    # DeepSeek 走主观评分；硅基流动走在线 reranker 与 embedding；DashScope 走客观题
+    # 评分、TTS 与在线 ASR。左列是引擎侧的键名，右列是 .env 里的键名。
+    for engine_key, project_key in (
+        ("DEEPSEEK_API_KEY", "LLM_API_KEY"),
+        ("DEEPSEEK_BASE_URL", "LLM_BASE_URL"),
+        ("DEEPSEEK_MODEL", "LLM_MODEL"),
+        ("SILICONFLOW_API_KEY", "SILICONFLOW_API_KEY"),
+        ("SILICONFLOW_BASE_URL", "SILICONFLOW_BASE_URL"),
+        ("DASHSCOPE_API_KEY", "DASHSCOPE_API_KEY"),
+        ("DASHSCOPE_BASE_URL", "DASHSCOPE_BASE_URL"),
+    ):
+        if not env.get(engine_key):
+            value = read_env_value(project_key)
+            if value:
+                env[engine_key] = value
+    # 引擎侧多数派生项自带 fallback（A11_RERANK_API_KEY ← SILICONFLOW_API_KEY、
+    # A11_OBJECTIVE_API_KEY / A11_TTS_API_KEY ← DASHSCOPE_API_KEY），
+    # 但 A11_EMBEDDING_API_KEY **没有**——不显式补，embedding 恒不可用（KB 检索跟着失效）。
+    if env.get("SILICONFLOW_API_KEY") and not env.get("A11_EMBEDDING_API_KEY"):
+        env["A11_EMBEDDING_API_KEY"] = env["SILICONFLOW_API_KEY"]
+    # ---- reranker：有硅基流动 key 就走在线（引擎默认 siliconflow），省下 2.2GB 常驻内存；
+    # 没有 key 才回退本地 CrossEncoder（.hf_cache 里那份，魔搭布局，用路径直接喂）。
+    if not env.get("SILICONFLOW_API_KEY"):
+        env["A11_RERANKER_PROVIDER"] = "local"
+        if any(DIALOGUE_MODEL_DIR.glob("*.safetensors")):
+            env["RERANKER_MODEL"] = str(DIALOGUE_MODEL_DIR)
+    # 语音转写：SenseVoice 本地模型（sherpa-onnx 格式，由 P5 交接包提供）。
+    # 新版引擎默认 provider 就是 sensevoice，故只需指模型目录；模型不在就关掉 ASR
+    # ——关了只是 /asr 返 503，面试链路不受影响。
+    if DIALOGUE_SENSEVOICE_DIR.is_dir() and any(DIALOGUE_SENSEVOICE_DIR.glob("*.onnx")):
+        env["SENSEVOICE_MODEL_DIR"] = str(DIALOGUE_SENSEVOICE_DIR)
     else:
         env["A11_ASR"] = "0"
     # 情感模型：P5 于 2026-09-26 直接给了权重（HF 连不上、魔搭上没有这个模型）。
-    # ⚠️ 路径必须**显式指**：引擎的默认值是 HF 仓库名 superb/wav2vec2-base-superb-er，
+    # ⚠️ 只在 provider 不是 sensevoice 时才会加载（默认档下情感标签由 SenseVoice 自己给）；
+    # 路径仍要**显式指**：引擎的默认值是 HF 仓库名 superb/wav2vec2-base-superb-er，
     # 而加载走 local_files_only=True（从不联网），默认值在本机必然失败——
     # 而且失败形态是「直接报坏」，不是「慢慢下」。
     if any(DIALOGUE_EMOTION_MODEL.glob("*.bin")):
@@ -221,9 +263,8 @@ def build_dialogue_env() -> dict:
     else:
         env["A11_ASR_EMOTION"] = "0"
     # ASR 的内存门槛：引擎默认 1200MB（保守，宁拒不 OOM）。本机整机 15.2GB，
-    # 演示时 reranker 常驻 2.3GB、还有主后端与浏览器，1200MB 往往凑不出来。
-    # whisper-small（int8）实测加载约 500MB，800 留了余量；外部显式设这个
-    # 环境变量可以覆盖本值（要更保守就调回去）。
+    # 演示时还有主后端与浏览器在跑，1200MB 往往凑不出来。SenseVoice（int8）
+    # 实测加载约 240MB，800 留了余量；外部显式设这个环境变量可以覆盖本值。
     env.setdefault("A11_ASR_MIN_FREE_MB", "800")
     # 学习资源样例（4a 的素材源）：指到项目内那一份
     resources = DIALOGUE_DIR / "数据" / "学习资源样例.json"
@@ -231,16 +272,6 @@ def build_dialogue_env() -> dict:
         env["A11_RESOURCES_JSON"] = str(resources)
     # raw 明细保持脱敏（A11_RAW_DETAIL=0 是引擎的默认档）：得分点原文不出门。
     # 要全量明细（比如给 3 号出评估报告）才在外部设 1，本项目不设。
-    # DeepSeek 三项复用本项目 .env 的 LLM_* 配置（LLM 直连与对话层引擎本就用同一套）
-    for dialogue_key, project_key in (
-        ("DEEPSEEK_API_KEY", "LLM_API_KEY"),
-        ("DEEPSEEK_BASE_URL", "LLM_BASE_URL"),
-        ("DEEPSEEK_MODEL", "LLM_MODEL"),
-    ):
-        if not env.get(dialogue_key):
-            value = read_env_value(project_key)
-            if value:
-                env[dialogue_key] = value
     return env
 
 

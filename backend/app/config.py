@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     # （引擎自己只等 A11_ASR_WAIT_SEC=12 秒，超时就返回「还在加载」而不是死等）。
     # 60 秒覆盖的是「模型已在内存」后的正常转写，CPU 上一段 60 秒内的音频约数秒。
     DIALOGUE_ASR_TIMEOUT_SECONDS: float = 60.0
+    # 面试官朗读（TTS）：引擎侧走 DashScope CosyVoice，单句合成实测数秒。
+    # 引擎自己的 TTS_TIMEOUT=90（要留重试与长句的余量），这一侧给 60 秒。
+    DIALOGUE_TTS_TIMEOUT_SECONDS: float = 60.0
+    # 体态分析：引擎侧是纯本地计算、不调任何外部服务，但一次最多 600 帧；
+    # 给 30 秒足够——超时说明真出了问题，而不是「算得慢」。
+    DIALOGUE_BODY_TIMEOUT_SECONDS: float = 30.0
     # 健康探测结果缓存秒数：引擎状态会变（模型预热完成、服务挂掉），取值不宜过大
     DIALOGUE_HEALTH_CACHE_SECONDS: float = 30.0
 

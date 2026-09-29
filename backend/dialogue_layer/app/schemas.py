@@ -39,6 +39,27 @@ class SessionReq(Loose):
     message: str = Field("", description="旧前端固定传空串；本服务不使用该字段")
 
 
+class BodyLanguagePoint(Loose):
+    """One normalized MediaPipe pose landmark."""
+    x: float
+    y: float
+    z: float = 0.0
+    visibility: float = Field(1.0, ge=0.0, le=1.0)
+    presence: float = Field(0.0, ge=0.0, le=1.0)
+
+
+class BodyLanguageFrame(Loose):
+    """One local browser frame containing numeric landmarks only."""
+    timestamp_ms: float = Field(..., ge=0)
+    landmarks: list[BodyLanguagePoint] = Field(default_factory=list)
+
+
+class BodyLanguageReq(Loose):
+    """/body-language/analyze request; never contains image or audio bytes."""
+    frames: list[BodyLanguageFrame] = Field(
+        ..., min_length=1, max_length=600)
+
+
 # ============================================================
 # GET /health
 # ============================================================
@@ -48,6 +69,22 @@ class HealthResp(Loose):
     port: int = 0
     llm_mock: bool = False
     reranker_mock: bool = False
+    score_step: float = 0.05
+    reranker_provider: str = ""
+    reranker_model: str = ""
+    embedding_provider: str = ""
+    embedding_model: str = ""
+    embedding_ready: bool = False
+    embedding_error: str = ""
+    objective_provider: str = ""
+    objective_model: str = ""
+    objective_ready: bool = False
+    objective_error: str = ""
+    tts_enabled: bool = False
+    tts_ready: bool = False
+    tts_provider: str = ""
+    tts_model: str = ""
+    tts_voice: str = ""
     llm_configured: bool = False
     model: str = ""
     device: str = ""
@@ -72,6 +109,12 @@ class HealthResp(Loose):
     rag_ready: bool = False
     rag_error: str = ""
     rag_model: str = ""
+    # 面试期知识库通路的状态。它与 kb_enabled（4a）和 rag_enabled 都不同：
+    # enabled=true / ready=false / error 非空时，说明配置要求用知识库，
+    # 但当前没有可借用的编码器，追问不会带背景材料。
+    kb_interview_enabled: bool = False
+    kb_interview_ready: bool = False
+    kb_interview_error: str = ""
     # ---- 语音输入 / ASR（同款四键）----
     # ⚠️ 这里的三种组合含义不同，别混：
     #   asr_enabled=False                 → 没开（配置，A11_ASR=0）
@@ -81,6 +124,12 @@ class HealthResp(Loose):
     asr_ready: bool = False
     asr_error: str = ""
     asr_model: str = ""
+    asr_provider: str = ""
+    online_asr_enabled: bool = False
+    online_asr_ready: bool = False
+    online_asr_provider: str = ""
+    online_asr_model: str = ""
+    online_asr_error: str = ""
     # ---- 学习资源推荐（同款四键；这里没有懒加载，load_index() 是毫秒级的 JSON 读）----
     # resource_ready=False 且 error 非空 = 资源样例文件没找到/读不动 —— 它是**配置数据**，
     # 缺了不影响面试，只让 recommendations 退化成空列表（得分点级兜底仍在 blindspots 里）。
@@ -122,6 +171,12 @@ class HealthResp(Loose):
     persona_styles: list[str] = Field(default_factory=list)
     intro_enabled: bool = False
     intro_max_chars: int = 0
+    interview_modes: list[str] = Field(
+        default_factory=lambda: ["general", "resume"])
+    resume_enabled: bool = True
+    resume_max_chars: int = 6000
+    body_score_enabled: bool = True
+    probe_quality_guard_enabled: bool = True
     # ---- `raw` 的暴露档位（安全）----
     # 同样只有一个键。false（交付默认）= /finish 与 /result 的 `raw` 已脱敏成占位键,
     # 里面没有得分点原文;true = 全量明细（给 3 号 出评估报告用）。
@@ -139,6 +194,7 @@ class HealthResp(Loose):
     # ⚠️ 它还要 `A11_RAG=1` 才真出得来 —— 编码器是**借** rag 那份的，
     #    借不到就不检索（绝不自己加载 1.2GB）。所以这一位 true 只代表「开关开着」。
     rag_kb_enabled: bool = False
+    kb_score_enabled: bool = False
 
     # ---- 「素材怎么被用」这三条（2026-09-25）----
     # 同样**各一个单键**。它们是**同题两臂对照**里 old/new 两档的全部差异，
@@ -170,6 +226,12 @@ class StartReq(Loose):
     # 自我介绍 / 简历摘录（2026-09-25 起**真的会进面试官 prompt** + 开场白）。
     # 空 = 与加这个功能之前逐字节相同的行为。上限见 A11_INTRO_MAX_CHARS。
     intro: Optional[str] = Field("", description="自我介绍/简历摘录（可选）")
+    resume_text: Optional[str] = Field(
+        "", description="结构化或原文简历文本；1号解析文件后传入")
+    resume_id: Optional[str] = Field(
+        "", description="1号侧简历 ID，仅用于日志和回显")
+    interview_mode: str = Field(
+        "general", description="general=一般场景；resume=基于简历")
     # 面试官风格三档（2026-09-25）。取值见 /health.persona_styles。
     # **不传 = "standard" = 提示词逐字节不变**（那一档的追加块是空串）。
     # 不认识的档名 → 422 bad_persona_style（**报错而不是静默按默认跑**：
@@ -197,6 +259,9 @@ class StartResp(Loose):
     # （一个是「你发来的」，一个是「我读到了什么」）。
     intro_read: Optional[dict] = Field(
         None, description="读到自述的情况：{enabled,chars,raw_chars,truncated,snippet}")
+    interview_mode: str = Field("general", description="实际生效的面试模式")
+    resume_read: Optional[dict] = Field(
+        None, description="简历读取情况：{enabled,mode,chars,skills,projects}")
 
 
 # ============================================================
@@ -323,8 +388,9 @@ class ModelAnswerReq(Loose):
 
 class ModelAnswerResp(Loose):
     """
-    两样学习材料 + 它出自哪道题。**只有两个内容键** —— `拉开差距`（进阶得分点原文）
-    与 `常见卡点`（面试官降级策略）**永远不会**从这里出去，`missed_points` 同理。
+    三类学习材料 + 它出自哪道题。`拉开差距`（进阶得分点原文）与
+    `missed_points` **永远不会**从这里出去；常见陷阱只以面向考生的
+    `common_pitfalls` 形式返回，不带面试官内部指令。
     """
     ok: bool = True
     session_id: str
@@ -335,6 +401,9 @@ class ModelAnswerResp(Loose):
     talk: str = Field("", description="考点讲解（考点级教学材料，纯文本，可含换行）；"
                                       "按 `question_id` 取材料时**恒为空串**")
     model_answer: str = Field("", description="优秀回答范例（代表题的核心答案）")
+    common_pitfalls: str = Field(
+        "", description="常见陷阱提醒：错误思路、容易遗漏的边界或追问时容易暴露的问题；"
+                        "不含进阶得分点原文或面试官内部指令")
     from_question_id: str = Field("", description="这条范例出自哪道代表题（**只给题号，不给题面**）")
     # ⚠️ `kind` / `note`（2026-09-25 加）**必须一起渲染**：
     #    `kind="示范作答"` 时 `note` 是一句「下文示例经历为虚构」的提醒。
@@ -381,15 +450,36 @@ class ChatReq(Loose):
     session_id: str = Field(..., min_length=4)
     message: str = Field(..., min_length=1, description="考生这一句回答")
     # ---- 语音作答的表达指标（加法，可选）----
-    # 考生用语音答题时，前端把 `POST /asr` 返回的 `duration_ms` / `segments` /
-    # `audio_ms` / `asr_model` / `pauses` / `pause_total_ms` **原样**带回来
-    # （不要自己算、也不要自己编）。后两个是音频上量的停顿，缺了不影响作答，
-    # 只是停顿退回「段间隔」兜底（多半是 0）。
+    # 考生用语音答题时，前端把 `POST /asr` 的响应**整条原样**带回来
+    # （不要自己算、也不要自己编）。服务端会读这 **12** 个键：
+    #     duration_ms / segments / audio_ms / asr_model / pauses / pause_total_ms
+    #     / loudness / loudness_cv / tail_ratio / emotion / emotion_score / emotion_dist
+    # ⚠️ **别挑字段** —— 少带一个键，报告里就少一项读数。这不是假设：2026-09-27
+    #    实测（`_tmp_w16_干跑.py` 与 `_tmp_w16_线B客户端.html`）两个调用方都只挑了
+    #    前 6 个，结果 `loudness / loudness_cv / tail_ratio / emotion / emotion_score /
+    #    emotion_dist` 在 `/finish` 的 `raw.rounds[].speech` 里**全是 null**，看上去
+    #    像服务端不干活，其实是**调用方把它们丢了**（服务端逐个 `.get()` 读）。
+    #    整条回传时只剥掉**非读数**的键即可：`ok` / `text` / `error` / `detail` /
+    #    `elapsed_ms`。4 号 的 `交付说明-前端.md` 里那句「别挑字段」说的就是这件事。
+    # ⚠️ 缺了不报错、也不扣分：`derive_speech()` 是纯函数，读到几个算几个 ——
+    #    `pauses` 缺了退回「相邻段间隔」兜底（多半是 0），音量那几项缺了就整条不出
+    #    （顶层 `pace_note` 会照实说「没有量到音量与停顿数据」）。
     # 不传 = 文字作答，行为与加这个字段之前逐字节相同。
     # ⚠️ `message` 仍然是唯一被当作回答内容的字段 —— 转写文本走 message，
-    #    这个对象里**只有数字**，它不参与判档、评分、复读守卫。
+    #    这个对象里**只有数字**（外加两个闭集标签串），它不参与判档、评分、复读守卫。
     speech: Optional[dict] = Field(
-        None, description="语音作答时由 /asr 原样回传的时长与时间戳（可选）")
+        None, description="语音作答时由 /asr **整条原样**回传的读数（12 键，可选）")
+    # Camera pose summary produced locally by the browser. Only numeric metrics
+    # and closed status/confidence labels are accepted; no frames or video.
+    body_language: Optional[dict] = Field(
+        None,
+        description="摄像头姿态摘要（可选）：available/score/confidence/"
+                    "quality_status/metrics/feedback；只允许数字与闭集标签")
+
+
+class TTSReq(Loose):
+    text: str = Field(..., min_length=1, max_length=800)
+    voice: str = Field("", max_length=80, description="可选；默认使用服务端音色")
 
 
 # ============================================================
@@ -422,19 +512,36 @@ class AsrResp(Loose):
     #    这么切是为了**连读的答案也算得出**起伏与收尾：VAD 要静音 >2 秒才断开，
     #    真人连读只会切出一个人声段，那时 cv/tail 就永远是 `None`（2026-09-25 改）。
     # ⚠️ `emotion` 是**模型给的**情感标签（闭集），**不是**「自信度」。
-    #    自信度是 1 号在 `/finish` 的 `pace_note` 里用这些数**融合**出来的档位，
-    #    `/asr` 这一层不产出它 —— 别把这两个概念接错。
+    #    自信度的档位由 `asr.confidence_band()` 融合，**只吃 `loudness_cv` 与
+    #    `tail_ratio` 这两个韵律信号** —— 它**不吃**这里的 `emotion*`，也**不吃**语速
+    #    （理由写在该函数的注释里：情感在中文语音上近似常量，不构成证据）。
+    #    `/asr` 这一层**不产出**档位，它只出原料；档位在 `derive_speech()`
+    #    （`session.submit_answer` 收到回传后调）里算，最终以两种形态出现：
+    #      · `raw.rounds[].speech.confidence` / `exchanges[].speech.confidence`
+    #        —— 逐轮，只在 `A11_RAW_DETAIL=1` 的 raw 里；
+    #      · `/finish`（与 `/result/{sid}`）**顶层** `pace_note` 里那句整场汇总
+    #        —— 给**考生**看的（与同名的 `RoundRecord.pace_note()` **不是**同一样
+    #        东西，那个写给评分模型、含指令，不能展示）。
+    #    ⚠️ 别把 `emotion`（模型输出）与「语气自信度」（写死的规则算出来的）接错。
     loudness: Optional[float] = Field(
         None, description="各窗 RMS 均值（声音洪不洪亮）；只当相对量用，跨设备不可比")
     loudness_cv: Optional[float] = Field(
         None, description="各窗 RMS 的变异系数（越小越稳）；需 >=2 个窗，否则 None")
     tail_ratio: Optional[float] = Field(
         None, description="最后一窗 RMS / 各窗均值（<1=越说越小）；需 >=2 个窗")
+    pitch_variation: Optional[float] = Field(
+        None, description="可测音高帧的对数标准差；不足 8 帧时为 None")
     emotion: Optional[str] = Field(
         None, description="情感标签（闭集，来自模型 config：neu/hap/ang/sad）")
     emotion_score: Optional[float] = Field(None, description="上述标签的概率")
     emotion_dist: Optional[dict] = Field(
         None, description="全部标签 -> 概率（和恒为 1）；数字字典")
+    emotion_reliability: str = Field(
+        "", description="情感模型可信度范围；默认 low_for_chinese，"
+                        "表示中文情绪标签不可当作可靠结论")
+    emotion_usage: str = Field(
+        "", description="情感输出用途；默认 prosody_signal_only，"
+                        "只作语音起伏参考，不参与语气自信度档位")
     error: str = Field("", description="错误码：asr_unavailable | asr_loading | "
                                        "file_too_large | audio_too_long | "
                                        "unsupported_format | asr_failed")
@@ -457,6 +564,11 @@ class ChatResp(Loose):
         None, description="done 事件：覆盖率 0-100（0.6*基础命中率 + 0.4*进阶命中率）")
     reranker_ok: Optional[bool] = Field(
         None, description="done 事件：false = reranker 失败，这个分不可信")
+    coverage_method: Optional[str] = Field(
+        None, description="done 事件：覆盖率算法，当前为 full_then_window_max；"
+                          "它仍是覆盖率信号，不是技术正确性结论")
+    coverage_windows: Optional[int] = Field(
+        None, description="done 事件：本轮回答切出的有效句窗数；0 表示只比较了整段回答")
     # ↓ 判档：两个判档源各判了什么、最后听了谁。只增不改，4 号可以不看。
     reranker_band: Optional[str] = None
     judge_band: Optional[str] = Field(
@@ -502,7 +614,49 @@ class FinishResp(Loose):
     weights: str = Field(description="人类可读权重串，如 '技术30% 逻辑30% …'")
     summary: str = Field(description="面试评价正文")
     rounds: int = Field(description="参与评分的轮次数")
-    partial: bool = Field(description="true=有轮次评分失败或整场无分，分数不完整")
+    total_questions: int = Field(config.TOTAL_QUESTIONS, description="计划题目总数")
+    completion_rate: float = Field(0.0, description="questions_asked / total_questions")
+    effective_rounds: int = Field(0, description="至少包含一次有效回答的轮次数")
+    score_status: str = Field("invalid", description="valid | partial | invalid")
+    score_scope: str = Field("completed_rounds_only", description="评分覆盖范围")
+    final_score: bool = Field(False, description="是否可作为正式最终分")
+    dimension_info: list[dict] = Field(
+        default_factory=list,
+        description="五维展示信息。第一维在行为素质题中显示为“岗位胜任力关联度”，"
+                    "但 five_dim_avg 的键仍保持“技术水平”以保证兼容")
+    difficulty_mix: dict[str, int] = Field(
+        default_factory=dict,
+        description="参与评分的轮次按难度计数，展示跨难度平均分的构成")
+    score_by_difficulty: dict[str, dict] = Field(
+        default_factory=dict,
+        description="easy/medium/hard 各自的五维均分与加权总分")
+    difficulty_adjusted_score: Optional[float] = Field(
+        None, description="各难度先求均分再等权平均；null 表示没有足够数据")
+    content_analysis: dict[str, Any] = Field(
+        default_factory=dict,
+        description="赛题内容分析的派生视图：技术正确性、知识深度、逻辑严谨性、岗位匹配度；"
+                    "其中知识深度与第一维共用证据，不冒充独立模型输出")
+    score_breakdown: dict[str, Any] = Field(
+        default_factory=dict,
+        description="逐维评分依据、证据、可信度与覆盖率明细；不新增维度、不改五维权重")
+    objective: dict[str, Any] = Field(
+        default_factory=dict,
+        description="客观线：覆盖率、事实正确性、遗漏点和误区")
+    subjective: dict[str, Any] = Field(
+        default_factory=dict,
+        description="主观线：DeepSeek 五维评分与逐维依据")
+    combined: dict[str, Any] = Field(
+        default_factory=dict,
+        description="客观线与主观线的未校准合成分")
+    code_review: list[dict] = Field(
+        default_factory=list,
+        description="算法/编程题的附加快照：适用性、主要逻辑是否正确、简短说明；"
+                    "不新增维度、不参与权重")
+    score_semantics: dict[str, Any] = Field(
+        default_factory=dict,
+        description="评分口径说明。明确五维分为 0-5、默认 0.05 步进，reranker 是覆盖率信号，"
+                    "不是技术正确性结论")
+    partial: bool = Field(description="true=有评分失败、提前结束或整场无分，分数不完整")
     notes: list[str] = Field(default_factory=list)
     # ⚠️ 默认档（A11_RAW_DETAIL=0）下这里**只有**一个占位键 `note`。它装的是
     #    得分点原文（`rounds[].exchanges[].base_miss` = 未命中的得分点 = 一份答案）。
@@ -538,6 +692,19 @@ class FinishResp(Loose):
     #    `{}` =「有清单但是空的」—— 两者混同会让前端把「没开」画成一张空卡片。
     review: Optional[dict[str, Any]] = Field(
         None, description="给考生看的复盘清单（漏点 + 下一步；A11_REVIEW=0 时为 null）")
+    # ---- 表达客观测量（加法：顶层新键，给**考生**看的；2026-09-27）----
+    # ⚠️ **与 prompt 版同名、不同物，别接错**：`RoundRecord.pace_note()` 是同名的
+    #    另一个东西 —— 那是**写给评分模型**的逐轮摘要，里面带着「**禁止**因为它是
+    #    「偏高」就给高分」这类**指令**，**不能**展示给考生。顶层这一个（本字段）
+    #    是**整场一段**、**只对考生陈述事实**、**不含任何指令**，可以原文展示。
+    # ⚠️ 与 digest/review 同款：**无论 A11_RAW_DETAIL 都会出门**（默认档下也在）
+    #    ⇒ 白名单构造（`session.candidate_pace_note()`：数字全部现场算，文字全部
+    #    来自模板，情感标签走中文白名单）—— 它**绝不含**转写文本 / 题目 / 得分点。
+    # ⚠️ 与它们**唯一的**不同：**没有开关**。它不是「可选功能」，就是把已经算出来的
+    #    表达测量告诉考生；关掉等于把赛题 3b 对考生的可见价值清零。
+    # ⚠️ 纯文字作答时**也非空**（会明说「全部为文字作答」），不是 null、不是 ""。
+    pace_note: Optional[str] = Field(
+        None, description="给考生看的整场表达测量汇总一句话（纯文字作答时也有一段说明）")
     cached: bool = False
 
 

@@ -87,6 +87,22 @@ SRC_QUESTION = "question"
 _norm = norm_kp_title
 
 
+def _redact_question(text, question: str) -> str:
+    """Remove a representative question from learner-facing material.
+
+    Trap and explanation fields are derived from internal question records and
+    often quote the question verbatim. Returning that quote would leak a
+    question the learner may not have seen. The question itself remains in the
+    internal asset for provenance; only the in-memory learner-facing copy is
+    redacted.
+    """
+    value = str(text or "")
+    question = str(question or "").strip()
+    if question and question in value:
+        value = value.replace(question, "该题")
+    return value
+
+
 # ============================================================
 # 资源索引（进程内加载一次）
 # ============================================================
@@ -101,6 +117,9 @@ class ResourceIndex:
         self.by_id: dict[str, dict] = {}
         self.by_title: dict[str, dict] = {}
         self.dup_titles: set = set()  # 归一后同名多义的标题 —— 一律弃用标题键
+        # 平索引没有“常见卡点”，但代表题的 `样例[]` 有。按题目 ID 建一份补充
+        # 元数据映射，让按 question_id 取材料时也能带上常见陷阱提醒。
+        self.by_question_extra: dict[str, dict] = {}
         # 平索引：题目ID → {"范文": str, "kind": str}。**只有正文非空的才进来**
         # —— 空串进来会让「有没有范文」这个判断变成假的「有」。
         self.by_question: dict[str, dict] = {}
@@ -118,6 +137,13 @@ class ResourceIndex:
         for job in data.get("岗位", []) or []:
             for e in job.get("考点", []) or []:
                 rec = self._entry(e, job.get("岗位", ""))
+                for sample in rec.get("样例") or []:
+                    if not isinstance(sample, dict):
+                        continue
+                    qid = str(sample.get("题目ID", "") or "").strip()
+                    trap = (sample.get(_KEY_TRAP) or "").strip()
+                    if qid and trap:
+                        self.by_question_extra[qid] = {_KEY_TRAP: trap}
                 if rec["kp_id"]:
                     self.by_id[rec["kp_id"]] = rec
                 nt = _norm(rec["title"])
@@ -159,7 +185,21 @@ class ResourceIndex:
     @staticmethod
     def _entry(e: dict, job: str) -> dict:
         """一条资源条目 → 内部结构。字段名一律保留原文，不翻译、不改写。"""
-        samples = [s for s in (e.get("样例") or []) if isinstance(s, dict)]
+        samples = [dict(s) for s in (e.get("样例") or [])
+                   if isinstance(s, dict)]
+        talk = e.get("考点讲解") or ""
+        for sample in samples:
+            question = str(sample.get("题目", "") or "").strip()
+            talk = _redact_question(talk, question)
+            for key in (_KEY_MODEL, _KEY_TRAP, "口语化示例"):
+                sample[key] = _redact_question(sample.get(key), question)
+            gap = sample.get(_KEY_GAP)
+            if isinstance(gap, (list, tuple)):
+                sample[_KEY_GAP] = [
+                    _redact_question(value, question) for value in gap
+                ]
+            elif gap:
+                sample[_KEY_GAP] = _redact_question(gap, question)
         return {
             "kp_id": (e.get("kp_id") or "").strip(),
             "title": (e.get("考点") or "").strip(),
@@ -168,7 +208,7 @@ class ResourceIndex:
             "subclass": (e.get("子类") or "").strip(),
             "题量": e.get("题量"),
             "同组题量": e.get("同组题量"),
-            "考点讲解": e.get("考点讲解") or "",
+            "考点讲解": talk,
             "相关题目": list(e.get("相关题目") or []),
             "样例": samples,
         }
@@ -244,7 +284,9 @@ class ResourceIndex:
         rec = self.by_question.get(str(qid or "").strip())
         if not rec:
             return None
-        return {"题目ID": str(qid), _KEY_MODEL: rec["范文"], "kind": rec["kind"]}
+        out = {"题目ID": str(qid), _KEY_MODEL: rec["范文"], "kind": rec["kind"]}
+        out.update(self.by_question_extra.get(str(qid), {}))
+        return out
 
     @classmethod
     def resource_block(cls, rec: dict, sample: Optional[dict]) -> Optional[dict]:
@@ -259,11 +301,10 @@ class ResourceIndex:
             # 空列表 join 出来是空串，下游按「空 = 没有」处理即可。
             _KEY_GAP: "\n".join(gap) if isinstance(gap, (list, tuple)) else (gap or ""),
             "常见卡点": sample.get(_KEY_TRAP) or "",
-            # 加法：这条资源是围绕哪道代表题给的。前端可以据此说「针对这道题」，
-            # 也便于事后核对「推荐到底对不对得上」。
+            # 加法：这条资源是围绕哪道代表题给的。只给题号，题面一律不出门
+            # —— `_pick_sample` 可能挑中考生没做过的那道。
             "来源题": {
                 "题目ID": sample.get("题目ID", ""),
-                "题目": sample.get("题目", ""),
                 "难度": sample.get("难度", ""),
                 "题型": sample.get("题型", ""),
                 "优先级": sample.get("优先级", ""),
@@ -369,7 +410,8 @@ _MATERIAL_NOTES = {
 def material_status(idx, res_st, kp_id: str, title: str,
                     domain: str = "", subclass: str = "") -> dict:
     """
-    这个考点**有没有**可给考生的材料 → `{status, src, has_talk, has_model, note}`。
+    这个考点**有没有**可给考生的材料 →
+    `{status, src, has_talk, has_model, has_pitfalls, note}`。
 
     ⚠️ 本函数**只回答「有没有」，正文一个字都不出** —— 正文全项目只有一个出口
     （下面的 `answer_block`），这样「哪些字段能出门」只有一处要审。
@@ -377,9 +419,11 @@ def material_status(idx, res_st, kp_id: str, title: str,
     """
     res_st = res_st if isinstance(res_st, dict) else {}
 
-    def out(status, src="", has_talk=False, has_model=False, note=""):
+    def out(status, src="", has_talk=False, has_model=False,
+            has_pitfalls=False, note=""):
         return {"status": status, "src": src, "has_talk": has_talk,
-                "has_model": has_model, "note": note or _MATERIAL_NOTES.get(status, "")}
+                "has_model": has_model, "has_pitfalls": has_pitfalls,
+                "note": note or _MATERIAL_NOTES.get(status, "")}
 
     if not res_st:
         # 调用方没注入状态（只可能发生在直调本模块的测试里）。**不许冒充
@@ -400,34 +444,38 @@ def material_status(idx, res_st, kp_id: str, title: str,
     #    挑哪道要看调用方手里有没有该场出过的题号。若按挑中的那道算，提升路径会说
     #    「有材料」，而 `/model_answer`（它手里有题号）挑到另一道、返回空 —— 两处打架。
     has_model = any((s.get(_KEY_MODEL) or "").strip() for s in rec["样例"])
-    if not (has_talk or has_model):
+    has_pitfalls = any((s.get(_KEY_TRAP) or "").strip() for s in rec["样例"])
+    if not (has_talk or has_model or has_pitfalls):
         return out(MATERIAL_NOT_FOUND)
-    return out(MATERIAL_READY, src=src, has_talk=has_talk, has_model=has_model)
+    return out(MATERIAL_READY, src=src, has_talk=has_talk,
+               has_model=has_model, has_pitfalls=has_pitfalls)
 
 
 def answer_block(rec: dict, sample: Optional[dict]) -> Optional[dict]:
     """
     给考生的**正文**（`POST /model_answer` 的唯一取材处）。
 
-    ⛔ 只出**五个**键：`考点讲解` + `优秀回答范例` + `from_question_id` + `kind` + `note`。
-       **白名单构造**，不做「先建全再删键」—— `resource_block()` 那份里还有
-       `拉开差距`（= 进阶得分点原文）与 `常见卡点`（= 面试官降级策略），
-       那两个**绝不能对考生出**；多一个键就多一次泄漏机会。
+    ⛔ 只出**六个**键：`考点讲解` + `优秀回答范例` + `common_pitfalls` +
+       `from_question_id` + `kind` + `note`。
+       **白名单构造**，不做「先建全再删键」。`拉开差距`（= 进阶得分点原文）
+       **绝不能对考生出**；`常见卡点` 只转成面向考生的 `common_pitfalls`，
+       不携带得分点原文、进阶答案或面试官内部指令。
        ⚠️ 2026-09-25 从三个键改成五个：加 `kind`（范文 / 示范作答）与 `note`。
           这一改是**知情**的 —— 它放宽了那道白名单。理由：951 道题的「判分素材」
           在库里其实是**答题结构**（STAR 骨架），拿它生成的只能是「示范作答」，
           不标注就等于让考生把一段**虚构经历**当优秀范例背下来。
-          放宽的是**键数**，不是**来源**：两个新键都取自样例本身，没有一个字来自
-          `拉开差距` / `常见卡点` / 题干 / 进阶得分点。
+          后续又增加 `common_pitfalls`：它直接取自代表题的常见卡点材料，但是
+          面向考生的独立字段，不夹带 `拉开差距`、题干或进阶得分点原文。
     ⛔ **不返回代表题的题面**：`_pick_sample` 可能挑中他没做过的那道（见该函数的兜底），
        连题面一起给就等于顺带泄露一份没考过的题。只给题号，前端足以说「针对这道题」。
-    两样正文全空 ⇒ `None`（**不是空字典** —— 调用方要据此返 404，而不是给一个空壳）。
+    三类正文全空 ⇒ `None`（**不是空字典** —— 调用方要据此返 404，而不是给一个空壳）。
     """
     if not isinstance(rec, dict):
         return None
     talk = rec.get(_KEY_TALK) or ""
     model = ((sample or {}).get(_KEY_MODEL) or "").strip()
-    if not (talk.strip() or model):
+    pitfalls = ((sample or {}).get(_KEY_TRAP) or "").strip()
+    if not (talk.strip() or model or pitfalls):
         return None
     kind = (sample or {}).get("kind")
     if kind not in KINDS:
@@ -437,6 +485,7 @@ def answer_block(rec: dict, sample: Optional[dict]) -> Optional[dict]:
     return {
         "talk": talk,
         "model_answer": model,
+        "common_pitfalls": pitfalls,
         "from_question_id": str((sample or {}).get("题目ID", "") or ""),
         # ⚠️ `note` 与 `kind` **必须同时到位**：`kind="示范作答"` 而 `note=""`
         #    就是「标了却没解释」，前端可能只渲染 note ⇒ 标注静默丢失。
@@ -498,8 +547,12 @@ def _entry_recommendation(kp: dict, idx: ResourceIndex,
     """
     best = kp.get("best_score")
     if not isinstance(best, (int, float)):
-        # hit=False 蕴含 best_score 非空（blindspot.py:199-201），这里是第二道保险：
         # 拿不到覆盖率就算不出「薄弱度」，也就不该出现在排序里。
+        # ⚠️ 这**仍然是**必须的一道闸，而且从 2026-09-27 起它不再只是「第二道保险」：
+        #    旧口径下 hit=False 蕴含 best_score 非空（只看覆盖率），新口径下
+        #    **判档单独判负也能给出 hit=False**，而那种考点的覆盖率那一路根本没读数
+        #    （blindspot 里 hit_src == "judge_only_miss"）⇒ 这种条目会真的走到这里。
+        #    上层（review.py 的 actions[]、practice._weak_of）与这里口径一致。
         return None
     weakness = max(0.0, min(1.0, 1.0 - float(best) / 100.0))
 

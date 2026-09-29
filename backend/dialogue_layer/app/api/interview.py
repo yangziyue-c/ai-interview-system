@@ -37,19 +37,22 @@ import os
 import time
 from typing import Generator, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app import __version__, config
 from app.core import answer as answermod
 from app.core import asr as asrmod
+from app.core import embedding as embeddingmod
 from app.core import growth as growmod
 from app.core import kb as kbmod
 from app.core import kg as kgmod
+from app.core import objective as objectivemod
 from app.core import practice as pracmod
 from app.core import question_bank as qb
 from app.core import rag as ragmod
 from app.core import resources as resmod
+from app.core import tts as ttsmod
 from app.core.llm import LLMError, get_llm, llm_configured
 from app.core.prompts import PERSONA_STYLE_LABELS
 from app.core.scoring import get_scorer
@@ -61,7 +64,7 @@ from app.logging_conf import get_logger
 from app.schemas import (
     AsrResp, ChatReq, FinishResp, GrowthReq, GrowthResp, HealthResp,
     ModelAnswerReq, ModelAnswerResp, NextResp,
-    PracticeReq, PracticeResp, SessionReq, StartReq, StartResp,
+    PracticeReq, PracticeResp, SessionReq, StartReq, StartResp, TTSReq,
 )
 
 logger = get_logger(__name__)
@@ -208,7 +211,10 @@ def health():
     except Exception as e:
         logger.warning("health 读取知识库检索状态失败：%s", e)
         extra.update({"kb_enabled": config.A11_KB_REC, "kb_ready": False,
-                      "kb_error": f"{type(e).__name__}: {e}", "kb_n": 0})
+                      "kb_error": f"{type(e).__name__}: {e}", "kb_n": 0,
+                      "kb_interview_enabled": config.A11_RAG_KB,
+                      "kb_interview_ready": False,
+                      "kb_interview_error": f"{type(e).__name__}: {e}"})
 
     # 专项强化练习（4b）：只有一个开关，没有「就绪」一说 —— 它不依赖任何外部
     # 数据（题库在 /start 时就加载了），所以**一键**而不是四键。运维看这里
@@ -229,12 +235,23 @@ def health():
     extra["persona_styles"] = sorted(PERSONA_STYLE_LABELS)
     extra["intro_enabled"] = config.A11_INTRO
     extra["intro_max_chars"] = config.INTRO_MAX_CHARS
+    extra["interview_modes"] = ["general", "resume"]
+    extra["resume_enabled"] = config.A11_RESUME
+    extra["resume_max_chars"] = config.RESUME_MAX_CHARS
+    extra["body_score_enabled"] = config.A11_BODY_SCORE
+    extra["probe_quality_guard_enabled"] = config.A11_PROBE_QUALITY_GUARD
 
     # `raw` 的暴露档位（同样只有一个键）。
     # ⚠️ 之所以要把它暴露出来：`A11_RAG` / `A11_REPEAT_GUARD` 这一族当初选了
     #    「不上 /health」,结果两轮 A/B 的臂定义**只能靠行为反推**。同一个坑不踩第二次。
     # 看到 false 就是「/finish、/result 的 raw 里没有得分点原文」这个安全默认还在。
     extra["raw_detail_enabled"] = config.A11_RAW_DETAIL
+    extra["score_step"] = config.SCORE_STEP
+    extra["reranker_provider"] = config.RERANKER_PROVIDER
+    extra["reranker_model"] = config.RERANK_MODEL
+    extra.update(embeddingmod.embedding_status())
+    extra.update(objectivemod.objective_status())
+    extra.update(ttsmod.status())
 
     # 面试期那条知识库通路（赛题 6.1)b + 6.2)b）—— 同样只有一个键。
     # ⚠️ 与 kb_enabled 是**两个开关**：`kb_enabled` 管 4a（交卷后的学习资源），
@@ -243,6 +260,7 @@ def health():
     #    —— 不上 /health 就**只能靠行为反推**，而这条通路的行为在
     #    A11_RAG=0（借不到编码器）时也是「什么都没发生」，两者分不开。
     extra["rag_kb_enabled"] = config.A11_RAG_KB
+    extra["kb_score_enabled"] = config.A11_KB_SCORE
 
     # 2026-09-25 的三条「素材怎么被用」开关 —— 各一个**单键**，理由同上两条。
     # ⚠️ 为什么这次尤其必须上：同题两臂对照的 `old` 臂与 `new` 臂的差异**全在这三个键上**，
@@ -279,6 +297,18 @@ def health():
     #    两件事，所以 503 有两个码（`model_answer_disabled` / `resource_unavailable`）。
     #    运维看这里就能分辨 `/model_answer` 返 503 到底是哪一种，不必猜。
     extra["model_answer_enabled"] = config.A11_MODEL_ANSWER
+
+    # 2026-09-27 的三条（收尾污染守卫 + 总评护栏）—— 各一个**单键**，理由同上一族。
+    # ⚠️ 为什么这两组尤其必须上：它们的「关掉」形态都是**什么都没发生**
+    #    （degrade 轮的回复里没有多余旁白 / 总评少一道检查），
+    #    响应里**看不出区别**；不上 /health 就只能靠行为反推，而行为推不出来。
+    # ⚠️ 收尾守卫是**两个键、两件事**，不许合并：
+    #    `wrapup_guard` 答「认不认得出」、`wrapup_repair` 答「补不补」。
+    #    只报一个的话，「认出来了但没补」（REPAIR=0 的实验档）会与「压根没认出来」
+    #    长得一模一样 —— 那正是本波要消灭的那类"只能靠翻报告"的读数。
+    extra["wrapup_guard_enabled"] = config.A11_WRAPUP_GUARD
+    extra["wrapup_repair_enabled"] = config.A11_WRAPUP_REPAIR
+    extra["summary_guard_enabled"] = config.A11_SUMMARY_GUARD
 
     return HealthResp(
         status="ok",
@@ -323,7 +353,10 @@ def _asr_err(status: int, error: str, detail: str,
              })
 def asr_transcribe(file: UploadFile = File(..., description="音频文件，≤10MB / ≤60 秒"),
                    session_id: str = Form("", description="可选，仅用于日志串场"),
-                   round_index: str = Form("", description="可选，仅用于日志串场")):
+                   round_index: str = Form("", description="可选，仅用于日志串场"),
+                   allow_online: bool = Form(
+                       False,
+                       description="考生是否明确同意把本次音频发送到在线 ASR")):
     """
     把一段音频转成文字 + 一组**只有数字**的时间戳。**它不碰会话状态**。
 
@@ -360,6 +393,7 @@ def asr_transcribe(file: UploadFile = File(..., description="音频文件，≤1
     if engine is None:
         return _asr_err(503, "asr_unavailable",
                         "本机未启用语音识别（A11_ASR=0），请改用文字输入。")
+    online = asrmod.get_online_asr()
 
     try:
         # ⚠️ 用 file.file.read() 而不是 await file.read()：本端点是**同步**的
@@ -382,21 +416,70 @@ def asr_transcribe(file: UploadFile = File(..., description="音频文件，≤1
                         f"不支持的格式：{file.filename!r}；"
                         f"白名单：{list(config.ASR_FORMATS)}")
 
-    # 懒加载：第一个请求起加载线程并等一会儿，等到了就直接转写（体验最好），
-    # 等不到才回 503 + Retry-After（前端重试一次即可）—— 绝不无限期挂着。
-    state = engine.ensure_loaded(config.A11_ASR_WAIT_SEC)
-    if state == "loading":
-        return _asr_err(503, "asr_loading",
-                        f"语音模型正在加载（已等 {config.A11_ASR_WAIT_SEC:g} 秒），"
-                        "请稍后重试。", retry_after="3")
-    if state == "failed":
-        return _asr_err(503, "asr_unavailable",
-                        f"语音模型不可用：{engine.error}")
-
     path = None
+    provider_used = engine.tag
     try:
         path = asrmod.save_temp(data, file.filename or "")
-        r = engine.transcribe(path)
+        r = None
+        online_error = ""
+        if allow_online and online.ready:
+            try:
+                online_result = online.transcribe(path)
+                try:
+                    r = engine.analyze_audio(
+                        path,
+                        text=online_result["text"],
+                        asr_model=online_result["asr_model"],
+                    )
+                    r["elapsed_ms"] = (
+                        int(r.get("elapsed_ms") or 0)
+                        + int(online_result.get("elapsed_ms") or 0)
+                    )
+                except Exception as measure_error:
+                    logger.warning(
+                        "sid=%s 在线 ASR 已成功，但本地声学测量失败，"
+                        "保留在线文字并降级表达指标：%s",
+                        session_id, measure_error)
+                    r = {
+                        "text": online_result["text"],
+                        "audio_ms": 0,
+                        "duration_ms": 0,
+                        "segments": online_result.get("segments") or [],
+                        "pauses": None,
+                        "pause_total_ms": None,
+                        "elapsed_ms": int(
+                            online_result.get("elapsed_ms") or 0),
+                        "asr_model": online_result["asr_model"],
+                        "loudness": None,
+                        "loudness_cv": None,
+                        "tail_ratio": None,
+                        "pitch_variation": None,
+                        "emotion": None,
+                        "emotion_score": None,
+                        "emotion_dist": None,
+                        "emotion_reliability": asrmod.EMOTION_RELIABILITY,
+                        "emotion_usage": asrmod.EMOTION_USAGE,
+                    }
+                provider_used = online_result["asr_model"]
+                logger.info("sid=%s 使用在线 ASR provider=%s",
+                            session_id, provider_used)
+            except Exception as e:
+                online_error = f"{type(e).__name__}: {e}"
+                logger.warning("sid=%s 在线 ASR 失败，回退本地：%s",
+                               session_id, online_error)
+        if r is None:
+            # 本地兜底：未同意在线、在线未配置或在线调用失败时走这里。
+            state = engine.ensure_loaded(config.A11_ASR_WAIT_SEC)
+            if state == "loading":
+                return _asr_err(
+                    503, "asr_loading",
+                    f"语音模型正在加载（已等 {config.A11_ASR_WAIT_SEC:g} 秒），"
+                    "请稍后重试。", retry_after="3")
+            if state == "failed":
+                detail = engine.error or online_error or "本地语音模型不可用"
+                return _asr_err(503, "asr_unavailable", detail)
+            r = engine.transcribe(path)
+            provider_used = engine.tag
     except asrmod.AudioTooLong as e:
         return _asr_err(413, "audio_too_long", str(e))
     except Exception as e:
@@ -411,19 +494,56 @@ def asr_transcribe(file: UploadFile = File(..., description="音频文件，≤1
             except OSError as e:
                 logger.warning("sid=%s 临时音频删除失败 %s：%s", session_id, path, e)
 
-    logger.info("sid=%s round=%s /asr 转写完成 字符=%d 净时长=%dms 耗时=%dms",
-                session_id, round_index or "-", len(r["text"]),
-                r["duration_ms"], r["elapsed_ms"])
+    logger.info("sid=%s round=%s /asr 转写完成 provider=%s 字符=%d 净时长=%dms 耗时=%dms",
+                session_id, round_index or "-", provider_used,
+                len(r["text"]), r["duration_ms"], r["elapsed_ms"])
     return AsrResp(ok=True, text=r["text"], duration_ms=r["duration_ms"],
                    audio_ms=r["audio_ms"], segments=r["segments"],
                    pauses=r.get("pauses"), pause_total_ms=r.get("pause_total_ms"),
-                   asr_model=engine.tag, elapsed_ms=r["elapsed_ms"],
+                   asr_model=r.get("asr_model") or provider_used,
+                   elapsed_ms=r["elapsed_ms"],
                    # 韵律 + 情感：`.get` 而非 `[]` —— 桩与真服务都给了这 6 个键，
                    # 但老版本引擎（热重载中途）可能没有，用 `.get` 让接口不至于 500。
                    loudness=r.get("loudness"), loudness_cv=r.get("loudness_cv"),
                    tail_ratio=r.get("tail_ratio"), emotion=r.get("emotion"),
                    emotion_score=r.get("emotion_score"),
-                   emotion_dist=r.get("emotion_dist"))
+                   emotion_dist=r.get("emotion_dist"),
+                   emotion_reliability=r.get(
+                       "emotion_reliability", asrmod.EMOTION_RELIABILITY),
+                   emotion_usage=r.get(
+                       "emotion_usage", asrmod.EMOTION_USAGE))
+
+
+# ============================================================
+# POST /tts
+# ============================================================
+@router.post("/tts", summary="面试官文本转语音",
+             responses={200: {"content": {"audio/wav": {},
+                                           "application/json": {}}},
+                        503: {"description": "tts_unavailable"}})
+def tts(req: TTSReq, direct: bool = False, stream: bool = False):
+    try:
+        if stream:
+            return StreamingResponse(
+                (_sse(ev) for ev in ttsmod.stream_pcm(req.text, req.voice)),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache",
+                         "X-Accel-Buffering": "no"},
+            )
+        if direct:
+            url, content_type = ttsmod.synthesize_url(req.text, req.voice)
+            return JSONResponse({
+                "url": url,
+                "content_type": content_type,
+                "expires": "temporary",
+            })
+        audio, content_type = ttsmod.synthesize(req.text, req.voice)
+    except ttsmod.TTSError as e:
+        raise HTTPException(503, detail={
+            "code": "tts_unavailable",
+            "err": str(e),
+        })
+    return Response(content=audio, media_type=content_type)
 
 
 # ============================================================
@@ -446,10 +566,23 @@ def start(req: StartReq):
             "code": "bad_persona_style",
             "err": f"未知的面试官风格：{style!r}；可选：{sorted(PERSONA_STYLE_LABELS)}",
         })
+    interview_mode = (req.interview_mode or "general").strip().lower()
+    if interview_mode not in ("general", "resume"):
+        raise HTTPException(422, detail={
+            "code": "bad_interview_mode",
+            "err": "interview_mode 只支持 general 或 resume",
+        })
+    if interview_mode == "resume" and not (req.resume_text or "").strip():
+        raise HTTPException(422, detail={
+            "code": "resume_text_required",
+            "err": "基于简历面试时必须提供 resume_text",
+        })
 
     try:
         session = InterviewSession(job=req.job, intro=req.intro or "",
-                                   persona_style=style)
+                                   persona_style=style,
+                                   resume_text=req.resume_text or "",
+                                   interview_mode=interview_mode)
     except LLMError as e:
         # 没配 API key：这是部署问题，不是客户端问题，502 更贴切
         logger.error("创建会话失败：%s", e)
@@ -467,6 +600,8 @@ def start(req: StartReq):
         persona_style=session.persona_style,
         persona_label=PERSONA_STYLE_LABELS.get(session.persona_style, "标准"),
         intro_read=session.intro_read(),
+        interview_mode=session.interview_mode,
+        resume_read=session.resume_read(),
     )
 
 
@@ -623,7 +758,8 @@ def growth(req: GrowthReq):
 # POST /model_answer（考点讲解 / 优秀回答范例：赛题任务要求 4a）
 # ============================================================
 @router.post("/model_answer", response_model=ModelAnswerResp,
-             summary="取某个考点或某道题给考生的学习材料（考点讲解 / 优秀回答范例）",
+             summary="取某个考点或某道题给考生的学习材料"
+                     "（考点讲解 / 优秀回答范例 / 常见陷阱提醒）",
              responses={404: {"description": "answer_target_not_found（这一场没考到它 / "
                                              "没出过这道题）/ "
                                              "no_material（考到了，但资源侧没有材料）"},
@@ -650,9 +786,10 @@ def model_answer(req: ModelAnswerReq):
        走 kp_id 那条路它们**永远取不到**范文。加的是**覆盖率**，**不是权限** ——
        闸还是「他真的答过这道题」。两个入参都不给 ⇒ 422（不是 404）。
 
-    ⛔ **只出两个内容键**：`talk`（考点讲解）+ `model_answer`（优秀回答范例）。
-    `拉开差距`（进阶得分点原文）、`常见卡点`（面试官降级策略）、`missed_points`
-    **一个字节都不出**；**也不给代表题的题面**（只给 `from_question_id`）——
+    ⛔ **只出三个内容键**：`talk`（考点讲解）+ `model_answer`（优秀回答范例）
+    + `common_pitfalls`（常见陷阱提醒）。`拉开差距`（进阶得分点原文）与
+    `missed_points` **一个字节都不出**；**也不给代表题的题面**（只给
+    `from_question_id`）——
     `_pick_sample` 可能挑中他没做过的那道，给题面等于泄露一份没考过的题。
     ⚠️ 另外两个非内容键 `kind` / `note`：`kind=示范作答` 表示「这段是按题库给的
        答题结构编的通用示例，不是真题范例」，`note` 是给考生的提醒。
@@ -749,7 +886,7 @@ def chat(req: ChatReq):
         {"type":"error","code":"…","err":"…"}                      出错时
 
     done 事件里的判档字段（本轮新增，全部是**只增不改**）：
-        reranker_band  覆盖率换算出的档（L2/L1/degrade）
+        reranker_band  覆盖率换算出的档（L3/L2/L1/degrade）
         judge_band     LLM 判出的档；**null = 没判出来**，不是"判成降级"
         judge_ok       LLM 是否成功给出了档位
         judge_why      LLM 给的一句话理由（仅排查用，不进面试官 prompt）；
@@ -780,11 +917,17 @@ def chat(req: ChatReq):
                     yield _sse({"type": "done", "follow_up": False,
                                 "round_finished": True, "finished": True,
                                 "session_id": sid, "message": payload.get("message", ""),
-                                "q_index": session.questions_asked})
+                                "q_index": session.questions_asked,
+                                "effective": False,
+                                "assist_used": 0,
+                                "hint_used": 0})
                     return
                 yield _sse({"type": "question", "data": payload})
 
-            for ev in session.submit_answer(req.message, speech=req.speech):
+            for ev in session.submit_answer(
+                    req.message,
+                    speech=req.speech,
+                    body_language=req.body_language):
                 if ev.get("type") == "token":
                     n_tok += 1
                 yield _sse(ev)
@@ -801,10 +944,16 @@ def chat(req: ChatReq):
                 "action": st["action"],
                 "follow_up_used": st["follow_ups_used"],
                 "degrade_used": st["degrade_used"],
+                "assist_used": st["assist_used"],
+                "hint_used": st["hint_used"],
                 "attempts": st["attempts"],
+                # False = 本轮回答没有提供可判分信息（“不知道”、乱码等）。
+                "effective": st["effective"],
                 "reranker_score": st["reranker_score"],
                 # 评分失败时前端/3号要能看出来这轮的分不可信
                 "reranker_ok": st["reranker_ok"],
+                "coverage_method": st["coverage_method"],
+                "coverage_windows": st["coverage_windows"],
                 # 判档：两个判档源各判了什么、最后听了谁。**只是多给字段** ——
                 # 上面那些原有字段一个没删、没改名，4 号的既有解析不受影响。
                 # 这 6 个字段**必须在这里显式列出**：本函数是手搓 dict，不是把

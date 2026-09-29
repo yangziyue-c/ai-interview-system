@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 AVATAR_SUBDIR = "avatars"
 AVATAR_URL_PREFIX = f"/uploads/{AVATAR_SUBDIR}/"
 
+# 面试官朗读（TTS）子目录与对外 URL 前缀，同上
+# ⚠️ 刻意与录音分开：录音进 uploads/ 根目录（要跟着问答留档），而 TTS 是**临时产物**
+#    ——同一道题可以随时重新合成，留档没有意义。分开目录之后，「定期清理」就是
+#    删一个目录，不会碰到任何要留的东西。
+TTS_SUBDIR = "tts"
+TTS_URL_PREFIX = f"/uploads/{TTS_SUBDIR}/"
+
 # 允许的头像格式：jpg/png 覆盖拍照与截图，webp 覆盖浏览器另存
 ALLOWED_AVATAR_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 

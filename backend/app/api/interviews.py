@@ -66,14 +66,15 @@ async def _require_engine_ready() -> None:
     )
 
 
-async def _start_engine_interview(interview: Interview) -> str:
+async def _start_engine_interview(interview: Interview, resume_text: str = "") -> str:
     """引擎链路开场：建会话 + 取第一题，返回题面。
 
+    resume_text 非空时切引擎的简历模式（考官 prompt 与开场白都会用到它）。
     失败抛 503：此时考生还没答过任何东西，整场建不起来是干净的。
     """
     adapter = get_dialogue_adapter()
     try:
-        session = await adapter.start(interview.position)
+        session = await adapter.start(interview.position, resume_text=resume_text)
         session_id = str(session.get("session_id") or "")
         if not session_id:
             raise EngineError("建会话未返回 session_id")
@@ -275,7 +276,9 @@ async def start_interview(req: StartInterviewRequest, user: CurrentUser, db: DbS
 
     if settings.engine_enabled:
         # 引擎链路：链路标记与引擎会话 ID 在这里写入，整场不再改变
-        question = await _start_engine_interview(interview)
+        # 简历模式只有引擎链路认（resume_text 非空 → 引擎的 resume 档）；
+        # 原链路传了会被忽略——那一条的出题只看岗位与轮次，不看简历。
+        question = await _start_engine_interview(interview, req.resume_text or "")
     else:
         question = await get_interviewer_adapter().generate_question(
             position=req.position,

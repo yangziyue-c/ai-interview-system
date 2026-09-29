@@ -4,17 +4,6 @@ rag.py · RAG 参考片段（只读，只喂给面试官）
 ============================================================
 给面试官在追问时手上一份「同岗位、同难度、同知识点的其他问法 / 题目背景」。
 
-⚠️ 三条铁律（改这个文件之前先读完）：
-
-  1. **不参与选题**。出题仍然是 question_bank.sample() 的 random.choice，
-     RAG 只往 prompt 里塞参考材料。它不是"更好的抽题器"。
-  2. **不参与评分**。任何阈值（MATCH_THRESHOLD / LEVEL_L1_MIN / LEVEL_L2_MIN）
-     都不因此改动 —— 这里取到的片段没有一条流进评分链路。
-  3. **片段绝不进 raw**。raw 由 /finish 与 /result/{sid} 返回，**前端可见**，
-     而这里取到的 document 含「答题要点 / 示例话术」。要文本就别要安全，
-     二者只能选一 —— 所以 RagIndex.search() 的结果存在 RoundRecord.rag_refs
-     上（repr=False、不序列化），只有白名单四键的 rag_meta 进 raw。
-
 **代码默认**关闭，原因见 config.A11_RAG 的注释（内存放不下，不是保守）；
 但**交付包模板 `环境变量.模板.ps1:24` 设的是 `=1`**，dot-source 之后就是开着的。
 两个默认并存没问题，混成一句「默认关」才是问题。另注意：开了之后取到的是
@@ -29,6 +18,7 @@ import time
 from typing import Optional
 
 from app import config
+from app.core import embedding as embeddingmod
 from app.logging_conf import get_logger
 
 logger = get_logger(__name__)
@@ -233,12 +223,8 @@ class RagIndex:
                 self.retriever = mod.MemoryRetriever()
 
                 # ③ 编码器
-                from sentence_transformers import SentenceTransformer
-                kw = {}
-                if self.dtype == "fp16":
-                    import torch
-                    kw["model_kwargs"] = {"torch_dtype": torch.float16}
-                self.encoder = SentenceTransformer(self.model, **kw)
+                self.encoder = embeddingmod.get_encoder(
+                    config.RAG_ENCODER, config.RAG_DTYPE)
                 self.encoder.max_seq_length = 512     # 与建索引时一致，不能改
 
                 self.warmup_sec = time.time() - t0

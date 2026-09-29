@@ -32,6 +32,7 @@ from starlette.datastructures import MutableHeaders      # noqa: E402
 from starlette.exceptions import HTTPException as StarletteHTTPException  # noqa: E402
 
 from app.api.interview import router                     # noqa: E402
+from app.api.body_language import router as body_language_router  # noqa: E402
 from app.core import kg as kgmod                         # noqa: E402
 from app.core import question_bank as qb                 # noqa: E402
 from app.core import rag as ragmod                       # noqa: E402
@@ -197,6 +198,10 @@ def _build_app() -> FastAPI:
         # 不然「为什么没有参考片段」要靠翻代码猜。
         logger.info("A11_KG=%s  A11_RAG=%s  A11_KB_REC=%s",
                     config.A11_KG, config.A11_RAG, config.A11_KB_REC)
+        if config.A11_RAG_KB and not config.A11_RAG:
+            logger.warning(
+                "A11_RAG_KB=1 但 A11_RAG=0：面试期知识库检索只能借编码器，"
+                "当前会静默跳过背景材料；需要 6.1b/6.2b 时请设 A11_RAG=1")
         logger.info("=" * 62)
 
         # 1) 题库
@@ -236,6 +241,7 @@ def _build_app() -> FastAPI:
                        allow_headers=["*"], expose_headers=["X-Request-ID"])
 
     app.include_router(router, tags=["面试"])
+    app.include_router(body_language_router, tags=["摄像头"])
 
     # ---------------- 统一错误体 ----------------
     @app.exception_handler(StarletteHTTPException)

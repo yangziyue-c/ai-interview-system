@@ -20,6 +20,7 @@ session.py · 面试会话状态机
 """
 import difflib
 import os
+import random
 import re
 import time
 import uuid
@@ -30,20 +31,31 @@ from typing import Generator, Optional
 from app import config
 from app.core import blindspot, question_bank as qb
 from app.core import asr as asrmod
+from app.core import body_language as bodymod
 from app.core import kb as kbmod
 from app.core import kg as kgmod
+from app.core import objective as objectivemod
 from app.core import rag as ragmod
+from app.core import resume as resumemod
+from app.core import summary_guard as sg
 from app.core.llm import get_llm
 from app.core.prompts import (
-    ACTION_DESC, CLOSE_DIRECTIVE, DEEPEN_BLOCK, DEEPEN_BLOCK_EMPTY,
+    ACK_REPLIES, ACTION_DESC, CLOSE_DIRECTIVE, DEEPEN_BLOCK, DEEPEN_BLOCK_EMPTY,
+    DEGRADE_DIRECTIVE,
     FINAL_SUMMARY, HINT_BLOCK, HINT_BLOCK_CLOSE, HINT_BLOCK_EMPTY,
+    HINT_REQUEST_FALLBACK, HINT_REQUEST_REPLY,
     INTERVIEWER_SYSTEM, INTRO_BLOCK, INTRO_SNIPPET_MAX, KB_ASIDE,
-    OPENING_LINE, OPENING_LINE_INTRO, PERSONA_STYLE_LABELS, RAG_BLOCK,
+    NO_INFO_CLOSE_REPLIES, NO_INFO_DEGRADE_REPLIES,
+    NO_INFO_WITH_HINT_REPLIES,
+    OPENING_LINE, OPENING_LINE_INTRO, OPENING_LINE_TONE, PERSONA_STYLE_LABELS,
+    PROBE_BLOCK, RAG_BLOCK,
     RAG_BLOCK_EMPTY,
     RAG_BLOCK_LEGACY, RAG_KB_BLOCK, RAG_KB_BLOCK_EMPTY, RAG_KB_BLOCK_LEGACY,
-    ROUND_CONTEXT, SWAP_LINE, SYSTEM_SUMMARY, persona_style_block,
+    RESUME_BLOCK, ROUND_CONTEXT, SESSION_MEMORY_BLOCK, SWAP_LINE,
+    SYSTEM_SUMMARY, WRAPUP_NUDGE,
+    persona_style_block, persona_style_directive,
 )
-from app.core.scoring import get_scorer
+from app.core.scoring import get_scorer, weighted_llm_score
 from app.logging_conf import get_logger
 
 logger = get_logger(__name__)
@@ -115,14 +127,22 @@ class AttemptRecord:
     reranker_ok: bool
     base_hits: list[str]
     adv_hits: list[str]
-    action: str                      # 由这次回答决定的动作 L1/L2/degrade/close
+    action: str                      # 由这次回答决定的动作 L1/L2/L3/degrade/close
     hint: Optional[str]              # 因此要问出的追问（close 时为 None）
+    # 追问规划（加法）。action 说明“哪一级”，这三个字段说明“具体追什么”。
+    # to_raw() 只暴露目标和类型，不额外展开知识库/得分点正文。
+    probe_level: str = ""
+    probe_target: str = ""
+    probe_kind: str = ""
     # 判为**未**命中的得分点。给评分模型复核用 —— reranker 的假阴性
     # （考生用自己的话讲对了）只有把未命中的点也摆出来，模型才有机会翻案。
     base_misses: list[str] = field(default_factory=list)
     adv_misses: list[str] = field(default_factory=list)
     interviewer_reply: str = ""      # 面试官实际说的话
     llm_ok: bool = True
+    # False = 这段回答没有提供可判分的有效信息（“不知道”、乱码等）。
+    # 它仍保留原文和动作，但不再被后续话术当作“答到了一点”。
+    effective: bool = True
     ts: float = field(default_factory=time.time)
     # ---- 判档的两个源与融合结果（加法；全部有默认值，老构造点不受影响）----
     # 为什么要三个都存：只存"最后用了哪个档"的话，两个源打架的轮次就查不出来了，
@@ -148,19 +168,26 @@ class AttemptRecord:
     # 由 asr.derive_speech() 从「净时长 + 段级时间戳 + 转写文本」算出来的一组**数字**，
     # 全部键恒在、空值用 None。转写原文不进这里（它已作为 answer 存在）。
     speech: dict = field(default_factory=lambda: dict(asrmod.SPEECH_EMPTY))
+    # Camera pose summary for this answer. Numeric/closed fields only; no video,
+    # image, raw landmarks or free-form model output is retained here.
+    body_language: dict = field(default_factory=lambda: dict(bodymod.BODY_EMPTY))
+    # 覆盖率怎样算出来的。`reranker_score` 是覆盖率信号，不是技术正确性结论；
+    # 这两个键让报告能区分旧版整段匹配与新版「整段 + 句窗取最大」。
+    coverage_method: str = ""
+    coverage_windows: int = 0
 
     def match_note(self) -> str:
         """
-        这一次回答的客观匹配情况 —— 拼进评分 Prompt 给模型复核。
+        这一次回答的覆盖率信号 —— 拼进评分 Prompt 给模型复核。
 
         只给分数是没用的（「60 分」不告诉模型哪里出了问题）；给命中/未命中**两边**的
         明细，模型才能判断「命中的是真懂还是撞词」「没中的是不是换个说法讲对了」。
         """
         if not self.reranker_ok:
-            return "  ↳ 客观匹配：reranker 本次不可用，没有匹配结果（请只看回答本身）"
+            return "  ↳ 覆盖率信号：reranker 本次不可用，没有匹配结果（请只看回答本身）"
         hit = self.base_hits + self.adv_hits
         miss = self.base_misses + self.adv_misses
-        return (f"  ↳ 客观匹配 {self.reranker_score:g}/100"
+        return (f"  ↳ 覆盖率信号 {self.reranker_score:g}/100"
                 f"｜判为命中：{_clip_points(hit)}"
                 f"｜判为未命中：{_clip_points(miss)}")
 
@@ -177,8 +204,12 @@ class AttemptRecord:
             # follow_up_level 是本轮评完才定的**下一轮**追问层级（"close" = 本轮到此为止）
             "follow_up_level": self.action,
             "hint": self.hint,
+            "probe_level": self.probe_level,
+            "probe_target": self.probe_target,
+            "probe_kind": self.probe_kind,
             "interviewer_reply": self.interviewer_reply,
             "llm_ok": self.llm_ok,
+            "effective": self.effective,
             "attempt_no": self.attempt_no,
             "ts": round(self.ts, 3),
             # ---- 判档的两个源 + 融合结果（加法）----
@@ -200,6 +231,9 @@ class AttemptRecord:
             # 一组纯数字：净时长 / 语速 / 长停顿 / 填充词。没有语音时
             # used=false、其余为 None —— 「没用语音」与「语速是 0」必须能分开。
             "speech": self.speech,
+            "body_language": self.body_language,
+            "coverage_method": self.coverage_method,
+            "coverage_windows": self.coverage_windows,
             "band_disagree": bool(self.judge_ok and self.judge_band
                                   and self.judge_band != self.reranker_band),
         }
@@ -228,8 +262,17 @@ class RoundRecord:
     closed_at: Optional[float] = None
     open: bool = True
     attempts: list[AttemptRecord] = field(default_factory=list)
+    # 本轮的起点在全局 transcript 中的下标。面试官生成只看这一轮，
+    # 防止上一题的 assistant 回复污染新题。
+    transcript_start: int = 0
     follow_ups_used: int = 0
     degrade_used: int = 0
+    # “好的 / 给点提示”这类辅助轮。不计作一次回答，不计分，但有上限，
+    # 防止考生连续发“好的”让系统无限等待。
+    assist_used: int = 0
+    # 其中已经真正给过几次提示。给过提示后再说“不知道”，现场应直接收题，
+    # 不应把同一提示再复述一遍。
+    hint_used: int = 0
     # ---- 知识图谱 / RAG（全部是加法，不参与评分）----
     # 出题避重用了哪一级：r0/r1/r2/r3。事后调 KP_OVERLAP_THRESHOLD 的唯一依据。
     pick_level: str = ""
@@ -279,8 +322,19 @@ class RoundRecord:
     # 与 exchanges[].speech 同一份数据 —— 这里是为了让「按轮看表达」不用先遍历
     # exchanges。形状与 SPEECH_EMPTY 逐键相同，文字作答时 used=false。
     speech: dict = field(default_factory=lambda: dict(asrmod.SPEECH_EMPTY))
+    # Latest camera summary for this round. Independent from speech and only
+    # used as a bounded weak signal after the answer has been scored.
+    body_language: dict = field(default_factory=lambda: dict(bodymod.BODY_EMPTY))
     # 评分结果（finish 时填）
     five_dim: Optional[dict] = None
+    code_check: dict = field(default_factory=lambda: {
+        "applicable": False, "correct": None, "note": "",
+    })
+    # 逐维评分依据：reason / evidence / confidence + missing_points /
+    # misconceptions。旧五维分与权重完全不变，这里只是让报告可复核。
+    score_detail: dict = field(default_factory=dict)
+    objective_detail: dict = field(default_factory=dict)
+    body_score_adjustment: dict = field(default_factory=dict)
     comment: str = ""
     errors: list[str] = field(default_factory=list)
     scored: bool = False
@@ -298,7 +352,7 @@ class RoundRecord:
         """
         把整轮的问答过程拼成评分 Prompt 里的一段。
 
-        每次回答后面都挂上**那一次**的客观匹配明细（本轮改）—— 而不是只在末尾
+        每次回答后面都挂上**那一次**的覆盖率信号明细（本轮改）—— 而不是只在末尾
         给一个笼统的总分。理由：评的是整轮，而「应变能力」看的正是首答与追问后
         的落差；只给最后一次的分数，会把这个落差整个抹平。
         """
@@ -307,13 +361,20 @@ class RoundRecord:
             label = "第 1 次回答（无提示）" if i == 0 else f"第 {i + 1} 次回答"
             lines.append(f"【{label}】「{a.answer}」")
             lines.append(a.match_note())
+            if a.action != "close":
+                lines.append(
+                    "【本轮追问规划】"
+                    f"层级：{a.probe_level or a.action}｜"
+                    f"类型：{a.probe_kind or '未标注'}｜"
+                    f"目标：{a.probe_target or a.hint or '未标注'}"
+                )
             if a.action != "close" and (a.interviewer_reply or a.hint):
                 lines.append(f"【面试官追问】{a.interviewer_reply or a.hint}")
         return "\n".join(lines) or "（本轮没有有效回答）"
 
     def reranker_note(self) -> str:
         """
-        给评分模型的一行客观匹配摘要。
+        给评分模型的一行覆盖率摘要。
 
         reranker 失败时**明说用不了** —— 以前失败会返回默认 50 分，那个假分被
         当成「客观命中 50」喂进评分 Prompt，等于凭空空降一个中等分（它既不真
@@ -322,7 +383,7 @@ class RoundRecord:
         if not self.attempts:
             return "本轮没有有效回答。"
         if not self.last_ok:
-            return ("reranker 本次不可用，没有客观匹配结果 —— "
+            return ("reranker 本次不可用，没有覆盖率信号 —— "
                     "请完全依据上面的实际问答判断，不要参考任何覆盖率数字。")
         if len(self.attempts) == 1:
             return f"本次回答覆盖率 {self.last_score:g}/100。"
@@ -412,6 +473,8 @@ class RoundRecord:
                 bits.append(f"段间音量起伏（变异系数）{sp['loudness_cv']:.2f}")
             if sp.get("tail_ratio") is not None:
                 bits.append(f"收尾音量/全段均值 {sp['tail_ratio']:.2f}")
+            if sp.get("pitch_variation") is not None:
+                bits.append(f"音高起伏（对数标准差）{sp['pitch_variation']:.3f}")
             lines.append("本次为**语音作答**（转写模型 %s）：%s。"
                          % (sp.get("asr_model") or "ASR", "，".join(bits) or "（无可比值）"))
 
@@ -450,6 +513,19 @@ class RoundRecord:
             lines.append("本次为**文字作答**，没有语速/停顿/填充词数据"
                          "（语音未启用，或前端没走 /asr）—— 不要凭空猜这些数。")
 
+        if sp.get("baseline_used"):
+            parts = ["本次表达数据已与本人前几轮的个人基线做相对比较"]
+            if sp.get("baseline_chars_per_min") is not None:
+                parts.append("个人基线语速约 %.0f 字/分"
+                             % sp["baseline_chars_per_min"])
+            if sp.get("baseline_deviation") is not None:
+                parts.append("综合相对偏差 %.2f" % sp["baseline_deviation"])
+            lines.append("；".join(parts) + "。这只用于解释变化，不代表好坏。")
+
+        body_note = bodymod.prompt_note(self.body_language)
+        if body_note:
+            lines.append(body_note)
+
         # 使用规则。前三条恒在（划边界 / 快≠好 / 冲突以内容为准），
         # 第四条随**数据的有无**而变 —— 因为「有多弱」这件事本身取决于有没有语音。
         rules = [
@@ -476,19 +552,25 @@ class RoundRecord:
                 "**结论**，不是一个测量值。**禁止**因为它是「偏高」就给高分、"
                 "因为「偏低」就扣分 —— 它与「沟通表达」有关，**与第一维、逻辑思维、"
                 "岗位匹配度无关**。只在它与内容判断方向一致时当旁证，冲突以内容为准。")
-        rules.append("（表达分析只做语音与文本，**不做**摄像头与肢体语言。）")
+        if body_note:
+            rules.append(
+                "（摄像头只提供可解释的上半身姿态弱信号；不得推断情绪、"
+                "性格、紧张、诚实或自信，也不得据此改变技术水平、逻辑思维、"
+                "岗位匹配度。）")
+        else:
+            rules.append("（表达分析只做语音与文本，**不做**摄像头与肢体语言。）")
         lines.append("\n".join(rules))
         return "\n".join(lines)
 
     @property
     def reranker_5(self) -> Optional[float]:
         """
-        把 0-100 的覆盖率归一到五维的 1-5 量纲（0→1、100→5）。
+        把 0-100 的覆盖率归一到五维的 0-5 量纲（0→0、100→5）。
         reranker 失败或没有回答时为 None —— 不是 0。
         """
         if not self.attempts or not self.last_ok:
             return None
-        return round(1 + self.last_score / 100 * 4, 2)
+        return round(self.last_score / 100 * 5, 2)
 
     @property
     def tech_gap(self) -> Optional[float]:
@@ -529,6 +611,9 @@ class RoundRecord:
             "knowledge_points": self.knowledge_points,
             "exchanges": [a.to_raw() for a in self.attempts],
             "five_dim": self.five_dim,
+            "code_check": self.code_check,
+            "score_detail": self.score_detail,
+            "objective_detail": self.objective_detail,
             # 第一维这一轮量的**是什么**（行为素质题 = 岗位胜任力关联度）。
             # ⚠️ five_dim 的键永远是「技术水平」，键不变是为了 3 号不用分情况；
             #    这个字段补上「那一列的标签是什么」这一层信息。
@@ -552,6 +637,8 @@ class RoundRecord:
             "est_sec": self.est_sec,
             "over_ratio": self.over_ratio,
             "speech": self.speech,
+            "body_language": self.body_language,
+            "body_score_adjustment": self.body_score_adjustment,
             "reranker_score": self.last_score,
             "reranker_ok": self.last_ok,
             # ---- 一致性校验（加法，不改任何评分）----
@@ -589,6 +676,8 @@ class RoundRecord:
             "swapped": self.swapped,
             "follow_ups_used": self.follow_ups_used,
             "degrade_used": self.degrade_used,
+            "assist_used": self.assist_used,
+            "hint_used": self.hint_used,
             "scored": self.scored,
             "score_error": self.score_error,
         }
@@ -597,8 +686,8 @@ class RoundRecord:
 # ============================================================
 # 本轮动作决策（纯函数，唯一决策点）
 # ============================================================
-# 档位常量：三个档就是「往深里问 / 追基础 / 降难度」
-BAND_L2, BAND_L1, BAND_DEGRADE = "L2", "L1", "degrade"
+# 档位常量：三级追问 + 降级。
+BAND_L3, BAND_L2, BAND_L1, BAND_DEGRADE = "L3", "L2", "L1", "degrade"
 # 第 4 个档：**不是深浅判断，是类别判断** —— "这个方向他从没接触过"。
 # 它必须进 _BAND_DEPTH，否则 fuse_bands 开头的白名单检查会把它当"没判出来"丢回
 # reranker（那就永远换不了题了）。深度给 -1：语义上它比 degrade 还浅 ——
@@ -606,11 +695,15 @@ BAND_L2, BAND_L1, BAND_DEGRADE = "L2", "L1", "degrade"
 # 真正决定它不被拿去比大小的是 fuse_bands 里那条提前返回。
 BAND_SWAP = "swap"
 # 深浅序，融合规则拿它比大小
-_BAND_DEPTH = {BAND_SWAP: -1, BAND_DEGRADE: 0, BAND_L1: 1, BAND_L2: 2}
+_BAND_DEPTH = {
+    BAND_SWAP: -1, BAND_DEGRADE: 0, BAND_L1: 1, BAND_L2: 2, BAND_L3: 3,
+}
 
 
 def band_of(score: float) -> str:
     """覆盖率（0-100）→ 档位。**判档线只在这里出现一次。**"""
+    if score >= config.LEVEL_L3_MIN:
+        return BAND_L3
     if score >= config.LEVEL_L2_MIN:
         return BAND_L2
     if score >= config.LEVEL_L1_MIN:
@@ -627,6 +720,274 @@ def _norm_answer(s: str) -> str:
     return _RE_NONWORD.sub("", s or "")
 
 
+# 回答意图分类。现场话术和评分状态都从这里分叉，避免把“好的”和“不知道”
+# 当成同一种东西。
+ANSWER_EFFECTIVE = "effective"
+ANSWER_ACK = "ack"
+ANSWER_HINT_REQUEST = "hint_request"
+ANSWER_UNKNOWN_DIRECTION = "unknown_direction"
+ANSWER_NO_INFO = "no_info"
+ANSWER_NONSENSE = "nonsense"
+
+_ACK_PHRASES = (
+    "好的", "好", "嗯", "嗯嗯", "明白", "知道了", "收到", "行", "可以",
+    "继续", "你说", "是的", "对", "ok", "okay",
+)
+_HINT_REQUEST_PHRASES = (
+    "给点提示", "提示一下", "提醒一下", "能不能提示", "可以提示",
+    "没听清", "再说一遍", "什么意思", "怎么答",
+    "没理解", "不理解", "换个说法", "解释一下", "题目是什么意思",
+)
+_UNKNOWN_DIRECTION_PHRASES = (
+    "没学过", "没接触过", "没做过", "没用过", "没使用过", "不熟悉", "不了解",
+)
+_NO_ANSWER_PHRASES = (
+    "不知道", "不会", "不清楚", "不懂", "不记得", "忘了", "想不起来",
+    "没思路", "答不上来", "跳过",
+    "idontknow", "none", "nothing", "skip",
+)
+# 很短但已经表达了判断/比较，不能按乱码处理。它们可能答错，
+# 应该交给评分链路，而不是进入“没答上来”的固定话术。
+_SHORT_SUBSTANTIVE_MARKERS = (
+    "没区别", "有区别", "不一样", "一样", "相同", "不同",
+    "不是", "不能", "可以", "因为", "所以", "更高", "更低",
+)
+_ASCII_TECH_ALLOW = {
+    "java", "jvm", "redis", "mysql", "sql", "http", "https", "tcp", "udp",
+    "api", "mvcc", "cas", "aqs", "thread", "lock", "queue", "cache",
+    "spring", "docker", "kafka", "rocketmq", "nginx", "linux",
+}
+
+
+def _cjk_chars(s: str) -> str:
+    return "".join(ch for ch in (s or "") if "\u4e00" <= ch <= "\u9fff")
+
+
+def _has_context_overlap(s: str, context: str) -> bool:
+    """短文本至少有一个连续二字片段出现在题目/得分点里，才算有话题关联。"""
+    if len(s) < 2:
+        return False
+    grams = {s[i:i + 2] for i in range(len(s) - 1)}
+    return any(g in context for g in grams)
+
+
+def classify_answer(answer: str, record: "RoundRecord") -> str:
+    """
+    把考生这一句分成“可评分回答 / 确认 / 请求提示 / 没学过 / 不知道 / 乱码”。
+
+    这是现场话术与评分链路共用的入口。拿不准时返回 ANSWER_EFFECTIVE，
+    让原有 reranker + LLM 判档处理，绝不在代码层冒充语义判断器。
+    """
+    if not config.A11_NO_EFFECTIVE_GUARD:
+        return ANSWER_EFFECTIVE
+    raw = (answer or "").strip()
+    s = _norm_answer(raw).lower()
+    if not s:
+        return ANSWER_NO_INFO
+
+    if s in _ACK_PHRASES:
+        return ANSWER_ACK
+    if any(p in s for p in _HINT_REQUEST_PHRASES) and len(s) <= 24:
+        return ANSWER_HINT_REQUEST
+    if any(p in s for p in _UNKNOWN_DIRECTION_PHRASES) and len(s) <= 18:
+        return ANSWER_UNKNOWN_DIRECTION
+    if any(p in s for p in _NO_ANSWER_PHRASES) and len(s) <= 14:
+        if any(m in s for m in ("因为", "所以", "但是", "不过")):
+            return ANSWER_EFFECTIVE
+        return ANSWER_NO_INFO
+
+    context = _norm_answer(
+        (record.question or "") + (record.base_points or "") + (record.adv_points or "")
+    ).lower()
+    cjk = _cjk_chars(s)
+    if cjk:
+        if len(cjk) <= 5 and not _has_context_overlap(cjk, context):
+            if any(p in cjk for p in _SHORT_SUBSTANTIVE_MARKERS):
+                return ANSWER_EFFECTIVE
+            return ANSWER_NONSENSE
+        return ANSWER_EFFECTIVE
+
+    tokens = re.findall(r"[a-z0-9_+#.]{2,}", s)
+    if not tokens:
+        return ANSWER_NONSENSE
+    known = [t for t in tokens if t in _ASCII_TECH_ALLOW or t in context]
+    if len(tokens) == 1 and len(tokens[0]) >= 10 and not known:
+        return ANSWER_NONSENSE
+    if len(raw) >= 8 and not known and all(len(t) >= 4 for t in tokens):
+        return ANSWER_NONSENSE
+    return ANSWER_EFFECTIVE
+
+
+def is_no_effective_answer(answer: str, record: "RoundRecord") -> bool:
+    """
+    纯代码识别“没有可判分信息”的回答。
+
+    只覆盖高置信度形态：明确不会、极短回答、与当前题面/得分点零关联的乱码。
+    它不是答案质量评分器；拿不准时返回 False，仍交给原评分与判档链路。
+    """
+    return classify_answer(answer, record) in (
+        ANSWER_UNKNOWN_DIRECTION, ANSWER_NO_INFO, ANSWER_NONSENSE,
+    )
+
+
+def no_effective_score(record: "RoundRecord") -> dict:
+    """无有效回答的确定性覆盖率结果：全部未命中，不调用 reranker。"""
+    base_all = qb.split_points(record.base_points)
+    adv_all = qb.split_points(record.adv_points)
+    return {
+        "reranker_score": 0.0,
+        "reranker_ok": True,
+        "base_hit": [],
+        "adv_hit": [],
+        "base_miss": list(base_all),
+        "adv_miss": list(adv_all),
+        "coverage_method": "no_effective_answer",
+        "coverage_windows": 0,
+    }
+
+
+_CONF_ORDER = {"low": 0, "medium": 1, "high": 2}
+
+
+def combine_scores(objective_score, subjective_score,
+                   objective_confidence: str,
+                   subjective_confidence: str,
+                   objective_detail: Optional[dict] = None) -> dict:
+    """
+    Confidence-aware composition of objective and subjective scores.
+
+    The old rule was always 60/40 even when the objective model explicitly said
+    its confidence was low. This keeps the two-line design, but lets a low-
+    confidence objective result move the final score less; an unavailable line
+    is ignored instead of being replaced with a fake number.
+    """
+    if objective_score is None and subjective_score is None:
+        return {
+            "score": None, "rule": "no_score", "objective_weight": 0.0,
+            "subjective_weight": 0.0, "agreement": "", "confidence": "",
+            "calibrated": False,
+        }
+    if objective_score is None:
+        return {
+            "score": round(float(subjective_score), 2),
+            "rule": "subjective only", "objective_weight": 0.0,
+            "subjective_weight": 1.0, "agreement": "",
+            "confidence": subjective_confidence or "",
+            "calibrated": False,
+        }
+    if subjective_score is None:
+        return {
+            "score": round(float(objective_score), 2),
+            "rule": "objective only", "objective_weight": 1.0,
+            "subjective_weight": 0.0, "agreement": "",
+            "confidence": objective_confidence or "",
+            "calibrated": False,
+        }
+
+    obj_conf = objective_confidence if objective_confidence in _CONF_ORDER else "low"
+    subj_conf = subjective_confidence if subjective_confidence in _CONF_ORDER else ""
+    # The five-job calibration showed that the objective line had lower
+    # correlation with independent reference labels than the subjective line.
+    # Keep it as a correction signal instead of letting it dominate.
+    objective_weight = {"high": 0.40, "medium": 0.25, "low": 0.10}[obj_conf]
+    if subj_conf == "low":
+        objective_weight = min(0.50, objective_weight + 0.05)
+    elif subj_conf == "high":
+        objective_weight = max(0.05, objective_weight - 0.05)
+    detail = objective_detail if isinstance(objective_detail, dict) else {}
+    claim_counts = detail.get("claim_counts") or {}
+    contradictions = int(claim_counts.get("contradicted") or 0)
+    misconceptions = detail.get("misconceptions") or []
+    if contradictions or misconceptions:
+        # Contradictions are the strongest objective evidence. Use the
+        # objective line more when it has explicit counter-evidence.
+        objective_weight = max(
+            objective_weight, 0.60 if obj_conf == "high" else 0.50)
+    elif (float(objective_score) - float(subjective_score) >= 0.30
+          and obj_conf == "high"):
+        # A high-confidence objective line can rescue concise but fully
+        # correct answers that the subjective prompt under-rates.
+        objective_weight = max(objective_weight, 0.55)
+    objective_weight = round(objective_weight, 2)
+    subjective_weight = round(1.0 - objective_weight, 2)
+
+    gap = abs(float(objective_score) - float(subjective_score))
+    agreement = "high" if gap <= 0.75 else "medium" if gap <= 1.5 else "low"
+    confidence_values = [obj_conf] if obj_conf else []
+    if subj_conf:
+        confidence_values.append(subj_conf)
+    confidence_values.append(agreement)
+    confidence = min(confidence_values, key=lambda x: _CONF_ORDER[x])
+    score = round(
+        objective_weight * float(objective_score)
+        + subjective_weight * float(subjective_score),
+        2,
+    )
+    return {
+        "score": score,
+        "rule": (f"objective {int(objective_weight * 100)}% + "
+                 f"subjective {int(subjective_weight * 100)}%"),
+        "objective_weight": objective_weight,
+        "subjective_weight": subjective_weight,
+        "gap": round(gap, 2),
+        "agreement": agreement,
+        "confidence": confidence,
+        "calibrated": False,
+    }
+
+
+def objective_round_score(coverage_05: float, correctness: float,
+                          claims: Optional[list] = None,
+                          misconceptions: Optional[list] = None,
+                          point_atoms: Optional[list] = None) -> float:
+    """
+    Combine point coverage with claim-level verification.
+
+    Keyword coverage is only one signal. A contradicted technical claim gets a
+    larger penalty than a missing point, while `insufficient` claims do not get
+    treated as factual errors.
+    """
+    atoms = [row for row in (point_atoms or []) if isinstance(row, dict)]
+    atom_penalty = 0.0
+    coverage_for_score = float(coverage_05)
+    atom_total = 0
+    supported_atoms = 0
+    insufficient_atoms = 0
+    for row in atoms:
+        verdict = str(row.get("verdict") or "")
+        if verdict not in ("supported", "contradicted", "insufficient"):
+            continue
+        atom_total += 1
+        if verdict == "supported":
+            supported_atoms += 1
+        elif verdict == "insufficient":
+            insufficient_atoms += 1
+        else:
+            severity = str(row.get("severity") or "none").lower()
+            atom_penalty += {"minor": 0.30, "major": 0.65}.get(
+                severity, 0.40)
+    if atom_total:
+        # Atomic verification is more reliable than raw keyword coverage.
+        coverage_for_score = round(
+            (supported_atoms + 0.5 * insufficient_atoms) / atom_total * 5,
+            2,
+        )
+    # Coverage is currently much less reliable than claim-level correctness.
+    base = 0.25 * coverage_for_score + 0.75 * float(correctness)
+    claim_penalty = 0.0
+    for row in claims or []:
+        if not isinstance(row, dict) or row.get("verdict") != "contradicted":
+            continue
+        severity = str(row.get("severity") or "none").lower()
+        claim_penalty += {"minor": 0.30, "major": 0.65}.get(severity, 0.40)
+    legacy_penalty = 0.40 * len(misconceptions or [])
+    penalty = min(2.2, max(claim_penalty, legacy_penalty, atom_penalty))
+    score = base - penalty
+    if misconceptions and float(correctness) <= 1.5:
+        score = min(score, 0.75)
+    return round(max(0.0, min(5.0, score)), 2)
+
+
 def detect_repeat(answer: str, attempts: list) -> tuple[bool, float]:
     """
     这次回答与**本轮之前**的回答是不是复读。返回 (是否复读, 最高相似度)。
@@ -637,6 +998,13 @@ def detect_repeat(answer: str, attempts: list) -> tuple[bool, float]:
 
     ⚠️ 只跟**本轮**历史比。跨轮比会误伤：不同题目本来就可能答到同一个知识点，
       那是正常的，不是复读。
+    ⚠️ **跨轮"撞车"是另一个问题，不在这里管。** 出题侧另有一套去重
+      （`exclude_ids=self.asked_pids` 只排同 ID；考点重叠走 `_overlap_filters`
+      的 r0→r3 回退链，读数在 `RoundRecord.kp_overlap`）。真跑里观测到的
+      跨题撞车（第 3 题 select/poll/epoll 与第 9 题 NIO Selector）是**语义级**的
+      —— 那两道题的**考点键交集为空**、题面相似度只有 0.3684，任何字面判据
+      都抓不到它而不误伤近两成题库（全库实测 1145 对 ≥0.85 的"重复"逐对看
+      全是正常的不同的题）。别把两者混为一谈，也别在这里加跨轮比对。
     ⚠️ **桩模式下必须关掉**，与 _make_judge 在 LLM_MOCK 时返回 None 是同一条约定
       （「关掉新功能 = 端到端行为与加这个功能之前逐字节相同」）：冒烟测试的第 2、
       第 3 次回答是为了走完三条分支而**构造成相同文本**的，复读守卫在那里必然触发，
@@ -657,6 +1025,41 @@ def detect_repeat(answer: str, attempts: list) -> tuple[bool, float]:
         if best >= 1.0:
             break
     return best >= config.REPEAT_SIM, round(best, 4)
+
+
+# 面试官"该提问却没提问"的措辞。**只用于观测与兜底修补**，不改变任何判分。
+#
+# 为什么是这几组词（全部来自真跑观测，不是想出来的）：
+#   · 「换一个方向」——实测原句「行，这题你答得住。换一个方向。」里就有它，
+#     而 `SWAP_LINE` 也长这样（那是**合法换题**，走 `_swap_round`，不经过这里）。
+#   · 「下一题」「先放一放」——收尾语的另外两种常见形态。
+#   · 「回去看/回去补/后面补/后面再」——`ACTION_DESC["degrade"]` 明写禁止的
+#     "辅导腔"（"不要布置'回去看什么''后面补什么'"），模型越界时会出现。
+_RE_WRAPUP = re.compile(
+    r"下一题|下一个话题|换一个方向|换一个话题|先放一放|"
+    r"回去(看|补|复习|再)|后面(补|再)|建议你")
+
+
+def needs_question(text: str) -> bool:
+    """
+    这一轮面试官的话里**有没有在问考生**。纯函数，无副作用。
+
+    判据是两条的**或**：
+      ① 出现了收尾/换题/辅导腔的措辞（`_RE_WRAPUP`）—— 这些措辞在 project
+         的语境里一律意味着"这题不问了"；
+      ② 整段**一个问号都没有**。
+
+    ⚠️ 为什么是"或"而不是"且"：漏判（明明没提问却放过去）会让考生继续被带偏，
+      而误判（其实提问了却触发兜底）只是多追加一句邀请他说话的短句 ——
+      **两个方向的代价不对称**，所以取宽。
+    ⚠️ 只认问号本身（全角 `？` 与半角 `?`），不看句式。中文面试里没有问号
+      却是在提问的句子（"说说你的思路。"）存在，但那种情形下追加一句
+      `WRAPUP_NUDGE` 也**不冲突** —— 它同样是在邀请他说话。
+    """
+    t = text or ""
+    if _RE_WRAPUP.search(t):
+        return True
+    return ("？" not in t) and ("?" not in t)
 
 
 def fuse_bands(reranker_band: str, judge_band: Optional[str],
@@ -681,7 +1084,7 @@ def fuse_bands(reranker_band: str, judge_band: Optional[str],
     # swap 是**类别**不是深浅，所以不进下面的比大小 —— 直接提前返回。
     #
     # 为什么必须放在 rule == "reranker" 之后：那条分支的语义是"完全不采信判档器"，
-    # 而 swap **只能**来自判档器（reranker 的 band_of 只会给出 L2/L1/degrade），
+    # 而 swap **只能**来自判档器（reranker 的 band_of 只会给出 L3/L2/L1/degrade），
     # 所以那个模式下换题天然关着 —— 这是对的，不是遗漏。
     # 而放在 agree/deepest/llm_first 之前：swap 一旦被 LLM 判出来就照办，
     # 不让 reranker 的深浅去覆盖它 —— 两者量的根本不是同一件事
@@ -763,7 +1166,7 @@ def adapt_difficulties(stage: str, base, trajectory: list[str],
 
 def decide_action(band: str, record: RoundRecord, repeat: bool = False) -> str:
     """
-    返回 L1 / L2 / degrade / close。band 是 fuse_bands 给的三个档之一。
+    返回 L1 / L2 / L3 / degrade / close。
 
     终止性保证（修 #4）：每个非 close 分支都会递增 follow_ups_used，
     而它有 MAX_FOLLOW_UP 上限；degrade_used 与 attempts 数量各有一个上限。
@@ -801,6 +1204,8 @@ def decide_action(band: str, record: RoundRecord, repeat: bool = False) -> str:
     if repeat:
         record.degrade_used += 1
         return "degrade"
+    if band == BAND_L3:
+        return "L3"
     if band == BAND_L2:
         return "L2"
     if band == BAND_L1:
@@ -832,17 +1237,487 @@ def record_degrade(record: RoundRecord) -> str:
     return record.raw.get(qb.F_DEGRADE, "") or ""
 
 
+def _contextualize_hint(text: str, record: RoundRecord) -> str:
+    """Append a concrete question anchor when the bank hint is topic-agnostic."""
+    text = str(text or "").strip()
+    question = str(record.question or "").strip()
+    if not text or not question:
+        return text
+    q_cjk = "".join(re.findall(r"[\u4e00-\u9fff]", question))
+    terms = {q_cjk[i:i + 2] for i in range(max(0, len(q_cjk) - 1))}
+    if any(term and term in text for term in terms):
+        return text
+    return f"围绕「{qb.truncate(question, 36)}」来说，{text}"
+
+
 def hint_for(action: str, record: RoundRecord) -> Optional[str]:
     """按动作取追问素材。"""
     if action == "close":
         return None
     if action == "degrade":
         text = record_degrade(record)
+    elif action == "L3":
+        text = (record_follow(record, "L3") or record_follow(record, "L2")
+                or record_follow(record, "L1"))
     elif action == "L2":
         text = record_follow(record, "L2") or record_follow(record, "L1")
     else:  # L1
         text = record_follow(record, "L1") or record_degrade(record)
+    if action != "degrade":
+        text = _contextualize_hint(text, record)
     return qb.truncate(text.strip(), config.HINT_TRUNCATE) or None
+
+
+def _cycle_reply(options: tuple[str, ...], record: RoundRecord,
+                 attempt_no: int, salt: int = 0) -> str:
+    """按轮次/尝试确定性轮换话术，避免同一句逐题重复。"""
+    if not options:
+        return ""
+    idx = (record.round_no + attempt_no + salt) % len(options)
+    return options[idx]
+
+
+_EXPERIENCE_CATEGORIES = ("行为素质题", "项目经历题")
+_EXPERIENCE_QUESTION_RE = re.compile(
+    r"描述一次|讲一次|讲一个|说说你|经历|怎么达成|如何处理|团队|同事|项目")
+
+
+def _is_experience_question(record: RoundRecord) -> bool:
+    return (
+        str(record.category or "").strip() in _EXPERIENCE_CATEGORIES
+        or bool(_EXPERIENCE_QUESTION_RE.search(str(record.question or "")))
+    )
+
+
+def _experience_guiding_hint(record: RoundRecord) -> str:
+    """A concrete STAR-style entry for behavioral/project questions."""
+    question = str(record.question or "")
+    if re.search(r"分歧|冲突|不一致|争论|说服", question):
+        return (
+            "先不用讲完整。只说一个真实场景：当时你和对方各自主张什么，"
+            "最后依据什么信息达成一致？"
+        )
+    if re.search(r"失败|教训|犯错|失误|复盘", question):
+        return (
+            "先讲一个真实片段：当时发生了什么，你具体做了什么，"
+            "结果怎样？"
+        )
+    if re.search(r"项目|系统|平台|需求|落地|上线", question):
+        return (
+            "先选一个你亲自做过的项目：当时的业务目标是什么，"
+            "你负责的具体部分是什么？"
+        )
+    if re.search(r"沟通|解释|汇报|协作|团队|同事", question):
+        return (
+            "先说一个真实场景：当时的沟通对象和目标是什么，"
+            "你采取了哪一个具体做法？"
+        )
+    return (
+        "先讲一个真实场景：当时的情况、你承担的任务，"
+        "以及你采取的一个具体动作分别是什么？"
+    )
+
+
+def _guiding_hint(record: RoundRecord) -> str:
+    """无有效回答时优先用题库专门写的降级引导，再退回中性化后的 L1 入口。"""
+    if _is_experience_question(record):
+        return qb.truncate(
+            _experience_guiding_hint(record), config.HINT_TRUNCATE) or ""
+    text = hint_for("degrade", record) or record_follow(record, "L1") or ""
+    if "如果候选人" in text:
+        quoted = re.findall(r"「([^」]+)」", text)
+        if quoted:
+            text = quoted[0]
+    elif "若仍卡壳" in text:
+        quoted = re.findall(r"「([^」]+)」", text)
+        if quoted:
+            text = quoted[-1]
+    # The source bank repeats these two boilerplate clauses in thousands of
+    # rows. Keep the concrete entry point, remove the copy that made every
+    # question sound identical.
+    text = re.sub(r"^先不用讲原理[，,]\s*", "", text)
+    text = re.sub(r"[，。]?说说你知道的部分就行[。]?$", "", text).strip()
+    text = _contextualize_hint(text, record)
+    return qb.truncate(text.strip(), config.HINT_TRUNCATE) or ""
+
+
+_PROBE_LABELS = {
+    "extend_engineering": "追一个工程落地问题",
+    "clarify_basic": "补齐一个基础缺口",
+    "deepen_reason": "追一层原理或边界",
+    "scaffold": "给一个最小入口",
+}
+
+
+def build_probe_plan(action: str, record: RoundRecord, score: Optional[dict]) -> dict:
+    """
+    Pick exactly one target for the next interviewer turn.
+
+    The model previously received the whole missing-point list plus several
+    background blocks and often asked a broad, multi-part question. This plan
+    narrows the turn to one target and one probe type; it does not alter scoring.
+    """
+    if action == "close":
+        return {}
+    score = score or {}
+    preferred_target = str(score.get("judge_probe_target") or "").strip()
+    preferred_kind = str(score.get("judge_probe_kind") or "").strip()
+    if preferred_target and preferred_kind in _PROBE_LABELS:
+        target = preferred_target
+        kind = preferred_kind
+        instruction = {
+            "clarify_basic": "只补一个基础缺口，先问定义、区别或一个最短的具体例子。",
+            "deepen_reason": "只追一个缺失的进阶点，问它为什么成立、底层怎么实现，或边界/取舍是什么。",
+            "extend_engineering": "只追一个工程落地问题，问真实项目用法、失败案例、极端场景或替代方案。",
+            "scaffold": "给一个最小入口，让考生说出一个相关概念、场景或步骤。",
+        }[kind]
+    elif action == "degrade":
+        target = _guiding_hint(record) or record.question
+        kind = "scaffold"
+        instruction = "给一个最小入口，让考生说出一个相关概念、场景或步骤。"
+    elif action == "L3":
+        target = (record.deepen[0]["title"] if record.deepen
+                  else "当前方案的工程落地、失败场景与取舍")
+        kind = "extend_engineering"
+        instruction = "只追一个工程落地问题，问真实项目用法、失败案例、极端场景或替代方案。"
+    elif action == "L2":
+        misses = (score.get("adv_miss") or score.get("base_miss") or [])
+        target = misses[0] if misses else (_guiding_hint(record) or record.question)
+        kind = "deepen_reason"
+        instruction = "只追一个缺失的进阶点，问它为什么成立、底层怎么实现，或边界/取舍是什么。"
+    else:
+        misses = (score.get("base_miss") or score.get("adv_miss") or [])
+        target = misses[0] if misses else (_guiding_hint(record) or record.question)
+        kind = "clarify_basic"
+        instruction = "只补一个基础缺口，先问定义、区别或一个最短的具体例子。"
+    target = qb.truncate(str(target or "").strip(), 100)
+    if not target:
+        return {}
+    return {
+        "target": target,
+        "kind": kind,
+        "kind_label": _PROBE_LABELS[kind],
+        "instruction": instruction,
+    }
+
+
+_WEAK_PROBE_NAMES = {
+    "特殊情况处理",
+    "怎么处理",
+    "如何处理",
+    "为什么",
+    "还有呢",
+    "然后呢",
+    "具体呢",
+    "继续",
+    "举个例子",
+}
+_PROBE_RELEASE_CHARS = 24
+
+
+def _probe_reply_too_weak(text: str) -> bool:
+    """Detect descriptor-only replies that are not real interview questions."""
+    clean = re.sub(r"\s+", "", str(text or ""))
+    if not clean:
+        return True
+    cjk_count = len(re.findall(r"[\u4e00-\u9fff]", clean))
+    if cjk_count < 12:
+        return True
+    if "?" not in clean and "？" not in clean:
+        return True
+    plain = re.sub(r"[\s。！？!?，,：:；;]+", "", clean)
+    if plain in _WEAK_PROBE_NAMES:
+        return True
+    return False
+
+
+def repair_probe_reply(record: RoundRecord, probe_plan: Optional[dict]) -> str:
+    """Build a complete contextual probe without revealing the answer."""
+    kind = (probe_plan or {}).get("kind") or "clarify_basic"
+    question = qb.truncate(record.question, 48)
+    answer = ""
+    if record.attempts:
+        answer = qb.truncate(record.attempts[-1].answer or "", 32)
+    prefix = f"你刚才提到「{answer}」。" if answer else ""
+    if kind == "deepen_reason":
+        body = (
+            f"针对「{question}」里的具体机制，你能否进一步说明它为什么成立，"
+            "以及边界条件下会出现什么变化？"
+        )
+    elif kind == "extend_engineering":
+        body = (
+            f"把「{question}」放到真实项目场景里，如果出现失败、超时或数据不一致，"
+            "你会先判断什么、再怎么兜底？"
+        )
+    elif kind == "scaffold":
+        body = (
+            f"先不用讲完整答案。围绕「{question}」，说一个你确定的关键概念、"
+            "场景或步骤就行，你最先想到什么？"
+        )
+    else:
+        body = (
+            f"围绕「{question}」，请先给其中一个关键概念下定义，"
+            "再简要说明它在题目里起什么作用？"
+        )
+    return prefix + body
+
+
+_STYLE_ACK_REPLIES = {
+    "relaxed": (
+        "嗯，你说，我听着。",
+        "可以，想到多少说多少。",
+        "好，你慢慢说。",
+    ),
+    "strict": (
+        "请直接说你的思路。",
+        "不用确认，直接回答这个问题。",
+        "请给出你的判断或理由。",
+    ),
+}
+
+
+def _ack_reply(style: str, record: RoundRecord, attempt_no: int) -> str:
+    options = _STYLE_ACK_REPLIES.get(style)
+    if options:
+        return _cycle_reply(options, record, attempt_no, salt=1)
+    return _cycle_reply(ACK_REPLIES, record, attempt_no, salt=1)
+
+
+def _guided_no_info_reply(record: RoundRecord, attempt_no: int,
+                          style: str = "standard") -> str:
+    hint = _guiding_hint(record)
+    if style == "relaxed":
+        if hint:
+            return (f"没关系，我们从最小的地方开始：{hint}\n"
+                    "你先说一个你确定的概念就行，说错也没关系。")
+        return "没关系，我们慢一点。先说一个你能想到的关键词、场景或步骤就行。"
+    if style == "strict":
+        if hint:
+            return f"这轮还没有有效信息。只回答一个点：{hint}"
+        return "这题还没有有效信息。请只回答一个确定的概念、步骤或例子。"
+    if hint:
+        idx = (record.round_no + attempt_no) % len(NO_INFO_WITH_HINT_REPLIES)
+        return NO_INFO_WITH_HINT_REPLIES[idx].safe_substitute(hint=hint)
+    return _cycle_reply(NO_INFO_DEGRADE_REPLIES, record, attempt_no)
+
+
+def _hint_request_reply(record: RoundRecord, style: str = "standard") -> str:
+    hint = _guiding_hint(record)
+    if style == "relaxed":
+        if hint:
+            return f"可以，我给你一个入口：{hint}\n你先按这个方向说说看。"
+        return "可以，先不用讲完整答案，说一个你确定的概念或步骤就行。"
+    if style == "strict":
+        if hint:
+            return f"提示只给一次：{hint}\n现在直接回答。"
+        return "只给一次提示：抓住题目里的一个核心概念，直接回答。"
+    if hint:
+        return HINT_REQUEST_REPLY.safe_substitute(hint=hint)
+    return HINT_REQUEST_FALLBACK
+
+
+def _no_info_close_reply(style: str, record: RoundRecord,
+                         attempt_no: int) -> str:
+    if style == "relaxed":
+        return _cycle_reply((
+            "没关系，这题先放一放，我们换个轻松点的方向继续。",
+            "这题先跳过，不用有压力，我们看下一题。",
+        ), record, attempt_no, salt=2)
+    if style == "strict":
+        return _cycle_reply((
+            "这道题结束。下一题请回答到关键点。",
+            "这题到此为止，下一题直接给结论和依据。",
+        ), record, attempt_no, salt=2)
+    return _cycle_reply(NO_INFO_CLOSE_REPLIES, record, attempt_no, salt=2)
+
+
+# ============================================================
+# 给**考生**看的表达客观测量（/finish 顶层 `pace_note`）
+# ============================================================
+# 情感标签的中文白名单。⚠️ **必须走白名单**：`emotion_dist` 的**键**是前端从
+# `/chat` 的 speech 原样带上来的（`derive_speech` 只做 `dict(...)`，**不校验键名**）。
+# 把键名直接拼进这句话，等于在一个**交付默认档（A11_RAW_DETAIL=0）也照常出门**的
+# 字符串里开一个自由文本入口 —— 而这段字符串会被整包金丝雀扫、还会被前端当原文
+# 展示给考生。不认识的键**整条丢掉**（宁可少一句，不可漏一个口子）。
+_EMOTION_CN = {"neu": "中性", "hap": "高兴", "ang": "生气", "sad": "低落"}
+
+
+def candidate_pace_note(rounds: list) -> str:
+    """
+    整场的「表达客观测量」汇总 —— **给考生看的**那一份（`/finish` 顶层 `pace_note`）。
+
+    ⚠️ 它与 `RoundRecord.pace_note()`（上面那个·**逐轮**）**同名，但不是同一样东西**：
+      · `RoundRecord.pace_note()` 写给**评分模型**，里面带着给模型划边界的**指令**
+        （「**禁止**因为它是「偏高」就给高分」「不要拿它推那三维」「**禁止**据此判断
+        考生当时是什么心情」）—— 原样展示给考生会出现一堆「禁止…」，所以前端**不能**
+        拿它当报告文案；而且它的逐字节形态被 prompt 基线钉死（改它必打红）。
+      · 本函数写给**考生**，只陈述测出来的事实，**一条指令都不含**。
+    两者数据同源（都是 `RoundRecord.speech`）、口径必须一致：改一头时看一眼另一头。
+
+    为什么要有它：赛题 3b 要「**评估**学生的表达流畅度、语速、语气自信度」，而这套
+    测量此前**只以 `$pace_note` 的形式进了评分 prompt**（见 `submit_answer`），考生的
+    报告上**一个字都看不到** —— 他无从知道自己哪里说得不好。这一份就是把它端到
+    考生眼前（4 号 的前端文档早就写成「照 `/finish` 的 `pace_note` 原文展示」）。
+
+    三条纪律（与 `asr.py` 顶部那条「取值域封闭」一脉相承）：
+      1. **逐字白名单构造**：全部文字来自本函数的模板与 `_EMOTION_CN`，**不搬运任何
+         原文**（没有转写文本、没有题目、没有得分点）—— 这段字符串在交付默认档也
+         出门，它必须自己就是干净的。
+      2. **绝不抛**：它挂在交卷链路上，抛了会把整场面试的收口打挂。
+      3. **不给 `loudness` 绝对值、不给「整轮用时」**：前者跨设备不可比（麦克风增益 /
+         说话距离 / 房间混响都能差几倍，见 `asr.loudness_metrics` 的注释）；后者那段
+         时间里混着**服务端打分与生成回复**的耗时，对考生说「这题你用了 3 分钟」是
+         误导。⇒ 与 prompt 版一致，这两样**整条不报**。
+
+    全篇**不分段、只有一个换行都没有**：4 号 的文档写的是「照那句话原文展示」，一整个
+    段落最好摆；判断句一律用「。」断开，不用 Markdown 记号（`**` / 反引号）—— 与
+    `app/core/review.py` 那份给考生看的文案同一个写法，前端不必先渲染 Markdown。
+    """
+    answered = [r for r in rounds if getattr(r, "attempts", None)]
+    total = len(answered)
+    if not total:
+        return "本场没有产生作答记录，没有表达数据可报。"
+    # `used` 由 `derive_speech` 定：拿到了净时长（duration_ms > 0）才为真。
+    sps = [dict(r.speech or {}) for r in answered if (r.speech or {}).get("used")]
+    n_v = len(sps)
+    if not n_v:
+        return ("本场共 %d 轮作答，全部为文字作答，所以没有语速、停顿、填充词与语气"
+                "自信度数据可报。这些指标只在用语音作答时才有；文字作答不会因为缺"
+                "这些数据而被扣分。" % total)
+
+    # ---- 逐项聚合（缺哪一项就整条不报，绝不拿 0 顶替「没测到」）----
+    dur_ms = sum(int(s.get("duration_ms") or 0) for s in sps)
+    rated = [s for s in sps if s.get("chars_per_min") is not None]
+    silent = [s for s in sps if s.get("chars_per_min") is None]
+    paused = [s["pauses"] for s in sps if s.get("pauses") is not None]
+    filled = [int(s.get("fillers") or 0) for s in sps]
+    cvs = [float(s["loudness_cv"]) for s in sps if s.get("loudness_cv") is not None]
+    tails = [float(s["tail_ratio"]) for s in sps if s.get("tail_ratio") is not None]
+    bands = [s["confidence"] for s in sps if s.get("confidence")]
+
+    parts: list[str] = []
+    head = []
+    head.append("本场共 %d 轮作答，其中 %d 轮用语音作答" % (total, n_v))
+    if dur_ms > 0:
+        sec = int(round(dur_ms / 1000.0))
+        if sec >= 60:
+            # 整分钟时不写「3 分 0 秒」（读起来像掉了个数）
+            _m, _s = divmod(sec, 60)
+            dur_txt = ("%d 分 %d 秒" % (_m, _s)) if _s else ("%d 分" % _m)
+        else:
+            dur_txt = "%d 秒" % sec
+        head.append("这 %d 轮共说话 %s" % (n_v, dur_txt))
+    if rated:
+        # ⚠️ **总字数 ÷ 总净时长**（加权），不是「各轮语速求平均」—— 后者会被一次
+        #    两秒的短答带飞。且**只算转写出了内容的轮**：没转写出内容的轮不是语速样本。
+        c = sum(int(s.get("chars") or 0) for s in rated)
+        d = sum(int(s.get("duration_ms") or 0) for s in rated)
+        if c > 0 and d > 0:
+            head.append("平均语速 %.0f 字/分" % (c / (d / 60000.0)))
+    if paused:
+        head.append("长停顿（>%.1f 秒）合计 %d 次"
+                    % (asrmod.PAUSE_MIN_MS / 1000.0, sum(paused)))
+    fc = sum(int(s.get("chars") or 0) for s in sps)
+    n_fill = sum(filled)
+    if fc > 0:
+        # 一个填充词都没有时不报「占字数 0.0%」—— 那是句废话，读起来像没算出来。
+        head.append("填充词（嗯 / 那个 / 然后…）%d 个%s"
+                    % (n_fill, "、占字数 %.1f%%" % (n_fill / fc * 100) if n_fill else ""))
+    elif n_fill:
+        head.append("填充词（嗯 / 那个 / 然后…）%d 个" % n_fill)
+    parts.append("，".join(head) + "。")
+
+    if silent:
+        parts.append("另有 %d 轮录到了语音但没有转写出内容，算不出语速"
+                     "（没有并进上面的平均）。" % len(silent))
+
+    # ---- 音量（只报相对量：变异系数与收尾比，**不报 `loudness` 绝对值**）----
+    if cvs or tails:
+        vol = []
+        if cvs:
+            vol.append("段间音量起伏（变异系数）平均 %.2f" % (sum(cvs) / len(cvs)))
+        if tails:
+            vol.append("收尾音量约为全段均值的 %.2f" % (sum(tails) / len(tails)))
+        n_vol = len([s for s in sps if s.get("loudness_cv") is not None
+                     or s.get("tail_ratio") is not None])
+        parts.append("音量：%s%s。" % (
+            "，".join(vol),
+            "" if n_vol >= n_v else "（%d 轮里量到 %d 轮）" % (n_v, n_vol)))
+    else:
+        miss = ["音量"]
+        if not paused:
+            miss.append("停顿")
+        parts.append("本次没有量到%s数据（前端回传的语音数据里少了这几项）—— 这不是"
+                     "故障，也已经按「没有这项数据」处理，不会因此扣分。" % "与".join(miss))
+
+    # ---- 「语气自信度」：档位由 `confidence_band()` 按写死的规则融合，只吃上面那
+    #      两个韵律信号。依据句**必须用同一套参数重算**（整场平均），否则会与列出
+    #      的档位对不上 —— 那是最难查的一类错（`RoundRecord.pace_note()` 有同款约束）。
+    basis = []
+    if cvs or tails:
+        basis = asrmod.confidence_band(
+            (sum(cvs) / len(cvs)) if cvs else None,
+            (sum(tails) / len(tails)) if tails else None)[1]
+    if bands:
+        order = (asrmod.CONFIDENCE_LOW, asrmod.CONFIDENCE_MID, asrmod.CONFIDENCE_HIGH)
+        cnt = "、".join("%d 轮「%s」" % (bands.count(b), b)
+                       for b in order if bands.count(b))
+        msg = ("「语气自信度」：%s。它只由「段间音量稳不稳、收尾收不收得住」这两件事"
+               "按写死的规则算出来" % cnt)
+        msg += ("（整场平均：%s）" % "；".join(basis)) if basis else ""
+        parts.append(msg + "，不是模型输出，也不是心理测量意义上的自信度量表。")
+
+    # ---- 情感：**照报**（赛题 3b 要求集成情感分析），但必须现场说清它的可信边界。
+    #      标签走 `_EMOTION_CN` 白名单；几轮之间取**平均分布**（每轮的分布和恒为 1）。
+    dist: dict = {}
+    n_d = 0
+    for s in sps:
+        d = s.get("emotion_dist")
+        if not isinstance(d, dict):
+            continue
+        n_d += 1
+        for k, v in d.items():
+            if k in _EMOTION_CN:
+                try:
+                    dist[_EMOTION_CN[k]] = dist.get(_EMOTION_CN[k], 0.0) + float(v)
+                except (TypeError, ValueError):
+                    continue
+    if n_d and dist:
+        avg = [(k, v / n_d) for k, v in sorted(dist.items(), key=lambda kv: -kv[1])]
+        shown = [x for x in avg if x[1] >= 0.01] or avg[:1]
+        parts.append(
+            "语音情感模型给出的标签是 %s —— ⚠️ 该模型训在英语、表演式情感语料上，"
+            "中文上没有标注数据可验证（实测对平淡的中文语音也会给出高置信），所以"
+            "我们不据此判断你当时的心情，只把它当一条原始记录。"
+            % "、".join("%s %.0f%%" % (k, v * 100) for k, v in shown))
+
+    body_rows = [
+        dict(getattr(r, "body_language", {}) or {})
+        for r in answered
+        if (getattr(r, "body_language", {}) or {}).get("used")
+    ]
+    body_scores = [
+        float(row["score"]) for row in body_rows
+        if row.get("score") is not None
+    ]
+    if body_rows:
+        usable = [row for row in body_rows if row.get("available")
+                  and row.get("confidence") in ("medium", "high")]
+        if body_scores:
+            parts.append(
+                "摄像头姿态共记录 %d 轮，其中 %d 轮达到可用质量，平均 %.2f/5。"
+                "它最多只调整沟通表达与应变能力，不用于判断紧张、自信、"
+                "诚实、性格或技术能力。" % (
+                    len(body_rows), len(usable),
+                    sum(body_scores) / len(body_scores)))
+        else:
+            parts.append(
+                "摄像头姿态共记录 %d 轮，但没有一轮达到可用质量，因此未计分。"
+                % len(body_rows))
+
+    parts.append("以上都是测出来的发音与节奏事实，与答得对不对无关：语速快不等于答得"
+                 "好，停顿多也不等于答得差。")
+    return "".join(parts)
 
 
 # ============================================================
@@ -850,7 +1725,8 @@ def hint_for(action: str, record: RoundRecord) -> Optional[str]:
 # ============================================================
 class InterviewSession:
     def __init__(self, job: str, intro: str = "",
-                 llm=None, scorer=None, persona_style=None):
+                 llm=None, scorer=None, persona_style=None,
+                 resume_text: str = "", interview_mode: str = "general"):
         if job not in config.JOBS:
             raise UnknownJob(f"未知岗位：{job!r}；可选：{config.JOBS}")
         self.session_id = uuid.uuid4().hex[:8]
@@ -859,7 +1735,19 @@ class InterviewSession:
         #    给 3 号 看 —— 与加 E 之前逐字节相同。进 prompt 的那一份是下面的
         #    `_intro_for_prompt`（sanitize 过），两者**刻意分开**：
         #    报告要忠实原文，prompt 要结构安全，两件事。
-        self.candidate_intro = intro or ""
+        resume_text = (resume_text or "").strip()
+        if len(resume_text) > config.RESUME_MAX_CHARS:
+            resume_text = resume_text[:config.RESUME_MAX_CHARS] + "…"
+        self.candidate_intro = intro or resume_text
+        self.resume_text = resume_text
+        self.interview_mode = (
+            "resume" if (config.A11_RESUME and interview_mode == "resume"
+                         and resume_text) else "general"
+        )
+        self.resume_profile = resumemod.parse_resume(resume_text)
+        self._resume_vector_cache: dict[str, list[float]] = {}
+        self._resume_query_vector: Optional[list[float]] = None
+        self._resume_semantic_attempted = False
         self.created_at = time.time()
         self.finished_at: Optional[float] = None
 
@@ -890,6 +1778,9 @@ class InterviewSession:
         self.transcript: list[dict] = []
         self.rounds: list[RoundRecord] = []
         self.current_round: Optional[RoundRecord] = None
+        # Speech samples are used only to build a personal reference. They
+        # never cross sessions and are never sent to the model as raw audio.
+        self._speech_baseline_samples: list[dict] = []
         self.asked_pids: list[str] = []
         # 被换掉的轮次。**刻意与 self.rounds 分开存** —— 它一个都不能进下面那条
         # 「questions_asked = len(self.rounds)」的账（用户定的：换题不占 10 题名额），
@@ -897,6 +1788,15 @@ class InterviewSession:
         # 「这场换过 1 题、换的是哪道、为什么」。见 _swap_round 的注释。
         self.swapped_rounds: list[RoundRecord] = []
         self.swaps_used = 0
+
+        # 整场累计「degrade 轮的面试官回复里没有提问」的次数（2026-09-27）。
+        # 只进 notes / 日志，不改任何判分。见 `needs_question()` 与
+        # `config.A11_WRAPUP_GUARD`。
+        self.wrapup_missing = 0
+        # 其中**真的追加了兜底**的次数。默认档下它与上面相等；把
+        # `A11_WRAPUP_REPAIR` 关掉时这里是 0 —— 两个数分开记，报告才说得清
+        # 「认出来了」和「补上了」是两件事。
+        self.wrapup_repaired = 0
 
         # 知识图谱 / RAG。两个 get_* 都是单例，拿到的引用全程复用；
         # 关掉开关或加载失败时是 None，下面所有用到的地方都按 None 处理，
@@ -914,7 +1814,9 @@ class InterviewSession:
 
         self.llm = llm or get_llm()
         self.scorer = scorer or get_scorer(self.llm)
+        self.objective = objectivemod.get_objective_scorer()
         self._persona = load_persona(job)
+        self._persona_name = persona_name(self._persona)
         # ⚠️ **两处追加都必须「非空才加」**，这是 F 与 E 各自那份「逐字节不变」
         #    保证的落点：默认档的风格块是空串、没传自述时自述块是空串 ⇒
         #    `self._system` 与加这两个功能之前**逐字节相同**。
@@ -926,6 +1828,9 @@ class InterviewSession:
         if self._intro_for_prompt:
             self._system += INTRO_BLOCK.safe_substitute(
                 intro=self._intro_for_prompt)
+        if self.interview_mode == "resume":
+            self._system += RESUME_BLOCK.safe_substitute(
+                resume=resumemod.format_for_prompt(self.resume_profile))
 
     # ---------- 派生属性 ----------
     @property
@@ -952,9 +1857,28 @@ class InterviewSession:
         摘得到引文就用带自述的那条；摘不到（没传 / 全是空白）用通用那条。
         """
         snip = intro_snippet(self._intro_for_prompt)
+        tone = OPENING_LINE_TONE.get(
+            self.persona_style, OPENING_LINE_TONE["standard"])
         if snip:
-            return OPENING_LINE_INTRO.safe_substitute(job=self.job, snippet=snip)
-        return OPENING_LINE.safe_substitute(job=self.job)
+            return OPENING_LINE_INTRO.safe_substitute(
+                job=self.job, name=self._persona_name, snippet=snip, tone=tone)
+        return OPENING_LINE.safe_substitute(
+            job=self.job, name=self._persona_name, tone=tone)
+
+    def _session_memory(self, limit: int = 3) -> str:
+        """Previous rounds' actual answer snippets, for natural cross-question continuity."""
+        rows = []
+        for rec in [r for r in self.rounds if r is not self.current_round][-limit:]:
+            answers = [a.answer for a in rec.attempts if a.effective and a.answer]
+            if answers:
+                rows.append(
+                    f"- 第 {rec.round_no} 题：考生曾提到「"
+                    f"{qb.truncate(answers[0], 80)}」")
+            else:
+                rows.append(f"- 第 {rec.round_no} 题：考生当时未给出有效回答")
+        if not rows:
+            return ""
+        return SESSION_MEMORY_BLOCK.safe_substitute(memory="\n".join(rows))
 
     def intro_read(self) -> Optional[dict]:
         """
@@ -978,6 +1902,25 @@ class InterviewSession:
             "raw_chars": len(flat),
             "truncated": bool(src) and len(src) != len(flat),
             "snippet": intro_snippet(src),
+        }
+
+    def resume_read(self) -> Optional[dict]:
+        if not self.resume_text:
+            return None
+        return {
+            "enabled": self.interview_mode == "resume",
+            "mode": self.interview_mode,
+            "chars": len(self.resume_text),
+            "skills": self.resume_profile.get("skills") or [],
+            "projects": self.resume_profile.get("projects") or [],
+            "skills_with_evidence": (
+                self.resume_profile.get("skills_with_evidence") or []),
+            "technology_choices": (
+                self.resume_profile.get("technology_choices") or []),
+            "difficulties": self.resume_profile.get("difficulties") or [],
+            "outcomes": self.resume_profile.get("outcomes") or [],
+            "probe_points": self.resume_profile.get("probe_points") or [],
+            "uncertainties": self.resume_profile.get("uncertainties") or [],
         }
 
     # ---------- 阶段推进（修 #2）----------
@@ -1070,7 +2013,8 @@ class InterviewSession:
             self.phase = PHASE_NEXT
             logger.info("sid=%s 计划内 %d 题已问完", self.session_id, self.total_questions)
             return self._finished_payload("plan_complete",
-                                         f"题目已全部问完（{self.total_questions} 题），请调用 /finish 结束面试。")
+                                         f"面试到这里就结束了（共 {self.total_questions} 题）。"
+                                         f"请交卷，稍等片刻就能看到这场面试的成绩单。")
 
         # 顺序是有意义的：先读阶段 → 再抽题 → 把阶段名冻结进记录 → 最后才推进
         stage_name, _planned, difficulties, adapt_note = self._current_stage()
@@ -1081,7 +2025,9 @@ class InterviewSession:
         if raw is None:
             self.phase = PHASE_NEXT
             logger.warning("sid=%s 题库已抽空", self.session_id)
-            return self._finished_payload("bank_exhausted", "题库已抽完，请调用 /finish 结束面试。")
+            return self._finished_payload("bank_exhausted",
+                                          "这个岗位的题目已经问完了。"
+                                          "请交卷，稍后就能看到成绩单。")
 
         qid = raw.get(qb.F_ID, "")
         round_no = self.questions_asked + 1
@@ -1120,6 +2066,7 @@ class InterviewSession:
             deepen=deepen,
             diffs_planned=sorted(difficulties),
             adapt_note=adapt_note,
+            transcript_start=len(self.transcript),
         )
 
         # RAG 参考片段：**每轮检索一次**（成本已付），整轮复用；
@@ -1139,6 +2086,12 @@ class InterviewSession:
 
         self.rounds.append(rec)
         self.current_round = rec
+        # 当前问题必须成为本轮消息列表里最后一条 assistant 内容。
+        # 只看 system 会被上一轮面试官回复压过，真跑已复现跨题污染。
+        self.transcript.append({
+            "role": "assistant",
+            "content": f"【{rec.stage}】{rec.question}",
+        })
         self.phase = PHASE_ANSWER
         self._advance_stage()          # ← 必须最后
 
@@ -1167,8 +2120,127 @@ class InterviewSession:
         accept = accept_relaxed = None
         if self.kg is not None:
             accept, accept_relaxed = self._overlap_filters()
+        if (self.interview_mode == "resume"
+                and (self.resume_profile.get("skills")
+                     or self.resume_profile.get("projects"))):
+            hit = self._pick_resume_question(
+                difficulties, trace, accept, accept_relaxed)
+            if hit is not None:
+                return hit
         return qb.sample(self.job, difficulties, self.asked_pids,
                          accept=accept, accept_relaxed=accept_relaxed, trace=trace)
+
+    def _pick_resume_question(self, difficulties: set,
+                              trace: dict,
+                              accept=None, accept_relaxed=None
+                              ) -> Optional[dict]:
+        """Rank a small resume-relevant pool, then optionally rerank by BGE."""
+        expected = next(iter(difficulties)) if len(difficulties) == 1 else ""
+        bank = qb.load_bank(self.job)
+        excluded = set(self.asked_pids)
+
+        def eligible(q: dict, acc=None) -> bool:
+            if q.get(qb.F_ID) in excluded:
+                return False
+            if q.get(qb.F_DIFFICULTY) not in difficulties:
+                return False
+            return acc is None or bool(acc(q))
+
+        pool = [q for q in bank if eligible(q, accept)]
+        level = "resume_hybrid"
+        if not pool and accept_relaxed is not None:
+            pool = [q for q in bank if eligible(q, accept_relaxed)]
+            level = "resume_relaxed"
+        if not pool:
+            return None
+
+        ranked = []
+        for question in pool:
+            details = resumemod.question_match_details(
+                question, self.resume_profile, difficulty=expected)
+            ranked.append((details["score"], question, details))
+        ranked.sort(key=lambda row: (-row[0], str(row[1].get(qb.F_ID) or "")))
+        shortlist = ranked[:40]
+
+        semantic = self._resume_semantic_scores(
+            [row[1] for row in shortlist if row[0] >= 3.0] or
+            [row[1] for row in shortlist])
+        if semantic:
+            combined = []
+            for score, question, details in shortlist:
+                sem = semantic.get(str(question.get(qb.F_ID) or ""), 0.0)
+                combined.append((round(score + sem * 4.0, 3),
+                                 question, details, sem))
+            combined.sort(
+                key=lambda row: (-row[0], str(row[1].get(qb.F_ID) or "")))
+            shortlist = [(row[0], row[1], row[2]) for row in combined[:8]]
+            level = "resume_semantic"
+
+        top = shortlist[:min(3, len(shortlist))]
+        picked = random.choice(top)[1] if top else None
+        if trace is not None:
+            trace["level"] = level if picked is not None else "none"
+        if picked is not None:
+            details = resumemod.question_match_details(
+                picked, self.resume_profile, difficulty=expected,
+                semantic_score=semantic.get(str(picked.get(qb.F_ID) or ""))
+                if semantic else None)
+            trace["resume_match"] = details
+        return picked
+
+    def _resume_semantic_scores(self, questions: list[dict]) -> dict[str, float]:
+        """Use an already-loaded BGE/online encoder; failures always degrade."""
+        if self._resume_semantic_attempted and not self._resume_vector_cache:
+            return {}
+        encoder = getattr(self.rag, "encoder", None) if self.rag is not None else None
+        if encoder is None:
+            self._resume_semantic_attempted = True
+            return {}
+        self._resume_semantic_attempted = True
+        try:
+            import numpy as np
+            if self._resume_query_vector is None:
+                query = resumemod.format_match_query(self.resume_profile)
+                if not query:
+                    return {}
+                vector = encoder.encode(
+                    [query], normalize_embeddings=True)[0]
+                self._resume_query_vector = vector.tolist()
+            missing = [
+                q for q in questions
+                if str(q.get(qb.F_ID) or "") not in self._resume_vector_cache
+            ]
+            if missing:
+                texts = [
+                    "；".join([
+                        str(q.get(qb.F_QUESTION) or ""),
+                        str(q.get(qb.F_KEYWORDS) or ""),
+                        str(q.get(qb.F_KNOWLEDGE) or ""),
+                    ])
+                    for q in missing
+                ]
+                vectors = encoder.encode(texts, normalize_embeddings=True)
+                for q, vector in zip(missing, vectors):
+                    qid = str(q.get(qb.F_ID) or "")
+                    if qid:
+                        self._resume_vector_cache[qid] = vector.tolist()
+            if not self._resume_vector_cache:
+                return {}
+            query_vec = np.asarray(self._resume_query_vector, dtype="float32")
+            out = {}
+            for q in questions:
+                qid = str(q.get(qb.F_ID) or "")
+                vector = self._resume_vector_cache.get(qid)
+                if vector is None:
+                    continue
+                out[qid] = float(np.dot(
+                    query_vec, np.asarray(vector, dtype="float32")))
+            return out
+        except Exception:
+            logger.exception("sid=%s 简历语义重排失败，退回关键词匹配",
+                             self.session_id)
+            self._resume_vector_cache = {}
+            return {}
 
     # ---------- 知识图谱辅助（KG 关掉/失败时全部不参与） ----------
     def _kp_map_of(self, qid: str, raw: dict) -> dict:
@@ -1244,7 +2316,7 @@ class InterviewSession:
     def _score_and_judge(self, answer: str, rec: RoundRecord
                          ) -> tuple[dict, Optional[str], str, bool]:
         """
-        客观命中分与 LLM 判档**并行**跑。返回 (sc, judge_band, judge_why, judge_ok)。
+        覆盖率信号与 LLM 判档**并行**跑。返回 (sc, judge_band, judge_why, judge_ok)。
 
         为什么并行：两个都是几百毫秒到几秒的外部等待，串行就是白等一倍。
         reranker 约 3s（本地 CPU 推理），判档是一个短 JSON 的 API 往返（约 1~2s），
@@ -1284,16 +2356,22 @@ class InterviewSession:
                               [a.answer for a in rec.attempts])
             sc = self.scorer.score_answer(answer, rec.base_points, rec.adv_points)
             try:
-                j_band, j_why, j_ok = f_j.result()
+                j_band, j_why, j_target, j_kind, j_ok = f_j.result()
             except Exception:
                 logger.exception("sid=%s round=%d 判档线程异常，退回 reranker",
                                  self.session_id, rec.round_no)
-                j_band, j_why, j_ok = None, "", False
+                j_band, j_why, j_target, j_kind, j_ok = None, "", "", "", False
+            if j_target:
+                sc["judge_probe_target"] = j_target
+            if j_kind:
+                sc["judge_probe_kind"] = j_kind
         return sc, j_band, j_why, j_ok
 
     def submit_answer(self, answer: str,
-                      speech: Optional[dict] = None) -> Generator[dict, None, None]:
-        """
+                      speech: Optional[dict] = None,
+                      body_language: Optional[dict] = None
+                      ) -> Generator[dict, None, None]:
+        """ 
         yield {"type":"token","text":...}。
         结束后的状态推进在 finally 里做 —— 哪怕 LLM 中途失败、或客户端断开，
         本轮也一定会收尾，不会把会话卡在 awaiting_answer。
@@ -1336,6 +2414,7 @@ class InterviewSession:
                     loudness=speech.get("loudness"),
                     loudness_cv=speech.get("loudness_cv"),
                     tail_ratio=speech.get("tail_ratio"),
+                    pitch_variation=speech.get("pitch_variation"),
                     emotion=speech.get("emotion"),
                     emotion_score=speech.get("emotion_score"),
                     emotion_dist=speech.get("emotion_dist"),
@@ -1344,13 +2423,56 @@ class InterviewSession:
                 # 派生失败绝不能挡住作答：日志留痕，这一轮按文字作答记。
                 logger.exception("sid=%s 语音指标派生失败，本轮按文字作答记录",
                                  self.session_id)
+        sp = asrmod.apply_personal_baseline(
+            sp, self._speech_baseline_samples)
+        if sp.get("used"):
+            self._speech_baseline_samples.append(dict(sp))
+        body = bodymod.normalize_summary(body_language)
 
-        # 1) 客观命中分 + LLM 判档 —— **并行**发起
-        sc, judge_band, judge_why, judge_ok = self._score_and_judge(answer, rec)
+        kind = classify_answer(answer, rec)
+        if kind in (ANSWER_ACK, ANSWER_HINT_REQUEST):
+            if rec.assist_used < config.MAX_ASSIST_PER_QUESTION:
+                rec.assist_used += 1
+                if kind == ANSWER_HINT_REQUEST:
+                    rec.hint_used += 1
+                    reply = _hint_request_reply(rec, self.persona_style)
+                else:
+                    reply = _ack_reply(self.persona_style, rec, rec.assist_used)
+                self.transcript.append({"role": "user", "content": answer})
+                self.transcript.append({"role": "assistant", "content": reply})
+                yield {"type": "token", "text": reply}
+                logger.info(
+                    "sid=%s round=%d 辅助轮 kind=%s assist=%d/%d phase=%s",
+                    self.session_id, rec.round_no, kind, rec.assist_used,
+                    config.MAX_ASSIST_PER_QUESTION, self.phase)
+                return
+            # 连续确认/反复要提示也有上限；超过后按“这题没说有效内容”处理。
+            kind = ANSWER_NO_INFO
+
+        # 1) 覆盖率信号 + LLM 判档 —— **并行**发起。
+        #    明显没有可判分信息时走确定性短路，避免 mock reranker 按篇幅
+        #    给乱码高覆盖率，也避免 LLM 对空话硬夸。
+        invalid = kind in (
+            ANSWER_UNKNOWN_DIRECTION, ANSWER_NO_INFO, ANSWER_NONSENSE,
+        )
+        unknown_direction = (
+            kind == ANSWER_UNKNOWN_DIRECTION and self._can_swap()
+        )
+        if invalid:
+            sc = no_effective_score(rec)
+            judge_band = BAND_SWAP if unknown_direction else BAND_DEGRADE
+            judge_why = "该方向未接触过" if unknown_direction else "无有效回答"
+            judge_ok = True
+        else:
+            sc, judge_band, judge_why, judge_ok = self._score_and_judge(answer, rec)
 
         # 2) 两个源融合成一个档，再定动作（同时递增计数器）
         r_band = band_of(sc["reranker_score"])
-        band, fuse_rule = fuse_bands(r_band, judge_band, judge_ok)
+        if invalid:
+            band = BAND_SWAP if unknown_direction else BAND_DEGRADE
+            fuse_rule = "no_effective_swap" if unknown_direction else "no_effective"
+        else:
+            band, fuse_rule = fuse_bands(r_band, judge_band, judge_ok)
 
         # 2b) 重复作答守卫 —— 确定性那一道闸（另一道在 _score_and_judge 里
         #     把历史喂给了判档器）。判为复读就把档位**压到最浅**，不再往深里问。
@@ -1368,7 +2490,9 @@ class InterviewSession:
         #    `r.attempts[0].band`（只取首答），而复读只可能出现在第 2/3 次
         #    （第 1 次没有历史，detect_repeat 必返 False）—— 复读的 band
         #    永远进不了走势。别再把这条理由抄回来。
-        repeat, repeat_sim = detect_repeat(answer, rec.attempts)
+        repeat, repeat_sim = (
+            (False, 0.0) if invalid else detect_repeat(answer, rec.attempts)
+        )
         if repeat:
             band, fuse_rule = BAND_DEGRADE, "repeat"
             logger.info("sid=%s round=%d attempt=%d 判为复读（相似度 %.3f ≥ %.2f），"
@@ -1386,11 +2510,22 @@ class InterviewSession:
         #    压过"换题"：一个在复述旧答案的人，不是"没学过"。
         if band == BAND_SWAP and self._can_swap():
             yield from self._swap_round(rec, answer, attempt_no, sc,
-                                        r_band, judge_band, judge_why, judge_ok, sp)
+                                        r_band, judge_band, judge_why, judge_ok,
+                                        sp, body)
             return
 
-        action = decide_action(band, rec, repeat)
+        if invalid:
+            prior_invalid = any(not a.effective for a in rec.attempts)
+            if prior_invalid or rec.hint_used > 0:
+                action = "close"
+            else:
+                rec.follow_ups_used += 1
+                rec.degrade_used += 1
+                action = "degrade"
+        else:
+            action = decide_action(band, rec, repeat)
         hint = hint_for(action, rec)
+        probe_plan = build_probe_plan(action, rec, sc)
 
         attempt = AttemptRecord(
             attempt_no=attempt_no, answer=answer,
@@ -1398,17 +2533,43 @@ class InterviewSession:
             base_hits=sc["base_hit"], adv_hits=sc["adv_hit"],
             base_misses=sc.get("base_miss", []), adv_misses=sc.get("adv_miss", []),
             action=action, hint=hint,
+            probe_level=action if probe_plan else "",
+            probe_target=probe_plan.get("target", ""),
+            probe_kind=probe_plan.get("kind", ""),
             reranker_band=r_band, judge_band=judge_band,
             judge_ok=judge_ok, judge_why=judge_why, fuse_rule=fuse_rule,
             band=band,
             repeat=repeat, repeat_sim=repeat_sim,
+            effective=not invalid,
             speech=sp,
+            body_language=body,
+            coverage_method=sc.get("coverage_method", ""),
+            coverage_windows=int(sc.get("coverage_windows") or 0),
         )
         rec.attempts.append(attempt)
         # 轮次级 speech 跟着**最后一次带语音的回答**走（后面再补一次文字追问，
         # 不会把已经测到的语速擦掉）。
         if sp.get("used"):
             rec.speech = dict(sp)
+        if body.get("used"):
+            rec.body_language = dict(body)
+
+        if invalid:
+            # 无效回答的回应必须是确定性文本，不再交给 LLM。
+            # 否则真实模型和桩模型都可能把“不知道/乱码”续写成“你抓到了主干”，
+            # 与 effective=false 和评分状态直接矛盾。
+            if action == "close":
+                reply = _no_info_close_reply(
+                    self.persona_style, rec, attempt_no)
+            else:
+                reply = _guided_no_info_reply(
+                    rec, attempt_no, self.persona_style)
+            attempt.interviewer_reply = reply
+            attempt.llm_ok = True
+            self.transcript.append({"role": "assistant", "content": reply})
+            yield {"type": "token", "text": reply}
+            self._settle_round(rec, action, attempt)
+            return
 
         # 3) 组装本轮 system（本轮指令放 system，不放进消息列表 —— 修 #1：
         #    原来把考生原话既 append 进历史又塞进 prompt，同一句出现两次）
@@ -1420,14 +2581,14 @@ class InterviewSession:
         else:
             hint_block = HINT_BLOCK_EMPTY
 
-        # 深挖方向 / RAG 参考：**只在 L1、L2 轮注入**。
+        # 深挖方向 / RAG 参考：**只在 L1/L2/L3 轮注入**。
         #
         # 收尾轮（close）与降级轮（degrade）一律注入空串 —— 四条理由写在
         # prompts.py 的 DEEPEN_BLOCK 上方（一句话版：system 是最弱的杠杆，
         # 而收尾轮的提问倾向是上下文里概率最高的续写；给 close 轮递"问什么"
         # 的素材，是在把一个已知 0/10 的机制往 10/10 推）。
         # degrade 一并排除：那个动作要的是**收拢**，灌"可拓展方向"与它反向。
-        # 知识库材料的**末尾旁白**（只在本轮 L1/L2 且检索到时才有值）。
+        # 知识库材料的**末尾旁白**（只在本轮 L1/L2/L3 且检索到时才有值）。
         # 默认空串 = 「一条都不加」——这是 `A11_RAG=0` 那条基线能成立的前提：
         # 借不到编码器时这一轮的消息列表必须与改动前**逐字节相同**。
         kb_narration = ""
@@ -1436,7 +2597,7 @@ class InterviewSession:
         #    下面 `ROUND_CONTEXT.safe_substitute` 会直接 UnboundLocalError，
         #    整条 /chat 500。（加这个默认值时冒烟 22 项红，就是这个原因。）
         rag_kb_block = RAG_KB_BLOCK_EMPTY
-        if action in ("L1", "L2"):
+        if action in ("L1", "L2", "L3"):
             deepen_block = (DEEPEN_BLOCK.safe_substitute(
                 directions="、".join(d["title"] for d in rec.deepen))
                 if rec.deepen else DEEPEN_BLOCK_EMPTY)
@@ -1568,6 +2729,16 @@ class InterviewSession:
             rag_block=rag_block,
             rag_kb_block=rag_kb_block,
         )
+        system += self._session_memory()
+        if probe_plan:
+            system += PROBE_BLOCK.safe_substitute(
+                target=probe_plan["target"],
+                kind_label=probe_plan["kind_label"],
+                instruction=probe_plan["instruction"],
+            )
+            logger.info("sid=%s round=%d 追问目标 kind=%s target_chars=%d",
+                        self.session_id, rec.round_no, probe_plan["kind"],
+                        len(probe_plan["target"]))
 
         # 4) 消息列表 = 真实对话流（含面试官说过的话）+ 本次回答，回答只出现一次
         #    超长回答进 prompt 前截断（记录里仍存原文），防止一个人粘贴五千字撑爆上下文
@@ -1575,27 +2746,68 @@ class InterviewSession:
             "role": "user",
             "content": qb.truncate(answer, config.ANSWER_TRUNCATE),
         })
-        messages = self.transcript[-config.TRANSCRIPT_LIMIT:]
+        messages = self.transcript[rec.transcript_start:][-config.TRANSCRIPT_LIMIT:]
+        style_directive = persona_style_directive(self.persona_style)
+        if style_directive:
+            messages = messages + [{"role": "user", "content": style_directive}]
         if action == "close":
             # 收尾轮的临时旁白：只发这一次请求，**不写进 transcript**
             # （切片出来的 messages 是新列表，+ 不会污染 transcript）
             messages = messages + [{"role": "user", "content": CLOSE_DIRECTIVE}]
         elif kb_narration:
-            # 知识库材料的**末尾 user 旁白**（只有 L1/L2 且检索到材料时才非空）。
+            # 知识库材料的**末尾 user 旁白**（只有 L1/L2/L3 且检索到材料时才非空）。
             # ⚠️ 顺序硬要求：**先切片、后追加**。反过来的话，`TRANSCRIPT_LIMIT` 到达之后
             #    这条旁白会被下一次切片挤出窗口 —— **间歇消失**（前几轮有、后面没有），
             #    是最难查的一类 bug。这里 `messages` 是切片出来的**新列表**，
             #    `+` 不会污染 `self.transcript` ⇒ 旁白不进对话历史、下一轮不会重复出现。
-            # ⚠️ 与 close 互斥（kb_narration 只在 L1/L2 赋值），用 elif 是把这个互斥
+            # ⚠️ 与 close 互斥（kb_narration 只在 L1/L2/L3 赋值），用 elif 是把这个互斥
             #    写在代码里，而不是靠"反正不会同时发生"。
             messages = messages + [{"role": "user", "content": kb_narration}]
+        elif action == "degrade":
+            # 降级轮的末尾 user 旁白（2026-09-27）。与上面两条**互斥**，理由同
+            # kb_narration 那条：action 只有一个值，用 elif 把这个互斥写进代码，
+            # 而不是靠"反正不会同时发生"。
+            #
+            # 要解决什么：真跑里 degrade 轮的回复写出了收尾语（实测原句
+            # 「行，这题你答得住。换一个方向。」），考生顺着它答"我们看下一题吧"
+            # ⇒ 那次作答被判"未作答，属敷衍"、reranker 0.0。
+            # **是面试官自己的话把考生带进了敷衍。** 详见 prompts.DEGRADE_DIRECTIVE。
+            #
+            # ⚠️ 顺序硬要求与 kb_narration 完全相同：**先切片、后追加**
+            #    （`messages = self.transcript[-LIMIT:]` 已在上方完成）。
+            #    反过来会在 TRANSCRIPT_LIMIT 到达后间歇消失 —— 最难查的一类 bug。
+            messages = messages + [{"role": "user", "content": DEGRADE_DIRECTIVE}]
 
         # 5) 流式要面试官的话
         collected, llm_ok = "", True
+        pending = ""
+        released = False
+        probe_gate = bool(
+            config.A11_PROBE_QUALITY_GUARD
+            and action in ("L1", "L2", "L3", "degrade")
+            and probe_plan
+        )
         try:
             for piece in self.llm.chat_stream(system, messages):
                 collected += piece
-                yield {"type": "token", "text": piece}
+                pending += piece
+                if (not probe_gate
+                        or len(re.sub(r"\s+", "", collected)) >= _PROBE_RELEASE_CHARS):
+                    released = True
+                    if pending:
+                        yield {"type": "token", "text": pending}
+                        pending = ""
+            if probe_gate and not released:
+                if _probe_reply_too_weak(collected):
+                    repaired = repair_probe_reply(rec, probe_plan)
+                    collected = repaired
+                    logger.info(
+                        "sid=%s round=%d 追问过短或残缺，已替换为确定性追问",
+                        self.session_id, rec.round_no)
+                    yield {"type": "token", "text": repaired}
+                elif pending:
+                    yield {"type": "token", "text": pending}
+                    pending = ""
         except Exception:
             llm_ok = False
             logger.exception("sid=%s round=%d 面试官回复流式失败", self.session_id, rec.round_no)
@@ -1609,9 +2821,47 @@ class InterviewSession:
                 self.transcript.pop()      # 没说出话就别留下一条空的 user
             self._settle_round(rec, action, attempt)
 
+        # 6) 收尾污染守卫 —— **只在 degrade 轮**，且在 try/finally **之后**。
+        #
+        # ⚠️ 为什么必须在 finally 之外：`finally` 里有 `yield`（`_settle_round`
+        #    不 yield，但整段包着上面那个 yield 循环），客户端断流时生成器被
+        #    close()，`finally` 里再 yield 会抛 `GeneratorExit`。而且真失败
+        #    （`llm_ok=False`）时上面已经 raise 走了，这里根本到不了。
+        # ⚠️ 只查 degrade：L1/L2/L3 本来就要提问，close 本来就**不该**提问 ——
+        #    对 close 跑这个检测会 100% 命中，把观测数字变成噪声。
+        #    这一条只针对"该提问却写了收尾语"的那一种越界。
+        #
+        # ⚠️ 为什么**不像 `detect_repeat` 那样挡掉 `LLM_MOCK`**：那条挡是因为
+        #    冒烟第 2/3 次回答是**故意构造成相同文本**的，守卫必然触发、会打掉
+        #    成片既有断言。这里没有这个冲突 —— 桩在追问轮返回的
+        #    `_MOCK_REPLY` 自带问句、也不含任何收尾措辞 ⇒ `needs_question` 恒 False、
+        #    一次都不会触发。于是这里**不挡**，冒烟就能真的跑到这段生产代码
+        #    （而不是绕过它），"桩下与改动前逐字节相同"也顺带被验了。
+        if action == "degrade" and config.A11_WRAPUP_GUARD:
+            if needs_question(collected):
+                self.wrapup_missing += 1
+                logger.info("sid=%s round=%d 面试官 degrade 轮没有提问"
+                            "（回复 %d 字），不计分，只观测",
+                            self.session_id, rec.round_no, len(collected))
+                if config.A11_WRAPUP_REPAIR:
+                    # 兜底：把一句"邀请他继续说"追加到**流尾**。
+                    # ⚠️ 绝不改写 `collected` 里已经流出的 token —— 考生可能已经
+                    #    读到了前半句，回填等于屏幕上的字凭空变形。
+                    # ⚠️ transcript 末条要同步，否则下一轮的上下文里那句追问凭空消失，
+                    #    模型会以为自己没问过 → 再问一遍。
+                    yield {"type": "token", "text": WRAPUP_NUDGE}
+                    collected += WRAPUP_NUDGE
+                    if self.transcript and self.transcript[-1].get("role") == "assistant":
+                        self.transcript[-1]["content"] = collected
+                    attempt.interviewer_reply = collected
+                    self.wrapup_repaired += 1
+                    logger.info("sid=%s round=%d 已追加收尾修补 %d 字",
+                                self.session_id, rec.round_no, len(WRAPUP_NUDGE))
+
     def _swap_round(self, rec: RoundRecord, answer: str, attempt_no: int, sc: dict,
                     r_band: str, judge_band: Optional[str], judge_why: str,
-                    judge_ok: bool, sp: Optional[dict] = None) -> Generator[dict, None, None]:
+                    judge_ok: bool, sp: Optional[dict] = None,
+                    body: Optional[dict] = None) -> Generator[dict, None, None]:
         """
         换题出路：把这**一整轮作废**，让考生换一道别的方向的题。
 
@@ -1654,10 +2904,15 @@ class InterviewSession:
             # 表达指标与正常路径同一份（这一轮虽然作废，但仍会进 swapped_rounds
             # 的报告 —— 报告里那一轮用时/语速不该是空的）。
             speech=sp or dict(asrmod.SPEECH_EMPTY),
+            body_language=body or dict(bodymod.BODY_EMPTY),
+            coverage_method=sc.get("coverage_method", ""),
+            coverage_windows=int(sc.get("coverage_windows") or 0),
         )
         rec.attempts.append(attempt)
         if sp and sp.get("used"):
             rec.speech = dict(sp)
+        if body and body.get("used"):
+            rec.body_language = dict(body)
         rec.swapped = True
         rec.swap_reason = judge_why or "判档判定该方向未接触过"
         rec.open = False
@@ -1722,12 +2977,29 @@ class InterviewSession:
         """给 SSE 的 done / round_end 事件用。"""
         rec = self.current_round
         if rec is None or not rec.attempts:
-            return {"action": "close", "follow_up": False, "round_open": False,
-                    "attempts": 0, "follow_ups_used": 0, "degrade_used": 0,
-                    "reranker_score": None, "reranker_ok": True,
-                    # 换题的三件套，见下面那条注释 —— 键恒在，消费方不用判空
-                    "swapped": False, "swaps_used": self.swaps_used,
-                    "swaps_left": max(0, config.MAX_SWAP_PER_SESSION - self.swaps_used)}
+            pending = bool(rec is not None and rec.assist_used)
+            action = "degrade" if pending else "close"
+            return {
+                "action": action,
+                "follow_up": pending,
+                "round_open": bool(rec.open) if rec is not None else False,
+                "attempts": 0,
+                "effective": False,
+                "follow_ups_used": rec.follow_ups_used if rec is not None else 0,
+                "degrade_used": rec.degrade_used if rec is not None else 0,
+                "assist_used": rec.assist_used if rec is not None else 0,
+                "hint_used": rec.hint_used if rec is not None else 0,
+                "reranker_score": None, "reranker_ok": True,
+                "coverage_method": "", "coverage_windows": 0,
+                "reranker_band": None,
+                "judge_band": None,
+                "judge_ok": False,
+                "judge_why": "",
+                "fuse_rule": "assist" if pending else "",
+                "band_disagree": False,
+                # 换题的三件套，见下面那条注释 —— 键恒在，消费方不用判空
+                "swapped": False, "swaps_used": self.swaps_used,
+                "swaps_left": max(0, config.MAX_SWAP_PER_SESSION - self.swaps_used)}
         last = rec.attempts[-1]
         return {
             "action": last.action,
@@ -1737,10 +3009,15 @@ class InterviewSession:
             "follow_up": last.action not in ("close", BAND_SWAP),
             "round_open": rec.open,
             "attempts": len(rec.attempts),
+            "effective": bool(last.effective),
             "follow_ups_used": rec.follow_ups_used,
             "degrade_used": rec.degrade_used,
+            "assist_used": rec.assist_used,
+            "hint_used": rec.hint_used,
             "reranker_score": last.reranker_score,
             "reranker_ok": last.reranker_ok,
+            "coverage_method": last.coverage_method,
+            "coverage_windows": last.coverage_windows,
             # ---- 判档的两个源 + 融合结果（加法，前端可忽略）----
             # 给前端 / 4 号 / 3 号一个「这次为什么这么问」的可解释出口。
             # judge_band 为 None = LLM 没判出来，**不是**判成降级。
@@ -1769,17 +3046,24 @@ class InterviewSession:
             return dict(self._result, cached=True)
 
         t0 = time.time()
-        scorable = [r for r in self.rounds if r.attempts]
+        # 只有至少包含一次有效回答的轮次才值得调用评分模型。
+        # 全无效的轮次若也送进去，会浪费调用，还可能把“模型 JSON 抖动”
+        # 误记成“评分失败”，污染无效场次的说明。
+        scorable = [
+            r for r in self.rounds
+            if any(bool(getattr(a, "effective", True)) for a in r.attempts)
+        ]
         failed_rounds: list[int] = []
 
         # 每轮一次五维评分；4 路并发（一轮一次 LLM 调用，串行太慢）
-        def _score(rec: RoundRecord) -> tuple[RoundRecord, dict, Optional[str]]:
+        def _score(rec: RoundRecord
+                   ) -> tuple[RoundRecord, dict, Optional[str], dict, Optional[str]]:
             # 每一轮的失败都就地捕获成 (data={}, err)，绝不让异常穿出线程池 ——
             # 一轮评分挂掉不该让整场面试拿不到结果
             try:
                 if self.scorer.llm is None:
-                    return rec, {}, "评分器未初始化（没有可用的 LLM）"
-                data, err = self.scorer.llm.score_round({
+                    return rec, {}, "评分器未初始化（没有可用的 LLM）", {}, ""
+                ctx = {
                     "question": rec.question,
                     "difficulty": rec.difficulty,
                     "stage": rec.stage,
@@ -1792,25 +3076,54 @@ class InterviewSession:
                     # 传摘要而不是裸分：reranker 失败时它会明说「不可用」，
                     # 而不是把默认分 50 当成真实结果递下去。
                     "reranker_note": rec.reranker_note(),
+                    "kb_evidence": (
+                        kbmod.format_block(rec.kb_refs)
+                        if config.A11_KB_SCORE and rec.kb_refs else "（无）"
+                    ),
                     # 表达客观测量（用时 vs 建议用时 / 语音作答时的语速·停顿·
                     # 填充词）。与 reranker_note 同一个位置、同一套写法：
                     # 它只是**证据**，不给它单独一维、不改任何权重。
                     "pace_note": rec.pace_note(),
-                })
-                return rec, data, err
+                }
+                data, err = self.scorer.llm.score_round(ctx)
+                obj, obj_err = self.objective.score_round(ctx)
+                return rec, data, err, obj, obj_err
             except Exception as e:
                 logger.exception("sid=%s round=%d 评分线程异常", self.session_id, rec.round_no)
-                return rec, {}, f"{type(e).__name__}: {e}"
+                return rec, {}, f"{type(e).__name__}: {e}", {}, ""
 
         if scorable:
             with ThreadPoolExecutor(max_workers=min(4, len(scorable))) as pool:
-                for rec, data, err in pool.map(_score, scorable):
+                for rec, data, err, obj, obj_err in pool.map(_score, scorable):
+                    rec.objective_detail = obj or {}
+                    rec.objective_detail["error"] = obj_err or ""
                     if err or not data.get("five_dim"):
                         rec.scored = False
                         rec.score_error = err or "模型未返回可解析的五维分"
                         failed_rounds.append(rec.round_no)
                     else:
-                        rec.five_dim = data["five_dim"]
+                        adjusted = dict(data["five_dim"])
+                        adjustment = (
+                            bodymod.score_adjustment(rec.body_language)
+                            if config.A11_BODY_SCORE
+                            else {
+                                "applied": False,
+                                "reason": "disabled",
+                                "communication_delta": 0.0,
+                                "adaptability_delta": 0.0,
+                            }
+                        )
+                        if adjustment.get("applied"):
+                            adjusted = bodymod.apply_to_five_dim(
+                                adjusted, rec.body_language)
+                        rec.body_score_adjustment = adjustment
+                        rec.five_dim = adjusted
+                        rec.code_check = data.get("code_check") or {
+                            "applicable": False, "correct": None, "note": "",
+                        }
+                        rec.score_detail = data.get("score_detail") or {}
+                        if adjustment.get("applied"):
+                            rec.score_detail["body_language_adjustment"] = adjustment
                         rec.comment = data.get("comment", "")
                         rec.errors = data.get("errors", [])
                         rec.scored = True
@@ -1834,6 +3147,288 @@ class InterviewSession:
             # 权重归一化：某个维度整体缺失时，不能拿 0 去顶
             total = round(sum(usable[d] * weights[d] for d in usable) / wsum, 2) if wsum else None
 
+        completion_rate = (
+            round(self.questions_asked / self.total_questions, 4)
+            if self.total_questions else 0.0
+        )
+        effective_rounds = [
+            r for r in scorable
+            if any(bool(getattr(a, "effective", True)) for a in r.attempts)
+        ]
+        has_objective = any(
+            isinstance((r.objective_detail or {}).get("correctness_score"),
+                       (int, float))
+            for r in scorable
+        )
+        if (not has_any and not has_objective) or not effective_rounds:
+            score_status = "invalid"
+        elif failed_rounds or self.questions_asked < self.total_questions:
+            score_status = "partial"
+        else:
+            score_status = "valid"
+        final_score = score_status == "valid"
+        partial = score_status != "valid"
+        invalid_session = score_status == "invalid"
+        if invalid_session:
+            # 没有任何有效回答时，最低档 1 也不该被展示成“20 分”。
+            # 分数键保留为 null，与“没有数据”同一语义；原始逐轮记录仍在 raw。
+            avg = {d: None for d in config.DIMENSIONS}
+            total = None
+
+        score_by_difficulty: dict[str, dict] = {}
+        for diff in ("easy", "medium", "hard"):
+            rows = [r for r in scorable if r.difficulty == diff and r.five_dim]
+            vals = {d: [] for d in config.DIMENSIONS}
+            for rec in rows:
+                for d in config.DIMENSIONS:
+                    v = (rec.five_dim or {}).get(d)
+                    if isinstance(v, (int, float)):
+                        vals[d].append(float(v))
+            d_avg = {d: (round(sum(v) / len(v), 2) if v else None)
+                     for d, v in vals.items()}
+            score_by_difficulty[diff] = {
+                "rounds": len(rows),
+                "five_dim_avg": d_avg,
+                "total_score": weighted_llm_score(d_avg, self.job),
+            }
+        _diff_totals = [x["total_score"] for x in score_by_difficulty.values()
+                        if x["total_score"] is not None]
+        difficulty_adjusted_total = (
+            round(sum(_diff_totals) / len(_diff_totals), 2)
+            if _diff_totals else None)
+
+        technical_rows = [
+            r for r in scorable
+            if r.five_dim and r.dim1_label == config.DIMENSIONS[0]
+        ]
+        tech_values = [
+            (r.five_dim or {}).get(config.DIMENSIONS[0]) for r in technical_rows
+        ]
+        tech_values = [float(v) for v in tech_values if isinstance(v, (int, float))]
+        technical_correctness = (
+            round(sum(tech_values) / len(tech_values), 2) if tech_values else None)
+        content_analysis = {
+            "technical_correctness": {
+                "score": technical_correctness,
+                "rounds": [r.round_no for r in technical_rows],
+                "note": "只统计第一维标签为“技术水平”的轮次；行为素质题不参与该值。",
+            },
+            "knowledge_depth": {
+                "score": avg.get(config.DIMENSIONS[0]),
+                "rounds": [r.round_no for r in scorable if r.five_dim],
+                "note": "与第一维共用证据，不宣称独立测量；明细仍看逐轮分与评语。",
+            },
+            "logical_rigor": {
+                "score": avg.get("逻辑思维"),
+                "rounds": [r.round_no for r in scorable if r.five_dim],
+                "note": "直接对应“逻辑思维”维度。",
+            },
+            "job_fit": {
+                "score": avg.get("岗位匹配度"),
+                "rounds": [r.round_no for r in scorable if r.five_dim],
+                "note": "直接对应“岗位匹配度”维度。",
+            },
+        }
+
+        # ---- 评分依据明细（加法）----
+        # 五维分本身与权重完全不动；这里把每一维的理由/证据/可信度聚合成
+        # 可复核报告。模型没给明细时 available=false，不伪造依据。
+        def _uniq_text(items, limit: int, chars: int = 120) -> list[str]:
+            out: list[str] = []
+            for item in items:
+                text = str(item or "").strip()[:chars]
+                if text and text not in out:
+                    out.append(text)
+                if len(out) >= limit:
+                    break
+            return out
+
+        detail_rows = [] if invalid_session else [
+            r for r in scorable
+            if r.scored and isinstance(r.score_detail, dict)
+        ]
+        detail_available = any(
+            bool((r.score_detail or {}).get("available")) for r in detail_rows)
+        detail_dims: dict[str, dict] = {}
+        for d in config.DIMENSIONS:
+            reasons, evidence = [], []
+            conf_counts = {"high": 0, "medium": 0, "low": 0}
+            for r in detail_rows:
+                row = (((r.score_detail or {}).get("dimensions") or {}).get(d) or {})
+                if not isinstance(row, dict):
+                    continue
+                if row.get("reason"):
+                    reasons.append(str(row["reason"]))
+                evidence.extend(row.get("evidence") or [])
+                conf = str(row.get("confidence") or "").lower()
+                if conf in conf_counts:
+                    conf_counts[conf] += 1
+            detail_dims[d] = {
+                "score": avg.get(d),
+                "reasons": _uniq_text(reasons, 5, 80),
+                "evidence": _uniq_text(evidence, 8, 80),
+                "confidence_counts": conf_counts,
+            }
+
+        missing_points = _uniq_text(
+            [p for r in detail_rows
+             for p in ((r.score_detail or {}).get("missing_points") or [])],
+            10, 100)
+        misconceptions = _uniq_text(
+            [p for r in detail_rows
+             for p in ((r.score_detail or {}).get("misconceptions") or [])],
+            10, 100)
+        followup_rows = [
+            row for r in detail_rows
+            for row in ((r.score_detail or {}).get("followup_eval") or [])
+            if isinstance(row, dict)
+        ]
+        gains = [row.get("depth_gain") for row in followup_rows
+                 if isinstance(row.get("depth_gain"), int)]
+        followup_summary = {
+            "transitions": len(followup_rows),
+            "target_hits": sum(1 for row in followup_rows
+                               if row.get("target_hit") is True),
+            "new_information": sum(1 for row in followup_rows
+                                   if row.get("new_information") is True),
+            "corrected_errors": sum(1 for row in followup_rows
+                                    if row.get("corrected_error") is True),
+            "avg_depth_gain": round(sum(gains) / len(gains), 2) if gains else None,
+        }
+
+        base_hit = base_total = adv_hit = adv_total = 0
+        for r in scorable:
+            if not r.attempts:
+                continue
+            best = max(r.attempts, key=lambda a: a.reranker_score)
+            base_hit += len(best.base_hits)
+            adv_hit += len(best.adv_hits)
+            base_total += len(best.base_hits) + len(best.base_misses)
+            adv_total += len(best.adv_hits) + len(best.adv_misses)
+        conf_values = [
+            str((r.score_detail or {}).get("confidence") or "").lower()
+            for r in detail_rows
+        ]
+        if conf_values and all(x == "high" for x in conf_values):
+            overall_confidence = "high"
+        elif conf_values and all(x == "low" for x in conf_values):
+            overall_confidence = "low"
+        elif any(x in ("high", "medium") for x in conf_values):
+            overall_confidence = "medium"
+        else:
+            overall_confidence = ""
+        score_breakdown = {
+            "available": detail_available,
+            "dimensions": detail_dims,
+            "coverage": {
+                "base_hit": base_hit,
+                "base_total": base_total,
+                "adv_hit": adv_hit,
+                "adv_total": adv_total,
+                "base_rate": round(base_hit / base_total, 3) if base_total else None,
+                "adv_rate": round(adv_hit / adv_total, 3) if adv_total else None,
+                "note": "取每轮覆盖率最高的一次作答；这是覆盖率信号，不是事实正确性。",
+            },
+            "missing_points": missing_points,
+            "misconceptions": misconceptions,
+            "followup_eval": followup_rows,
+            "followup_summary": followup_summary,
+            "confidence": overall_confidence,
+        }
+
+        # ---- 客观线：SiliconFlow 覆盖率 + Qwen 事实核验 ----
+        objective_rows = []
+        objective_errors = []
+        objective_conf = []
+        for rec in scorable:
+            detail = rec.objective_detail or {}
+            if detail.get("error"):
+                objective_errors.append(
+                    f"第 {rec.round_no} 题：{detail['error']}")
+            correctness = detail.get("correctness_score")
+            if not isinstance(correctness, (int, float)):
+                continue
+            best = (max(rec.attempts, key=lambda a: a.reranker_score)
+                    if rec.attempts else None)
+            if best is None:
+                continue
+            b_total = len(best.base_hits) + len(best.base_misses)
+            a_total = len(best.adv_hits) + len(best.adv_misses)
+            b_rate = len(best.base_hits) / b_total if b_total else 1.0
+            a_rate = len(best.adv_hits) / a_total if a_total else 0.0
+            coverage_05 = round((0.6 * b_rate + 0.4 * a_rate) * 5, 2)
+            misconceptions = detail.get("misconceptions") or []
+            claims = detail.get("claims") or []
+            objective_round = objective_round_score(
+                coverage_05, float(correctness), claims, misconceptions,
+                detail.get("point_atoms") or [])
+            objective_rows.append({
+                "round": rec.round_no,
+                "coverage_score": coverage_05,
+                "correctness_score": round(float(correctness), 2),
+                "objective_score": round(objective_round, 2),
+                "evidence": detail.get("evidence") or [],
+                "missing_points": detail.get("missing_points") or [],
+                "misconceptions": misconceptions,
+                "claims": claims,
+                "claim_counts": detail.get("claim_counts") or {},
+                "target_results": detail.get("target_results") or [],
+                "point_atoms": detail.get("point_atoms") or [],
+                "confidence": detail.get("confidence") or "",
+            })
+            if detail.get("confidence") in ("high", "medium", "low"):
+                objective_conf.append(detail["confidence"])
+        objective_score = (
+            round(sum(r["objective_score"] for r in objective_rows)
+                  / len(objective_rows), 2)
+            if objective_rows else None
+        )
+        objective_confidence = (
+            "low" if "low" in objective_conf
+            else "medium" if "medium" in objective_conf
+            else "high" if objective_conf else ""
+        )
+        objective_claims = [
+            claim for row in objective_rows for claim in (row.get("claims") or [])
+        ]
+        objective_claim_counts = {
+            key: sum(1 for row in objective_rows
+                     for claim in (row.get("claims") or [])
+                     if claim.get("verdict") == key)
+            for key in ("supported", "contradicted", "insufficient")
+        }
+        objective = {
+            "available": bool(objective_rows),
+            "provider": config.OBJECTIVE_PROVIDER,
+            "model": config.OBJECTIVE_MODEL,
+            "score": objective_score,
+            "rounds": objective_rows,
+            "errors": objective_errors,
+            "confidence": objective_confidence,
+            "claims": objective_claims,
+            "claim_counts": objective_claim_counts,
+            "contradictions": [
+                claim for claim in objective_claims
+                if claim.get("verdict") == "contradicted"
+            ],
+        }
+        if invalid_session:
+            objective["available"] = False
+            objective["score"] = None
+            objective["rounds"] = []
+        subjective = {
+            "score": total,
+            "five_dim": avg,
+            "breakdown": score_breakdown,
+        }
+        combined = combine_scores(
+            objective["score"],
+            total,
+            objective["confidence"],
+            overall_confidence,
+            objective_detail=objective,
+        )
+
         notes: list[str] = []
         if not scorable:
             notes.append("没有有效问答轮次")
@@ -1842,6 +3437,12 @@ class InterviewSession:
         deg = sum(1 for r in scorable if r.degrade_used > 0)
         if deg:
             notes.append(f"{deg} 轮触发降级引导")
+        # 收尾污染（2026-09-27）。两个数分开写：前者是"发生过几次"，
+        # 后者是"补上了几次" —— 只写前者会把关掉 REPAIR 的那一档读成"已修好"。
+        if self.wrapup_missing:
+            notes.append(
+                f"{self.wrapup_missing} 轮面试官的引导里没带提问"
+                f"（已用兜底补问 {self.wrapup_repaired} 轮）")
         if self.swaps_used:
             # 用户要求报告里注明。措辞只陈述事实与原因，不带评价 —— 换题是
             # 「这题不该问他」，不是「他答砸了」，报告里不能读成后者。
@@ -1852,6 +3453,12 @@ class InterviewSession:
                          f"被换掉的题不计入 {self.total_questions} 题")
         if self.questions_asked < self.total_questions:
             notes.append(f"只问了 {self.questions_asked}/{self.total_questions} 题")
+        effective_n = sum(
+            1 for r in scorable for a in r.attempts
+            if bool(getattr(a, "effective", True))
+        )
+        if scorable and effective_n == 0:
+            notes.append("全部回答均未提供有效技术内容")
 
         # 知识图谱 / RAG 的降级也如实点名 —— 但只在**失败**时提。
         # 「关掉」是配置，「失败」是故障，两者混为一谈会让 3 号误以为
@@ -1867,6 +3474,28 @@ class InterviewSession:
         for r in self.rounds:
             if r.pick_level:
                 pick_levels[r.pick_level] = pick_levels.get(r.pick_level, 0) + 1
+
+        # ---- 避重阶梯 + 考点重叠闸的**可见化**（2026-09-27）----
+        # 为什么要单独打一行：那两道闸（`pick_level` 的 r0→r3 回退链、以及
+        # `KP_OVERLAP_THRESHOLD` 那道重叠闸）**不进任何分数**，只影响抽到哪道题。
+        # 于是「它们到底有没有在工作」在报告里是个**沉默**的问题 ——
+        # 上一波是靠事后把 `/finish` 整份翻出来数 `pick_levels`（十轮全是 r0）
+        # 才看出来的，而 `kp_overlap` 那次读数九轮 0.0、一轮 0.5，
+        # 阈值 0.6 ⇒ **一次都没拦下过**。这种事不该每次都靠翻报告。
+        # `pick=`/`overlap=` 本来就逐轮打了（见 ask_next_question），
+        # 这里补一条**收口**：一场一行，grep 得到。
+        #
+        # ⚠️ 刻意**不写进 `notes`**：notes 会经 `_write_evaluation` 进
+        #    FINAL_SUMMARY 的【需要说明的情况】，也就是**给考生看的那段评语**。
+        #    这是 3 号/开发者的内部口径，只该进 raw 与日志
+        #    （与 `dim1_labels`、`raw.blindspots` 同一条规矩，见下面那段注释）。
+        _ov = [r.kp_overlap for r in self.rounds if r.kp_overlap is not None]
+        logger.info("sid=%s finish 避重阶梯 pick_levels=%s ｜ 考点重叠 n=%d "
+                    "max=%.3f 闸=%.2f/%.2f（读数 ≥ 闸说明那一轮是靠回退档抽的，"
+                    "重叠闸本身不计数，只能靠这两个数判断）",
+                    self.session_id, pick_levels or "空", len(_ov),
+                    max(_ov) if _ov else -1.0,
+                    config.KP_OVERLAP_THRESHOLD, config.KP_OVERLAP_RELAXED)
 
         # 整场第一维的**构成**。一场里行为素质题与技术题混着抽时，
         # five_dim_avg["技术水平"] 是**两种东西的平均**：算法本身没错（第一维那一格的
@@ -1884,6 +3513,10 @@ class InterviewSession:
                 dim1_labels[r.dim1_label] += 1
 
         evaluation = self._write_evaluation(avg, notes)
+
+        difficulty_mix: dict[str, int] = {}
+        for r in scorable:
+            difficulty_mix[r.difficulty] = difficulty_mix.get(r.difficulty, 0) + 1
 
         self.finished_at = time.time()
         self.phase = PHASE_DONE
@@ -1909,8 +3542,31 @@ class InterviewSession:
             "duration_sec": round(self.finished_at - self.created_at, 1),
             "total_questions": config.TOTAL_QUESTIONS,
             "questions_asked": self.questions_asked,
+            "total_questions": self.total_questions,
+            "completion_rate": completion_rate,
+            "effective_rounds": len(effective_rounds),
+            "score_status": score_status,
+            "score_scope": "completed_rounds_only" if not final_score else "full_session",
+            "final_score": final_score,
             "chat_turns": len(self.transcript),
             "weights": weights,
+            "difficulty_mix": difficulty_mix,
+            "score_by_difficulty": score_by_difficulty,
+            "difficulty_adjusted_score": difficulty_adjusted_total,
+            "content_analysis": content_analysis,
+            "score_breakdown": score_breakdown,
+            "objective": objective,
+            "subjective": subjective,
+            "combined": combined,
+            "code_review": [
+                {
+                    "round": r.round_no,
+                    "question_id": r.question_id,
+                    **(r.code_check or {}),
+                }
+                for r in scorable
+                if (r.code_check or {}).get("applicable")
+            ],
             "asked_pids": list(self.asked_pids),
             "rounds": [r.to_raw() for r in self.rounds],
             # 修 #5：失败轮次在这里点名，且**不计入** five_dim_avg（绝不伪装成 0 分）
@@ -1970,8 +3626,65 @@ class InterviewSession:
             "weights": config.weights_text_for(self.job),
             "summary": evaluation,
             "rounds": len(scorable),
+            "dimension_info": [
+                {
+                    "key": d,
+                    "label": d,
+                    "alternate_label": (config.DIM1_LABEL_BEHAVIORAL
+                                        if d == config.DIMENSIONS[0] else ""),
+                    "alternate_when": (config.CATEGORY_BEHAVIORAL
+                                       if d == config.DIMENSIONS[0] else ""),
+                    "behavioral_rounds": (dim1_labels.get(
+                        config.DIM1_LABEL_BEHAVIORAL, 0)
+                        if d == config.DIMENSIONS[0] else 0),
+                }
+                for d in config.DIMENSIONS
+            ],
+            "difficulty_mix": difficulty_mix,
+            "difficulty_adjusted_score": difficulty_adjusted_total,
+            "score_by_difficulty": score_by_difficulty,
+            "content_analysis": content_analysis,
+            "score_breakdown": score_breakdown,
+            "objective": objective,
+            "subjective": subjective,
+            "combined": combined,
+            "code_review": [
+                {
+                    "round": r.round_no,
+                    "question_id": r.question_id,
+                    **(r.code_check or {}),
+                }
+                for r in scorable
+                if (r.code_check or {}).get("applicable")
+            ],
+            "score_semantics": {
+                "scoring_version": config.SCORING_VERSION,
+                "five_dim_avg": "0-5 分；null 表示该维度没有数据，不是 0 分",
+                "score_step": config.SCORE_STEP,
+                "score_status": "valid=完整正式分；partial=完成度或评分失败；invalid=没有有效评分",
+                "completion_rate": "questions_asked / total_questions",
+                "reranker_score": "得分点覆盖率信号，不是技术正确性结论",
+                "coverage_method": "full_then_window_max",
+                "total_score_100": "由 0-5 总分折算，仅用于展示",
+                "difficulty_adjusted_score": "easy/medium/hard 各自均分后再等权平均；"
+                                             "避免难度构成直接改变总均分",
+                "content_analysis": "从已有逐轮五维派生；knowledge_depth 与第一维共用证据，"
+                                    "不是独立模型指标",
+                "score_breakdown": "逐维评分依据、覆盖率与 followup_eval 明细；"
+                                   "不新增第六维、不改五维权重",
+                "objective": "SiliconFlow 覆盖信号 + Qwen 逐主张事实核验；"
+                             "不评价表达和软技能",
+                "subjective": "DeepSeek 五维评分；覆盖逻辑、表达、应变和岗位匹配",
+                "combined": "客观与主观的未校准合成分，仅用于展示",
+                "code_review": "算法/编程题的附加检查，不新增维度、不改五维权重",
+            },
             # ---- 新增：给 3 号评估用的完整明细 ----
-            "partial": (not has_any) or bool(failed_rounds),
+            "completion_rate": completion_rate,
+            "effective_rounds": len(effective_rounds),
+            "score_status": score_status,
+            "score_scope": "completed_rounds_only" if not final_score else "full_session",
+            "final_score": final_score,
+            "partial": partial,
             "notes": notes,
             "raw": raw,
             "cached": False,
@@ -2020,6 +3733,29 @@ class InterviewSession:
         else:
             envelope["review"] = None
 
+        # ---- 表达客观测量（加法：**顶层新键**，给考生看的）----
+        # 语音链（whisper / VAD / 停顿 / 填充词 / 音量三指标 / SER 情感 /
+        # `confidence_band()`）此前**只**以 `$pace_note` 的形式进了评分 prompt：
+        # 它偷偷影响「沟通表达 / 应变能力」两维，考生却在报告上一个字都看不到，
+        # 无从知道自己哪里说得不好（赛题 020 的痛点正是「难以全面自我评估」，
+        # 038 逐字要求「**评估**…流畅度、语速、语气自信度」）。这一份把它端出来。
+        #
+        # ⚠️ 与 `digest`/`review` 同款：白名单构造、绝不抛、`raw` 一个键都不动。
+        # ⚠️ 与它们**唯一的**不同：**不挂开关**。另两个各有 `A11_GROWTH` /
+        #    `A11_REVIEW`（一个是给 1 号 存档、一个是给考生复盘，各自可单独关）；
+        #    这一个就是「把已经算出来的测量告诉考生」，没有关掉的理由
+        #    —— 关掉它等于把 3b 对考生的可见价值清零，那正是本波要修的病。
+        # ⚠️ 也不受 `A11_RAW_DETAIL` 影响：它在 `raw` **外面**的顶层
+        #    （`_with_raw_detail` 只替换 `out["raw"]`），所以交付默认档
+        #    （`A11_RAW_DETAIL=0`）下照常出门 —— 这是本波的全部意义。
+        try:
+            envelope["pace_note"] = candidate_pace_note(self.rounds)
+        except Exception:
+            # 与 digest/review 同一条纪律：它挂了不能把整场面试的收口打挂。
+            logger.exception("sid=%s 表达客观测量汇总失败，本场 pace_note 置 None",
+                             self.session_id)
+            envelope["pace_note"] = None
+
         self._result = envelope
         logger.info("sid=%s finish rounds=%d scored=%d failed=%d total=%s 耗时 %.1fs",
                     self.session_id, len(scorable),
@@ -2032,6 +3768,13 @@ class InterviewSession:
         return dict(self._result, cached=True) if self._result is not None else None
 
     def _write_evaluation(self, avg: dict, notes: list[str]) -> str:
+        if not any(
+            bool(getattr(a, "effective", True))
+            for r in self.rounds for a in r.attempts
+        ):
+            return ("本场所有回答都没有提供有效技术内容，无法判断具体考点掌握程度，"
+                    "也不能据此得出岗位胜任力结论。"
+                    + ("（" + "；".join(notes) + "）" if notes else ""))
         if not any(v is not None for v in avg.values()):
             return "本场面试没有产生可评分的数据，无法给出评价。" + (
                 "（" + "；".join(notes) + "）" if notes else "")
@@ -2046,25 +3789,95 @@ class InterviewSession:
                          for d, v in r.five_dim.items()) if r.five_dim else "未评分")
             + (f"｜评语：{r.comment}" if r.comment else "")
             for r in self.rounds if r.attempts)
-        topics = ", ".join([kp["title"] for r in self.rounds
-                            for kp in r.knowledge_points][:10]) or "（未记录）"
+        # ---- 逐轮给「题 + 该轮全部考点名 + 该轮评语」（2026-09-27 改）----
+        # 旧写法是 `[... for r in self.rounds for kp in r.knowledge_points][:10]` ——
+        # **跨全场截断到 10 条**，于是：① 后面几轮的考点整批消失；② 考点名与轮次
+        # 的对应关系全丢，模型不知道哪个点是哪道题的；③ 题干一个都没有。
+        # 「强项（具体到知识点）」这个要求在那份输入下只能靠猜 —— 真跑里就猜出了
+        # 一个本场没考过的「Spring 循环依赖」。
+        # ⚠️ 截断**仍在**，但改成按轮截（每张卷子都不丢），且不再砍考点名 ——
+        #    考点名是护栏的白名单，砍它等于让护栏自己失明。
+        _tp_lines: list[str] = []
+        for r in self.rounds:
+            if not r.attempts:
+                continue                      # 没作答过的轮不给（评分口径同此）
+            _names = [(kp.get("title") or "").strip() for kp in r.knowledge_points]
+            _names = [n for n in _names if n]
+            _tp_lines.append(
+                f"  第 {r.round_no} 题（{r.stage}/{r.difficulty}）："
+                f"{qb.truncate(r.question, config.SUMMARY_STEM_MAX) or '（题面未记录）'}"
+                f"｜考点：{'、'.join(_names) or '（该题未绑考点）'}")
+        topics = "\n".join(_tp_lines) or "（未记录）"
         extra = ("\n【需要说明的情况】" + "；".join(notes) + "\n") if notes else "\n"
 
         user = FINAL_SUMMARY.safe_substitute(
             job=self.job, scores=scores_text, topics=topics,
             weights_text=config.weights_text_for(self.job), extra=extra)
+
+        # ---- 总评护栏（2026-09-27）----
+        # 关掉开关 ⇒ **逐字回到旧样**（同一条"关掉新功能 = 与加之前逐字节相同"的约定）。
+        if not config.A11_SUMMARY_GUARD:
+            try:
+                return self.llm.chat(SYSTEM_SUMMARY, [{"role": "user", "content": user}],
+                                     temperature=config.LLM_TEMPERATURE)
+            except Exception as e:
+                logger.exception("sid=%s 生成面试评价失败", self.session_id)
+                return f"（面试评价生成失败：{type(e).__name__}: {e}）"
+
         try:
-            return self.llm.chat(SYSTEM_SUMMARY, [{"role": "user", "content": user}],
-                                 temperature=config.LLM_TEMPERATURE)
-        except Exception as e:
-            logger.exception("sid=%s 生成面试评价失败", self.session_id)
-            return f"（面试评价生成失败：{type(e).__name__}: {e}）"
+            truth_norm, _truth_raw = sg.ground_truth(self.rounds)
+            alien = sg.make_alien_index(self.job)
+            msgs = [{"role": "user", "content": user}]
+            last_problems: list[str] = []
+            # 最多两次：第一次 + 带具体错处的一次重生。**不做局部修补**
+            # （局部修补要在自由文本上做手术，比整段重生更容易把话改坏）。
+            for attempt in (1, 2):
+                text = self.llm.chat(SYSTEM_SUMMARY, msgs,
+                                     temperature=config.LLM_TEMPERATURE)
+                if not (text or "").strip():
+                    last_problems = ["上一次输出为空"]
+                else:
+                    rep = sg.audit(text, truth_norm, alien,
+                                   config.SUMMARY_ALIEN_KP_MIN_CHARS)
+                    if rep["ok"] and rep["tags"]:
+                        logger.info("sid=%s 总评通过护栏（第 %d 次，标注 %d 个考点，"
+                                    "%d 字）", self.session_id, attempt,
+                                    len(rep["tags"]), len(text))
+                        return sg.clean(text)
+                    # 没有标注也当"不干净"：标注是这道网能工作的前提，
+                    # 放过它等于让护栏退化成"什么都不查"。
+                    last_problems = rep["problems"] or ["没有用 [[考点名]] 标出任何考点"]
+                if attempt == 1:
+                    msgs = msgs + [{"role": "assistant", "content": text or ""},
+                                   {"role": "user", "content": sg.feedback(last_problems)}]
+                    logger.info("sid=%s 总评第 1 次没过护栏，带错处重生一次：%s",
+                                self.session_id, "；".join(last_problems)[:300])
+            logger.warning("sid=%s 总评两次都没过护栏，改用确定性兜底：%s",
+                           self.session_id, "；".join(last_problems)[:300])
+            return sg.fallback_summary(self.rounds, avg)
+        except Exception:
+            # 与 digest/review 同一条纪律：护栏自己挂了，退回**不用护栏**的老路，
+            # 而不是让整场面试的收口打挂。
+            logger.exception("sid=%s 总评护栏失败，退回无护栏生成", self.session_id)
+            try:
+                return self.llm.chat(SYSTEM_SUMMARY, [{"role": "user", "content": user}],
+                                     temperature=config.LLM_TEMPERATURE)
+            except Exception as e:
+                logger.exception("sid=%s 生成面试评价失败", self.session_id)
+                return f"（面试评价生成失败：{type(e).__name__}: {e}）"
 
 
 # ============================================================
 # 人设加载
 # ============================================================
 _PERSONA_CACHE: dict[str, str] = {}
+_RE_PERSONA_NAME = re.compile(r'自称\s*[“"]([^”"]{1,12})[”"]')
+
+
+def persona_name(persona: str, fallback: str = "面试官") -> str:
+    """Extract the in-character interviewer name from the persona file."""
+    match = _RE_PERSONA_NAME.search(persona or "")
+    return match.group(1).strip() if match else fallback
 
 
 def load_persona(job: str) -> str:

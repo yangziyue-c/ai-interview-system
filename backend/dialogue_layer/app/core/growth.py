@@ -141,6 +141,10 @@ def _num(v) -> Optional[float]:
     return float(v)
 
 
+def _str(v, default: str = "") -> str:
+    return v.strip() if isinstance(v, str) else default
+
+
 def _int(v) -> Optional[int]:
     n = _num(v)
     return int(n) if n is not None else None
@@ -248,6 +252,12 @@ def build_digest(env: dict) -> dict:
         "finished_at": _num(raw.get("finished_at")),
         "duration_sec": _num(raw.get("duration_sec")),
         "questions_asked": _int(raw.get("questions_asked")) or 0,
+        "total_questions": _int(raw.get("total_questions")) or 0,
+        "completion_rate": _num(raw.get("completion_rate")) or 0.0,
+        "effective_rounds": _int(raw.get("effective_rounds")) or 0,
+        "score_status": _str(env.get("score_status")) or "legacy",
+        "score_scope": _str(env.get("score_scope")) or "legacy",
+        "final_score": env.get("final_score") is True,
         "rounds_scored": scored_n,
         "partial": env.get("partial") is True,
         "total_score": _num(env.get("total_score")),
@@ -368,6 +378,16 @@ def _select(job: str, records) -> tuple[list[dict], list[dict]]:
             skipped.append({"session_id": sid, "reason": "没有 finished_at"})
             continue
 
+        # 新摘要明确标出无效/未完成时，不进入成长档案的历史和错题统计。
+        # `legacy` / 缺字段仍按旧版兼容读取，避免升级后把历史摘要全部拒掉。
+        status = rec.get("score_status")
+        if status in ("invalid", "partial"):
+            skipped.append({
+                "session_id": sid,
+                "reason": f"score_status={status}，该场不作为完整成绩进入成长档案",
+            })
+            continue
+
         kps = rec.get("kps")
         if kps is None:
             kps = []                    # 一场没答到任何考点：合法，照样进时间线
@@ -395,6 +415,12 @@ def _select(job: str, records) -> tuple[list[dict], list[dict]]:
             "started_at": _num(rec.get("started_at")),
             "duration_sec": _num(rec.get("duration_sec")),
             "questions_asked": _int(rec.get("questions_asked")) or 0,
+            "total_questions": _int(rec.get("total_questions")) or 0,
+            "completion_rate": _num(rec.get("completion_rate")) or 0.0,
+            "effective_rounds": _int(rec.get("effective_rounds")) or 0,
+            "score_status": _str(rec.get("score_status")) or "legacy",
+            "score_scope": _str(rec.get("score_scope")) or "legacy",
+            "final_score": rec.get("final_score") is True,
             "rounds_scored": _int(rec.get("rounds_scored")) or 0,
             "partial": rec.get("partial") is True,
             "total_score": _num(rec.get("total_score")),
@@ -416,6 +442,12 @@ def _select(job: str, records) -> tuple[list[dict], list[dict]]:
     used = list(by_sid.values())
 
     if records and not used:
+        soft_status_skip = all(
+            str(x.get("reason") or "").startswith("score_status=")
+            for x in skipped
+        )
+        if soft_status_skip:
+            return [], skipped
         # 「全都用不上」**不能**答 200 —— 那会让「数据全坏了」长得像「还没有历史」。
         # 与 blindspot 那条「『关掉』『坏了』『没有』必须分得开」是同一条纪律。
         head = "；".join(f"{s['session_id'] or '?'}: {s['reason']}" for s in skipped[:3])

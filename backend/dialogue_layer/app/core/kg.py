@@ -55,6 +55,16 @@ _KP_PREFIX = "KP:"
 # 面试官当场念出一道新题 —— 两边不对称，所以宁严勿宽。
 _RE_QUESTIONISH = re.compile(
     r"[？?]|有哪些|哪些|是什么|什么是|是怎样的|怎么|如何|为什么|多少|哪一个|了解吗")
+_RE_FOREIGN_NOISE = re.compile(
+    r"\b(?:kelan|papaano|paano|bakit|ano|sino|saan|gagamit|kadahilanan|"
+    r"opisz|jak|dlaczego|comment|pourquoi|cuando|como)\b",
+    re.IGNORECASE,
+)
+_RE_DOC_NOISE = re.compile(
+    r"readme|snippet|subscriptions?\s+for|tl;dr|article\s+footer",
+    re.IGNORECASE,
+)
+_RE_HANGUL = re.compile(r"[\uac00-\ud7af]")
 
 
 def _is_usable_name(name: str) -> bool:
@@ -62,6 +72,9 @@ def _is_usable_name(name: str) -> bool:
     if not name:
         return False
     if len(name) > config.DEEPEN_NAME_MAX:
+        return False
+    if (_RE_FOREIGN_NOISE.search(name) or _RE_DOC_NOISE.search(name)
+            or _RE_HANGUL.search(name)):
         return False
     return not _RE_QUESTIONISH.search(name)
 
@@ -368,7 +381,8 @@ def deepen_directions(seeds: dict[str, float], covered: set[str],
     covered —— 本场**之前**已经考过的 kp（不含本题，调用时尚未 add）
     idx     —— 图谱索引；None 时返回空列表（图谱关掉/加载失败）
 
-    三重过滤缺一不可：
+    过滤分两层、四道：
+      0. 种子名本身必须可当方向用 —— 上游 `kp_names` 的噪声不能先带出邻居；
       1. 权重 >= COOCCUR_MIN_W（在 cooccur() 里已做）—— 砍枢纽的长尾弱关联
       2. 名字可当方向用（_is_usable_name：形态 + 长度）—— 滤掉「名字本身就是
          一道题」的噪声节点。实测 kp_names 里有 88 个这种名字（6.6%），
@@ -381,6 +395,11 @@ def deepen_directions(seeds: dict[str, float], covered: set[str],
 
     best: dict[str, float] = {}
     for seed in seeds:
+        # 上游 kp_names 混入了文件名、外语问句和文档元数据。输出侧过滤
+        # 挡不住这些种子，因为它们会先把噪声邻居带出来；种子本身也要过闸。
+        seed_name = idx.kp_name(seed)
+        if not seed_name or not _is_usable_name(seed_name):
+            continue
         for nb, w in idx.cooccur(seed)[:config.COOCCUR_TOPN]:
             if nb in covered or nb in seeds:
                 continue

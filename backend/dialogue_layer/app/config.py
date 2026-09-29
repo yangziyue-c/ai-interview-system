@@ -76,7 +76,7 @@ PERSONA_FILE_MAP = {
 # 五维权重
 # ============================================================
 # 顺序固定：技术水平 / 逻辑思维 / 沟通表达 / 应变能力 / 岗位匹配度
-# 1~5 分，允许 0.5 步进；总分 = Σ(维度分 × 权重)
+# 0~5 分，默认 0.05 步进（A11_SCORE_STEP 可调）；总分 = Σ(维度分 × 权重)
 #
 # 来源：《工作成果描述-截止RAG完成.md》「阶段 2」五维评分模型表。
 # ⚠️ 唯一真值源其实是主库 Excel 的「五维评分基准」sheet
@@ -145,17 +145,19 @@ def weights_text_for(job: str) -> str:
 CATEGORY_BEHAVIORAL = "行为素质题"        # 取值真值源：主库「题型分类」列
 DIM1_LABEL_BEHAVIORAL = "岗位胜任力关联度"
 
-# 第一维的两套 1~5 锚点（键 = 标签）。
+# 第一维的两套 0~5 锚点（键 = 标签）。
 #   · 技术那套是**原文照搬** prompts.py 里既有的文字，一个字没动；
 #   · 岗位胜任力那套是**本次新拟的** —— 文档只规定了标签，没给档位描述，
 #     所以这段文字的出处是本实现、不是需求文档，别当成需求原文引用。
 DIM1_RUBRIC = {
     "技术水平": (
-        "【技术水平】1=概念模糊或答错；2=少量基础点且有明显错误；"
+        "【技术水平】0=未作答、无有效技术内容或完全跑题；1=概念模糊或原则性错误；"
+        "2=少量基础点且有明显错误；"
         "3=大部分基础点、无原则错误；4=全部基础点+部分进阶点；"
         "5=全部基础+进阶，能从源码/工程层面讲。"),
     "岗位胜任力关联度": (
-        "【岗位胜任力关联度】1=经历与岗位要求无关，或讲不出与岗位的关联；"
+        "【岗位胜任力关联度】0=未作答或无有效经历内容；"
+        "1=经历与岗位要求无关，或讲不出与岗位的关联；"
         "2=经历沾边，但说不出它体现了岗位需要的什么；3=能对上岗位的基本要求；"
         "4=能说清经历中体现的岗位所需能力，并说明如何迁移到本岗位；"
         "5=经历与岗位要求高度契合，能指出对岗位的具体价值与可复用的方法论。"),
@@ -194,16 +196,42 @@ STAGE_RULES = [
 
 MAX_FOLLOW_UP = 2          # 单题最多追问几轮
 MAX_DEGRADE = 2            # 同一题连续降级几次后强制收尾（防止答不上来时无限空转）
+MAX_ASSIST_PER_QUESTION = 2  # “好的 / 给点提示”这类辅助轮每道题最多几次
 MAX_ATTEMPTS_PER_QUESTION = 3   # 单题最多接受几次回答（冗余兜底，保证一定收敛）
 # reranker 命中阈值。⚠️ 它比的是**模型自己输出的概率**（num_labels=1 时
 # CrossEncoder 内部已过 Sigmoid），不是再叠一次 sigmoid 之后的值 —— 见
 # scoring.py 的 _hit。这个数需要拿标注集重新校准，见 A11_JUDGE 那一段。
 MATCH_THRESHOLD = float(os.environ.get("A11_MATCH_THRESHOLD", "0.7"))
-MIN_POINT_CHARS = 15       # 得分点文本短于这个长度就丢掉（过滤标题行/残句）
+# 只对**未编号**的长句应用长度门槛。编号条目（1. / 2、 / -）短也可能
+# 是真正考点，不能再被字数规则一刀切掉；解析器会另外过滤标题、代码和示例行。
+MIN_POINT_CHARS = 15
 
-# 追问层级阈值（reranker 客观命中分，0-100）
-LEVEL_L2_MIN = 60          # ≥60 分 → L2 原理深挖
-LEVEL_L1_MIN = 30          # 30~60 分 → L1 基础细节；<30 → 降级引导
+# 长回答的覆盖率匹配窗口。原来的做法是把整段几百字回答一次性喂给
+# cross-encoder，相关的一句会被无关上下文稀释。现在先按句/段切窗，
+# 每个得分点同时比较整段与各窗口，取最高分；窗口数设上限控制 CPU 成本。
+SCORE_WINDOW_CHARS = int(os.environ.get("A11_SCORE_WINDOW_CHARS", "180"))
+SCORE_MAX_WINDOWS = int(os.environ.get("A11_SCORE_MAX_WINDOWS", "12"))
+# 评分栈版本：1 = 旧的字数过滤 + 整段匹配；2 = 结构解析 + 句窗最大覆盖率；
+# 3 = 两阶段覆盖率 + 五维范围校验 + 难度/内容派生报告 + 代码附加检查；
+# 4 = 五维细粒度评分（0.1 步进）+ 逐维证据/可信度 + 覆盖率细化；
+# 5 = 五维细粒度评分（默认 0.05 步进）+ 逐维证据/可信度 + 覆盖率细化；
+# 6 = L3 工程追问 + 置信度加权合成分。
+# 真跑对照、人工标注和历史报告都靠它区分口径。
+SCORING_VERSION = int(os.environ.get("A11_SCORING_VERSION", "6"))
+# 五维分允许的最小步进。默认 0.05，让单轮和少量轮次也能得到非 20 分整倍数；
+# 旧实验可用 A11_SCORE_STEP=0.1/0.5 回到旧口径。评论文档要求“允许 0.5 步进”，
+# 0.05 是该要求的更细实现，不是改五维或权重。
+try:
+    SCORE_STEP = float(os.environ.get("A11_SCORE_STEP", "0.05"))
+except ValueError:
+    SCORE_STEP = 0.05
+if SCORE_STEP <= 0:
+    SCORE_STEP = 0.05
+
+# 追问层级阈值（reranker 覆盖率信号，0-100）
+LEVEL_L3_MIN = int(os.environ.get("A11_LEVEL_L3_MIN", "97"))
+LEVEL_L2_MIN = 60          # 60~97 → L2 原理深挖
+LEVEL_L1_MIN = 30          # 30~60 → L1 基础细节；<30 → 降级引导
 
 
 # ============================================================
@@ -224,7 +252,7 @@ LEVEL_L1_MIN = 30          # 30~60 分 → L1 基础细节；<30 → 降级引�
 #       （reranker 约 3s，判档吐一个短 JSON 约 1~2s）—— 实际几乎不多等。
 A11_JUDGE = os.environ.get("A11_JUDGE", "1") == "1"
 
-# 融合规则：两边各给一个档（L2 / L1 / degrade），不一致时听谁的。
+# 融合规则：两边各给一个档（L3 / L2 / L1 / degrade），不一致时听谁的。
 #   llm_first  听 LLM；LLM 没判出来（超时/解析失败）才退回 reranker   ← 默认
 #   agree      一致才用；不一致取**较浅**那个（拿不准就别往深里挖）
 #   deepest    取较深那个（更爱追问，宁可多问不少问）
@@ -253,6 +281,9 @@ JUDGE_ANSWER_TRUNCATE = int(os.environ.get("A11_JUDGE_ANSWER_TRUNCATE", "800"))
 #   ② 与历史回答文本相似度 ≥ REPEAT_SIM 时，**确定性**地把档位压到 degrade。
 #      逐字复述这种最好认的重复，不该依赖一个会超时、会返回非 JSON 的组件。
 A11_REPEAT_GUARD = os.environ.get("A11_REPEAT_GUARD", "1") == "1"
+# 无有效回答守卫：纯代码识别“不知道 / 没学过 / 乱码短答”，避免继续拿
+# mock reranker 的篇幅分硬夸、硬追问。关闭后行为回到旧链路。
+A11_NO_EFFECTIVE_GUARD = os.environ.get("A11_NO_EFFECTIVE_GUARD", "1") == "1"
 # 归一化后（去掉空白与标点）的 SequenceMatcher 相似度阈值。
 # 0.90 ≈ "几乎逐字复述"。故意不取更低：把 0.80 那类"同一件事换个说法再说"
 # 算不算重复取决于人，先保守；要放宽就改这个数，不必动代码。
@@ -262,6 +293,47 @@ REPEAT_SIM = float(os.environ.get("A11_REPEAT_SIM", "0.90"))
 REPEAT_MIN_CHARS = int(os.environ.get("A11_REPEAT_MIN_CHARS", "12"))
 # 判档时最多回看几次历史回答（更早的更无关，且白占 token）
 JUDGE_HISTORY_MAX = int(os.environ.get("A11_JUDGE_HISTORY_MAX", "2"))
+
+# ------------------------------------------------------------
+# 收尾污染守卫（2026-09-27）
+# ------------------------------------------------------------
+# 要解决什么（真跑观测，不是推测）：`action == "degrade"` 那一轮，面试官的回复
+# 会**自己写出收尾/换题措辞**（实测：「行，这题你答得住。换一个方向。」），
+# 考生顺着它说「好的，这题我先说到这里，我们看下一题吧。」——
+# 于是那次作答被判 `judge_why="直接说下一题，未作答，属敷衍"`、reranker 0.0。
+# **是面试官自己的话把考生带进了"敷衍"。**
+#
+# 为什么光改 `ACTION_DESC["degrade"]` 不够：项目自己的实测说 system 是最弱的
+# 一档杠杆（`prompts.py` 的 CLOSE_DIRECTIVE 段：改措辞 10/10 仍出问句），
+# 唯一 0/10 成立的是**末尾 user 旁白**。所以修法在消息列表末尾，
+# 与 CLOSE_DIRECTIVE 同一个机制。
+#
+# 两个开关**都默认开**，但职责分开：
+#   · GUARD  —— 只**观测**：认出"这一轮的面试官回复里没有提问"就记日志 + 计数。
+#                它不改任何字节的输出，关掉它只影响日志。
+#   · REPAIR —— 在 GUARD 认出来之后，把 `WRAPUP_NUDGE` 追加到流尾
+#                （**绝不改写已经流出的 token**）。关掉它 = 只观测不干预。
+A11_WRAPUP_GUARD = os.environ.get("A11_WRAPUP_GUARD", "1") == "1"
+A11_WRAPUP_REPAIR = os.environ.get("A11_WRAPUP_REPAIR", "1") == "1"
+
+# ------------------------------------------------------------
+# 总评护栏（2026-09-27）
+# ------------------------------------------------------------
+# 要解决什么（真跑观测）：`/finish` 的 `summary` 里写「强项：…Spring 循环依赖…」，
+# 而「Spring」「循环依赖」在整份响应 JSON 里**各只出现 1 次**——就在那句话里。
+# 总评在凭空点名一场里根本没考过的知识点。
+#
+# 根因是**输入里没有真数据**（`_write_evaluation` 只喂了逐轮五维 + 一句评语 +
+# 截断到 10 条的考点名），所以本波先喂真数据，再加护栏。
+#
+# ⚠️ 护栏**只做减法**：它能让"点名一个没考过的考点"变得不可能，**不能**让评价
+#    本身变好。别把它当质量提升。
+A11_SUMMARY_GUARD = os.environ.get("A11_SUMMARY_GUARD", "1") == "1"
+# 外来标题扫描的字数门槛：短于这个字数的词不算"点名了一个考点"
+# （「并发」「索引」这种通用词出现在正常评语里不该被算成幻觉）。
+SUMMARY_ALIEN_KP_MIN_CHARS = int(os.environ.get("A11_SUMMARY_ALIEN_KP_MIN_CHARS", "4"))
+# 喂给总评的**每轮题面**截断长度（只用来给模型认题，不需要全文）
+SUMMARY_STEM_MAX = int(os.environ.get("A11_SUMMARY_STEM_MAX", "60"))
 
 # ------------------------------------------------------------
 # 换题出路：考生明确说「这个方向我从没接触过」时，换一道别的方向的题
@@ -344,8 +416,19 @@ LLM_MOCK = os.environ.get("LLM_MOCK", "") == "1"
 # ============================================================
 # 评分器
 # ============================================================
+RERANKER_PROVIDER = os.environ.get(
+    "A11_RERANKER_PROVIDER", "siliconflow").strip().lower()
 RERANKER_MODEL = os.environ.get(
     "RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+RERANK_BASE_URL = os.environ.get(
+    "A11_RERANK_BASE_URL", os.environ.get("SILICONFLOW_BASE_URL", "")).strip()
+RERANK_API_KEY = os.environ.get(
+    "A11_RERANK_API_KEY", os.environ.get("SILICONFLOW_API_KEY", "")).strip()
+RERANK_MODEL = os.environ.get(
+    "A11_RERANK_MODEL",
+    os.environ.get("SILICONFLOW_RERANK_MODEL", RERANKER_MODEL)).strip()
+RERANK_MIN_SCORE = float(os.environ.get("A11_RERANK_MIN_SCORE", "0.30"))
+RERANK_TIMEOUT = float(os.environ.get("A11_RERANK_TIMEOUT", "30"))
 
 # auto = 有 CUDA 用 CUDA，否则 CPU；也可强制 "cpu" / "cuda"
 # 注意：交接说明提到 reranker 上 GPU 可能 OOM，所以 run.ps1 默认仍走 CPU。
@@ -353,6 +436,50 @@ SCORER_DEVICE = os.environ.get("SCORER_DEVICE", "auto")
 
 # 测试用桩：置 1 时不加载真 reranker，用确定性假分数（冒烟测试用，秒级返回）
 RERANKER_MOCK = os.environ.get("RERANKER_MOCK", "") == "1"
+
+# ---- 在线 Embedding（RAG / 知识库共用）----
+# OpenAI 兼容 /v1/embeddings。默认 online：没有配 key 就明确不可用，
+# 不会静默退回本地 bge-m3。设 A11_EMBEDDING_PROVIDER=local 才加载本地模型。
+EMBEDDING_PROVIDER = os.environ.get(
+    "A11_EMBEDDING_PROVIDER", "online").strip().lower()
+EMBEDDING_BASE_URL = os.environ.get("A11_EMBEDDING_BASE_URL", "").strip()
+EMBEDDING_API_KEY = os.environ.get("A11_EMBEDDING_API_KEY", "").strip()
+EMBEDDING_MODEL = os.environ.get("A11_EMBEDDING_MODEL", "BAAI/bge-m3").strip()
+EMBEDDING_TIMEOUT = float(os.environ.get("A11_EMBEDDING_TIMEOUT", "30"))
+
+# ---- 客观线：Qwen / OpenAI 兼容接口（与主观 DeepSeek 分开）----
+OBJECTIVE_PROVIDER = os.environ.get(
+    "A11_OBJECTIVE_PROVIDER", "qwen").strip().lower()
+OBJECTIVE_BASE_URL = os.environ.get(
+    "A11_OBJECTIVE_BASE_URL", os.environ.get("DASHSCOPE_BASE_URL", "")).strip()
+OBJECTIVE_API_KEY = os.environ.get(
+    "A11_OBJECTIVE_API_KEY", os.environ.get("DASHSCOPE_API_KEY", "")).strip()
+OBJECTIVE_MODEL = os.environ.get(
+    "A11_OBJECTIVE_MODEL",
+    os.environ.get("QWEN_OBJECTIVE_MODEL", "qwen-plus")).strip()
+OBJECTIVE_TIMEOUT = float(os.environ.get("A11_OBJECTIVE_TIMEOUT", "120"))
+
+# ---- 面试官朗读（阿里云 CosyVoice v2）----
+TTS_ENABLED = os.environ.get("A11_TTS", "1") == "1"
+TTS_API_KEY = os.environ.get(
+    "A11_TTS_API_KEY", os.environ.get("DASHSCOPE_API_KEY", "")).strip()
+TTS_ENDPOINT = os.environ.get(
+    "A11_TTS_ENDPOINT",
+    "https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer",
+).strip()
+TTS_WS_ENDPOINT = os.environ.get(
+    "A11_TTS_WS_ENDPOINT",
+    "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
+).strip()
+TTS_MODEL = os.environ.get("A11_TTS_MODEL", "cosyvoice-v2").strip()
+TTS_VOICE = os.environ.get("A11_TTS_VOICE", "longxiaochun_v2").strip()
+TTS_STREAM_MODEL = os.environ.get(
+    "A11_TTS_STREAM_MODEL", "qwen-audio-3.0-tts-flash").strip()
+TTS_STREAM_VOICE = os.environ.get(
+    "A11_TTS_STREAM_VOICE", "longanlingxi").strip()
+TTS_TIMEOUT = float(os.environ.get("A11_TTS_TIMEOUT", "90"))
+TTS_MAX_CHARS = int(os.environ.get("A11_TTS_MAX_CHARS", "800"))
+TTS_STREAM_SAMPLE_RATE = int(os.environ.get("A11_TTS_STREAM_SAMPLE_RATE", "16000"))
 
 
 # ============================================================
@@ -401,7 +528,7 @@ DEEPEN_NAME_MAX = int(os.environ.get("A11_DEEPEN_NAME_MAX", "24"))
 #      加索引 303MB 与题库约 100MB → 约 5.2GB，放不下。
 #      「默认开」在本机会永远走内存预检降级、永不生效，等于一句空话。
 #      换台内存充足的机器（或 RAG_DTYPE=fp16 把编码器降到约 1.14GB）再 A11_RAG=1。
-#    · 交付包模板设开：`环境变量.模板.ps1:24` 的 `$env:A11_RAG = "1"`（源头 gen_数据.py），
+#    · 交付包模板设开：`环境变量.模板.ps1` **第 31 行**的 `$env:A11_RAG = "1"`（源头 gen_数据.py），
 #      **dot-source 之后就是开着的** —— 那才是部署方会看到的档位。
 #    还有一个从没写进文档的事实：开了之后注入的是**题库派生索引**里的
 #    「同岗位同难度的其他问法」（RAG_LAYERS = ("原题","语义变体")），
@@ -471,7 +598,8 @@ A11_RAW_DETAIL = os.environ.get("A11_RAW_DETAIL", "0") == "1"
 # 设计见 D:\A11-Data\多模态接入方案.md；实现见 app/core/asr.py。
 #
 # ⚠️ 这里与 RAG（上一段）的默认值**刻意不同**，不是笔误：
-#   · RAG 默认关，是因为实测本机内存装不下（4.5GB 模型 + 索引 + 题库 ≈ 5.2GB），
+#   · RAG **代码**默认关（`config.py:409`；本包模板 `环境变量.模板.ps1` 第 31 行设成开），
+#     是因为实测本机内存装不下（4.5GB 模型 + 索引 + 题库 ≈ 5.2GB），
 #     「默认开」在本机会永远走预检降级、等于一句空话。
 #   · ASR 默认**开**，因为它是**懒加载**的：不调用 /asr 就一个字节都不加载、
 #     一秒都不多花。而语音输入是赛题明写的硬要求，默认关掉会让每一台机器上
@@ -485,6 +613,8 @@ A11_ASR = os.environ.get("A11_ASR", "1") == "1"
 # 模型档位：tiny / base / small / medium / large-v3，或直接给完整 repo id
 # （带 / 的按完整 id 用，见 asr.AsrEngine._repo_id）。
 # small(int8) 约 +0.5GB 内存、CPU 上近实时；medium 明显更准但约 +1.5GB。
+A11_ASR_PROVIDER = os.environ.get(
+    "A11_ASR_PROVIDER", "sensevoice").strip().lower()
 A11_ASR_MODEL = os.environ.get("A11_ASR_MODEL", "small")
 A11_ASR_DEVICE = os.environ.get("A11_ASR_DEVICE", "cpu")       # cpu | cuda
 # int8 是 CPU 上唯一现实的选择（fp32 会慢好几倍、内存翻倍）
@@ -500,6 +630,9 @@ A11_ASR_MAX_MB = int(os.environ.get("A11_ASR_MAX_MB", "10"))
 A11_ASR_MAX_SEC = int(os.environ.get("A11_ASR_MAX_SEC", "60"))
 A11_ASR_LANGUAGE = os.environ.get("A11_ASR_LANGUAGE", "zh")
 A11_ASR_BEAM = int(os.environ.get("A11_ASR_BEAM", "5"))
+A11_ASR_NUM_THREADS = int(os.environ.get("A11_ASR_NUM_THREADS", "4"))
+SENSEVOICE_MODEL_DIR = os.environ.get(
+    "SENSEVOICE_MODEL_DIR", r"D:\A11-Data\models\sensevoice-small")
 # 格式白名单（按扩展名）。浏览器 MediaRecorder 出的是 webm/opus，
 # 演示音频多半是 wav/mp3，手机可能是 m4a/aac —— 都收。
 ASR_FORMATS = tuple(x.strip().lower() for x in os.environ.get(
@@ -509,6 +642,25 @@ ASR_FORMATS = tuple(x.strip().lower() for x in os.environ.get(
 # 测试用桩：置 1 时不加载真模型，返回确定性假转写（冒烟测试用，与 RERANKER_MOCK 同款）。
 # ⚠️ 只给测试与 4 号 的假服务用 —— 真实面试里开着它，考生说什么都会得到同一段假话。
 A11_ASR_MOCK = os.environ.get("A11_ASR_MOCK", "") == "1"
+
+# ---- 在线 ASR（仅在考生明确同意上传音频时使用）----
+# Default enabled means "available when consent is given and credentials are
+# configured", not "upload by default". /asr still requires allow_online=true.
+A11_ASR_ONLINE = os.environ.get("A11_ASR_ONLINE", "1") == "1"
+A11_ASR_ONLINE_PROVIDER = os.environ.get(
+    "A11_ASR_ONLINE_PROVIDER", "dashscope_multimodal").strip().lower()
+A11_ASR_ONLINE_BASE_URL = os.environ.get(
+    "A11_ASR_ONLINE_BASE_URL",
+    "https://dashscope.aliyuncs.com/api/v1",
+).strip().rstrip("/")
+A11_ASR_ONLINE_API_KEY = os.environ.get(
+    "A11_ASR_ONLINE_API_KEY",
+    os.environ.get("DASHSCOPE_API_KEY", ""),
+).strip()
+A11_ASR_ONLINE_MODEL = os.environ.get(
+    "A11_ASR_ONLINE_MODEL", "qwen-audio-3.1-asr-flash").strip()
+A11_ASR_ONLINE_TIMEOUT = float(
+    os.environ.get("A11_ASR_ONLINE_TIMEOUT", "90"))
 
 # ---- 情感分析 / 语气自信度（赛题任务要求 3b，2026-09-25）----
 # 赛题 3b 原文：「集成语音识别**与情感分析**，评估学生的表达流畅度、语速、
@@ -642,6 +794,11 @@ KB_MAX_TOKENS = 512
 #    交卷后 4a 照旧会自己加载那份编码器。两条时机互不污染，靠的是 `kb.py` 里
 #    「面试期不置 `_ready_ev` 闩」这一条，改那个函数前先读它的 docstring。
 A11_RAG_KB = os.environ.get("A11_RAG_KB", "1") == "1"
+# Experimental scoring evidence channel. It is intentionally off by default:
+# the first calibration showed that raw KB snippets made the objective prompt
+# slower and slightly less accurate. Keep the channel available for the next
+# atomic-evidence experiment without changing the validated score by default.
+A11_KB_SCORE = os.environ.get("A11_KB_SCORE", "0") == "1"
 
 # 每个追问轮最多挂几条、每条截多长、整个块硬顶多少字。
 # ⚠️ 这三个数是**定的，不是量出来的**（与 `KB_MIN_SCORE` 那种标定值不同）：
@@ -715,9 +872,9 @@ RAG_KB_QUERY_CHARS = int(os.environ.get("A11_RAG_KB_QUERY_CHARS", "300"))
 #    不会引入混杂 —— 而「干脆不检索」会让那些轮的两臂差**掺进「有没有材料」这个无关变量**
 #    （`session.py:1372-1375` 已经为位置变体拒绝过一次同样的做法）。
 #    回退到 `base_points` 全文更糟：那是**第三种处理**，Δ=0 的前提没了，结论没法归因。
-#    ✅ 一条算术（为什么回退只会发生在「全答到了」）：`split_points()` 丢掉短于
-#    `MIN_POINT_CHARS`(=15) 的行，而漏点正是它的产物 ⇒ **单条漏点最短 15 字 > `RAG_KB_MIN_CHARS`(=12)**
-#    ⇒ 只要漏点列表非空就**必然**过闸，`<12` 那条路只有列表为空时才走得到。
+#    ⚠️ 2026-09-27 起解析器改为「编号条目短也保留」，所以单条漏点可能短于
+#    `RAG_KB_MIN_CHARS`(=12)；那种情况同样退回 `answer`，词源仍是
+#    `answer_fallback`。回退不再等价于「全答到了」，而是「漏点拼不出来或太短」。
 #
 # ⚠️ `adv_miss` 的子预算（`limit//3`，见 `kb.query_from_misses`）：L1 轮（30~60 分）的
 #    `adv_hit` 恒为空 ⇒ `adv_miss` = **全部进阶点**，不加限的话检索词会被「整道题的进阶答案」
@@ -881,8 +1038,9 @@ REVIEW_MAX_ACTIONS = int(os.environ.get("A11_REVIEW_MAX_ACTIONS", "3"))
 # 所以「面试中提前查答案」在结构上做不到，不是靠约定。
 #
 # 三条口径：
-#   ① **只出两个键**：`考点讲解` + `优秀回答范例`。`拉开差距`（进阶得分点原文）与
-#      `常见卡点`（面试官降级策略）**一个字节都不出** —— 白名单构造，见 resources.answer_block。
+#   ① **只出三个内容键**：`考点讲解` + `优秀回答范例` + `common_pitfalls`。
+#      `拉开差距`（进阶得分点原文）**一个字节都不出** —— 白名单构造，
+#      见 resources.answer_block。
 #   ② 它读的是那份资源样例文件，所以**跟着 `A11_RECOMMEND` 的状态走**：资源没开或
 #      加载失败时返 503（码不同：「没开」`resource_unavailable` 与「这个考点没材料」
 #      `no_material` 必须分得开）。
@@ -915,6 +1073,22 @@ PERSONA_STYLE_DEFAULT = "standard"
 A11_INTRO = os.environ.get("A11_INTRO", "1") == "1"
 # 自述进 prompt 前的硬上限。超了截断（`sanitize_intro`），并在 `/start` 里报出来。
 INTRO_MAX_CHARS = int(os.environ.get("A11_INTRO_MAX_CHARS", "1200"))
+
+# Resume-based interview. The AI layer receives parsed resume text from P1;
+# it does not store resume files. Keep a separate hard cap for prompt safety.
+A11_RESUME = os.environ.get("A11_RESUME", "1") == "1"
+RESUME_MAX_CHARS = int(os.environ.get("A11_RESUME_MAX_CHARS", "6000"))
+
+# Camera posture is opt-in in the browser. When enabled, its numeric summary
+# may move only communication and adaptability by the hard bounds enforced in
+# app/core/body_language.py. No camera data means no adjustment.
+A11_BODY_SCORE = os.environ.get("A11_BODY_SCORE", "1") == "1"
+
+# Reject descriptor-only interviewer replies such as "特殊情况处理？".
+# The guard buffers the first few streaming characters and replaces a weak
+# follow-up with a complete, non-answer-revealing deterministic question.
+A11_PROBE_QUALITY_GUARD = os.environ.get(
+    "A11_PROBE_QUALITY_GUARD", "1") == "1"
 
 
 # ============================================================

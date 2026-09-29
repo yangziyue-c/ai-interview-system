@@ -3,6 +3,7 @@ from fastapi import APIRouter
 
 from app.api import (
     auth,
+    body_language,
     interviews,
     positions,
     questions,
@@ -21,6 +22,7 @@ api_router.include_router(reports.router, prefix="/reports", tags=["报告"])
 api_router.include_router(resumes.router, prefix="/resumes", tags=["简历"])
 api_router.include_router(share.router, prefix="/share", tags=["分享"])
 api_router.include_router(uploads.router, prefix="/uploads", tags=["上传"])
+api_router.include_router(body_language.router, prefix="/body-language", tags=["体态"])
 api_router.include_router(positions.router, prefix="/positions", tags=["岗位"])
 api_router.include_router(questions.router, prefix="/questions", tags=["题库"])
 api_router.include_router(rag.router, prefix="/rag", tags=["RAG 语义检索"])

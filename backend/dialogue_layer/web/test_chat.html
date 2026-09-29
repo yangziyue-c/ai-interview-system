@@ -14,6 +14,23 @@
             border: 1px solid #444; background: #2a2a4e; color: #fff; font-size: 13px; }
   .header button { cursor: pointer; background: #4a69bd; border-color: #4a69bd; }
   .header button:disabled { background: #666; cursor: not-allowed; }
+  .header label { display: flex; align-items: center; gap: 5px; font-size: 13px; }
+  .header input[type="checkbox"] { accent-color: #4a69bd; }
+  .setup-band { background: #fff; border-bottom: 1px solid #ddd; padding: 10px 20px;
+                display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .setup-band label { font-size: 13px; color: #333; }
+  .setup-band select { padding: 6px 10px; border: 1px solid #bbb; border-radius: 6px; }
+  .camera-control { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .camera-control button { padding: 6px 10px; border: 1px solid #4a69bd;
+                           border-radius: 6px; background: #fff; color: #294a9b;
+                           cursor: pointer; }
+  .camera-control button.active { background: #294a9b; color: #fff; }
+  #bodyCameraStatus { color: #667085; }
+  #bodyVideo { width: 112px; height: 63px; object-fit: cover; border-radius: 6px;
+               background: #111827; display: none; }
+  #resumeBox { flex-basis: 100%; }
+  #resumeText { width: 100%; min-height: 100px; resize: vertical; padding: 9px;
+                border: 1px solid #bbb; border-radius: 6px; font: 13px/1.5 inherit; }
   .chat { flex: 1; overflow-y: auto; padding: 20px; }
   .msg { max-width: 75%; margin-bottom: 14px; padding: 10px 14px;
          border-radius: 10px; line-height: 1.6; font-size: 14px; white-space: pre-wrap; }
@@ -28,12 +45,18 @@
   .input-area button { padding: 10px 20px; background: #4a69bd; color: #fff;
                 border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
   .input-area button:disabled { background: #999; }
+  .input-area button.recording { background: #c0392b; }
   /* 评分明细折叠区（本次新增，方便自查；不影响对话流程） */
   .msg details { margin-top: 8px; }
   .msg details summary { cursor: pointer; font-weight: 600; }
   .msg pre { margin-top: 6px; padding: 8px; background: #f6f8fa; border-radius: 6px;
              font-size: 11px; line-height: 1.5; max-height: 320px; overflow: auto;
              white-space: pre-wrap; word-break: break-all; }
+  .score-dim { margin-top: 8px; padding: 8px 10px; background: rgba(255,255,255,.55);
+               border: 1px solid rgba(21,87,36,.18); border-radius: 6px; }
+  .score-dim-title { font-weight: 700; margin-bottom: 4px; }
+  .score-dim-line { margin-top: 2px; }
+  .score-muted { opacity: .75; }
 </style>
 </head>
 <body>
@@ -47,8 +70,46 @@
     <option>算法工程师</option>
     <option>系统设计工程师</option>
   </select>
+  <label id="ttsToggleLabel"><input type="checkbox" id="ttsEnabled" checked>语音播报</label>
+  <select id="voiceSelect" title="面试官音色">
+    <option value="longanlingxi">龙安灵希 · Flash</option>
+    <option value="longanfengyue">龙安风悦 · Flash</option>
+    <option value="longanxiaoxin">龙安小昕 · Flash</option>
+    <option value="longanyuanfei">龙安元妃 · Flash</option>
+  </select>
+  <button id="replayVoiceBtn" onclick="replayVoice()" disabled>重播</button>
+  <button id="stopVoiceBtn" onclick="stopVoice()" disabled>停止</button>
   <button id="startBtn" onclick="startInterview()">开始面试</button>
   <button id="finishBtn" onclick="finishInterview()" disabled>结束面试</button>
+</div>
+
+<div class="setup-band">
+  <label>面试模式
+    <select id="modeSelect" onchange="toggleResumeBox()">
+      <option value="general">一般场景</option>
+      <option value="resume">基于简历</option>
+    </select>
+  </label>
+  <label>面试官风格
+    <select id="personaStyle">
+      <option value="relaxed">温和型</option>
+      <option value="standard" selected>严谨型</option>
+      <option value="strict">严肃型</option>
+    </select>
+  </label>
+  <div class="camera-control">
+    <button id="bodyCameraBtn" type="button" onclick="toggleBodyCamera()">开启摄像头</button>
+    <video id="bodyVideo" playsinline muted></video>
+    <span id="bodyCameraStatus">未开启</span>
+  </div>
+  <label class="online-asr-consent"
+         title="勾选后本次录音会发送到在线 ASR；未勾选只使用本地模型。">
+    <input type="checkbox" id="allowOnlineAsr">
+    允许音频上传在线转写
+  </label>
+  <div id="resumeBox" hidden>
+    <textarea id="resumeText" placeholder="粘贴简历或简历摘要，例如：技能、项目、职责、难点。"></textarea>
+  </div>
 </div>
 
 <div class="chat" id="chat">
@@ -57,9 +118,11 @@
 
 <div class="input-area">
   <input id="input" placeholder="输入你的回答..." disabled onkeydown="if(event.key==='Enter')send()">
+  <button id="recordBtn" onclick="toggleRecording()" disabled>语音输入</button>
   <button id="sendBtn" onclick="send()" disabled>发送</button>
 </div>
 
+<script src="./vendor/mediapipe/vision_bundle.js"></script>
 <script>
 // 页面从服务端打开时（/ui/test_chat.html）跟当前 origin 同源；
 // 直接双击文件打开时 origin 是 "null"，只能显式指向本机 8005。
@@ -68,6 +131,35 @@ const API = (location.protocol === "http:" || location.protocol === "https:")
   : "http://localhost:8005";
 let sid = null;
 let streaming = false;
+let finishing = false;
+let lastInterviewerText = "";
+let currentAudio = null;
+let currentAudioResolve = null;
+let currentBrowserResolve = null;
+let currentBrowserTimer = null;
+let audioContext = null;
+let currentPcmSource = null;
+let currentPcmTimers = [];
+let ttsRequestSeq = 0;
+let speechStream = null;
+const TTS_FETCH_LIMIT = 2;
+const TTS_SOFT_CHUNK_CHARS = 44;
+const TTS_SOFT_CHUNK_MIN = 16;
+const TTS_FIRST_CHUNK_CHARS = 18;
+const TTS_FIRST_CHUNK_MIN = 6;
+let mediaRecorder = null;
+let mediaChunks = [];
+let recording = false;
+let lastSpeech = null;
+let bodyCameraStream = null;
+let bodyPoseLandmarker = null;
+let bodyCameraRunning = false;
+let bodyFrames = [];
+let lastBodyLanguage = null;
+let bodyLastVideoTime = -1;
+let bodyLastDetectAt = 0;
+const BODY_MAX_FRAMES = 90;
+const BODY_DETECT_INTERVAL_MS = 120;
 
 function addMsg(text, cls) {
   const div = document.createElement("div");
@@ -78,24 +170,782 @@ function addMsg(text, cls) {
   return div;
 }
 
+function setInputEnabled(enabled) {
+  document.getElementById("input").disabled = !enabled;
+  document.getElementById("sendBtn").disabled = !enabled;
+  document.getElementById("recordBtn").disabled = !enabled;
+  if (enabled) document.getElementById("input").focus();
+}
+
+function toggleResumeBox() {
+  const resumeMode = document.getElementById("modeSelect").value === "resume";
+  document.getElementById("resumeBox").hidden = !resumeMode;
+}
+
+function setBodyCameraStatus(text) {
+  document.getElementById("bodyCameraStatus").textContent = text;
+}
+
+async function createBodyPoseLandmarker() {
+  if (bodyPoseLandmarker) return;
+  if (!window.Vision) throw new Error("本地姿态模型未加载");
+  const vision = await Vision.FilesetResolver.forVisionTasks(
+    "./vendor/mediapipe/wasm");
+  const modelAssetPath = "./vendor/mediapipe/pose_landmarker_lite.task";
+  try {
+    bodyPoseLandmarker = await Vision.PoseLandmarker.createFromOptions(vision, {
+      baseOptions: {modelAssetPath, delegate: "GPU"},
+      runningMode: "VIDEO",
+      numPoses: 1,
+      minPoseDetectionConfidence: 0.5,
+      minPosePresenceConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+  } catch (gpuError) {
+    bodyPoseLandmarker = await Vision.PoseLandmarker.createFromOptions(vision, {
+      baseOptions: {modelAssetPath, delegate: "CPU"},
+      runningMode: "VIDEO",
+      numPoses: 1,
+      minPoseDetectionConfidence: 0.5,
+      minPosePresenceConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+  }
+}
+
+function bodyDetectionLoop() {
+  if (!bodyCameraRunning || !bodyPoseLandmarker) return;
+  const video = document.getElementById("bodyVideo");
+  const now = performance.now();
+  const inputReady = !document.getElementById("input").disabled;
+  if (video.readyState >= 2
+      && video.currentTime !== bodyLastVideoTime
+      && now - bodyLastDetectAt >= BODY_DETECT_INTERVAL_MS) {
+    bodyLastDetectAt = now;
+    bodyLastVideoTime = video.currentTime;
+    const result = bodyPoseLandmarker.detectForVideo(video, now);
+    const landmarks = result.landmarks && result.landmarks[0];
+    if (landmarks && landmarks.length) {
+      if (inputReady) {
+        bodyFrames.push({timestamp_ms: now, landmarks});
+        if (bodyFrames.length > BODY_MAX_FRAMES) bodyFrames.shift();
+        setBodyCameraStatus(`采集中 ${bodyFrames.length} 帧`);
+      } else {
+        setBodyCameraStatus("摄像头已就绪，等待答题");
+      }
+    } else if (inputReady) {
+      setBodyCameraStatus("未检测到双肩，请调整画面");
+    }
+  }
+  if (video.requestVideoFrameCallback) {
+    video.requestVideoFrameCallback(bodyDetectionLoop);
+  } else {
+    requestAnimationFrame(bodyDetectionLoop);
+  }
+}
+
+async function toggleBodyCamera() {
+  const btn = document.getElementById("bodyCameraBtn");
+  if (bodyCameraRunning) {
+    stopBodyCamera();
+    return;
+  }
+  if (!navigator.mediaDevices) {
+    addMsg("当前浏览器不支持摄像头，请使用 Chrome 或 Edge。", "system");
+    return;
+  }
+  btn.disabled = true;
+  try {
+    bodyCameraStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: {ideal: 640},
+        height: {ideal: 360},
+        frameRate: {ideal: 15, max: 20},
+        facingMode: "user"
+      },
+      audio: false
+    });
+    const video = document.getElementById("bodyVideo");
+    video.srcObject = bodyCameraStream;
+    video.style.display = "block";
+    await video.play();
+    await createBodyPoseLandmarker();
+    bodyCameraRunning = true;
+    btn.textContent = "关闭摄像头";
+    btn.classList.add("active");
+    setBodyCameraStatus(
+      document.getElementById("input").disabled
+        ? "摄像头已就绪，等待开始答题"
+        : "本地姿态采集中"
+    );
+    bodyDetectionLoop();
+  } catch (error) {
+    setBodyCameraStatus("无法开启：请检查权限");
+    addMsg("摄像头开启失败: " + error.message, "system");
+    stopBodyCamera();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function stopBodyCamera() {
+  bodyCameraRunning = false;
+  bodyLastVideoTime = -1;
+  bodyLastDetectAt = 0;
+  if (bodyCameraStream) {
+    for (const track of bodyCameraStream.getTracks()) track.stop();
+    bodyCameraStream = null;
+  }
+  const video = document.getElementById("bodyVideo");
+  video.srcObject = null;
+  video.style.display = "none";
+  const btn = document.getElementById("bodyCameraBtn");
+  btn.textContent = "开启摄像头";
+  btn.classList.remove("active");
+  setBodyCameraStatus(bodyFrames.length ? `已暂停，本轮 ${bodyFrames.length} 帧` : "未开启");
+}
+
+async function analyzeBodyNow() {
+  if (!bodyFrames.length) return lastBodyLanguage;
+  const snapshot = bodyFrames.map(frame => ({
+    timestamp_ms: frame.timestamp_ms,
+    landmarks: frame.landmarks
+  }));
+  const response = await fetch(API + "/body-language/analyze", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({frames: snapshot})
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  lastBodyLanguage = await response.json();
+  bodyFrames = [];
+  if (bodyCameraRunning) setBodyCameraStatus("采集中 0 帧");
+  return lastBodyLanguage;
+}
+
+function stopVoice() {
+  const run = speechStream;
+  speechStream = null;
+  ttsRequestSeq += 1;
+  if (run) {
+    run.cancelled = true;
+    if (run.displayEl && run.buffer) {
+      const node = document.createElement("span");
+      node.textContent = run.buffer;
+      run.displayEl.appendChild(node);
+      run.buffer = "";
+    }
+    for (const item of run.items) {
+      if (item.controller) item.controller.abort();
+      if (item.url && item.objectUrl) URL.revokeObjectURL(item.url);
+      revealSpeechItem(item, 1);
+    }
+  }
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  if (currentBrowserTimer) {
+    clearInterval(currentBrowserTimer);
+    currentBrowserTimer = null;
+  }
+  for (const timer of currentPcmTimers) clearTimeout(timer);
+  currentPcmTimers = [];
+  if (currentPcmSource) {
+    try { currentPcmSource.stop(); } catch (e) {}
+    currentPcmSource.disconnect();
+    currentPcmSource = null;
+  }
+  if (currentBrowserResolve) {
+    const resolve = currentBrowserResolve;
+    currentBrowserResolve = null;
+    resolve(false);
+  }
+  if (currentAudio) {
+    currentAudio.pause();
+    if (currentAudio.src) URL.revokeObjectURL(currentAudio.src);
+    currentAudio = null;
+  }
+  if (currentAudioResolve) {
+    const resolve = currentAudioResolve;
+    currentAudioResolve = null;
+    resolve(false);
+  }
+  document.getElementById("stopVoiceBtn").disabled = true;
+  const cb = run && run.onEnd;
+  if (cb) cb();
+}
+
+function splitSpeechChunks(buffer, final = false, first = false) {
+  let rest = String(buffer || "");
+  const chunks = [];
+  const push = (text) => {
+    const clean = text.trim();
+    if (clean) chunks.push({text, ttsText: clean});
+  };
+  const softLimit = first ? TTS_FIRST_CHUNK_CHARS : TTS_SOFT_CHUNK_CHARS;
+  const minLimit = first ? TTS_FIRST_CHUNK_MIN : TTS_SOFT_CHUNK_MIN;
+  const trigger = final ? softLimit : softLimit + 16;
+  const boundary = /[，,、：:。！？!?；;\n]/g;
+
+  while (rest) {
+    if (first) {
+      const windowText = rest.slice(0, softLimit + 16);
+      boundary.lastIndex = 0;
+      let match;
+      let cut = -1;
+      while ((match = boundary.exec(windowText))) {
+        if (match.index >= minLimit) {
+          cut = match.index + match[0].length;
+          break;
+        }
+      }
+      if (cut < 0 && rest.length > trigger) cut = softLimit;
+      if (cut < 0) break;
+      push(rest.slice(0, cut));
+      rest = rest.slice(cut);
+      first = false;
+      continue;
+    }
+
+    const sentence = rest.match(/[。！？!?；;\n]+[”’"'）)]*/);
+    if (sentence && sentence.index !== undefined) {
+      const end = sentence.index + sentence[0].length;
+      push(rest.slice(0, end));
+      rest = rest.slice(end);
+      continue;
+    }
+    if (rest.length <= trigger) break;
+    const windowText = rest.slice(0, softLimit + 20);
+    const candidates = [];
+    for (const match of windowText.matchAll(/[，,、：:\s]/g)) {
+      if (match.index >= minLimit) candidates.push(match.index + 1);
+    }
+    const cut = candidates.length ? candidates[candidates.length - 1] : softLimit;
+    push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+
+  if (final && rest.trim()) push(rest);
+  return {chunks, rest: final ? "" : rest};
+}
+
+function revealSpeechItem(item, ratio = 1) {
+  if (!item || !item.displayNode) return;
+  const total = item.text.length;
+  const visible = ratio >= 1
+    ? total
+    : Math.max(1, Math.min(total, Math.ceil(total * Math.max(0, ratio))));
+  if (visible <= item.revealed) return;
+  item.revealed = visible;
+  item.displayNode.textContent = item.text.slice(0, visible);
+  document.getElementById("chat").scrollTop = 999999;
+}
+
+function primeAudioContext() {
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) return null;
+  if (!audioContext) audioContext = new AudioCtor();
+  if (audioContext.state === "suspended") audioContext.resume().catch(() => {});
+  return audioContext;
+}
+
+function beginSpeechStream(onEnd, displayEl = null) {
+  stopVoice();
+  if (!document.getElementById("ttsEnabled").checked) {
+    if (onEnd) onEnd();
+    return null;
+  }
+  primeAudioContext();
+  const run = {
+    seq: ttsRequestSeq,
+    items: [],
+    buffer: "",
+    nextFetch: 0,
+    inflight: 0,
+    nextPlay: 0,
+    pumping: false,
+    closed: false,
+    completed: false,
+    cancelled: false,
+    onEnd: onEnd || null,
+    displayEl
+  };
+  speechStream = run;
+  return run;
+}
+
+function ensureSpeechFetches(run) {
+  while (run && !run.cancelled && run.seq === ttsRequestSeq
+         && run.inflight < TTS_FETCH_LIMIT && run.nextFetch < run.items.length) {
+    const item = run.items[run.nextFetch++];
+    item.controller = new AbortController();
+    run.inflight += 1;
+    item.promise = fetch(API + "/tts?stream=1", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      signal: item.controller.signal,
+      body: JSON.stringify({
+        text: item.ttsText,
+        voice: document.getElementById("voiceSelect").value
+      })
+    }).then(async resp => {
+      if (!resp.ok || !resp.body) throw new Error("stream tts unavailable");
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let gotSentence = false;
+      while (!gotSentence) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, {stream: true});
+        const blocks = buf.split("\n\n");
+        buf = blocks.pop();
+        for (const block of blocks) {
+          const line = block.trim();
+          if (!line.startsWith("data:")) continue;
+          const ev = JSON.parse(line.slice(5).trim());
+          if (ev.type === "error") throw new Error(ev.err || "stream tts failed");
+          if (ev.type === "sentence") {
+            if (run.cancelled || run.seq !== ttsRequestSeq) return;
+            item.pcm = ev.audio || "";
+            item.words = ev.words || [];
+            item.sampleRate = ev.sample_rate || 16000;
+            item.originalText = ev.text || item.text;
+            gotSentence = true;
+            break;
+          }
+        }
+      }
+      if (!item.pcm) throw new Error("stream tts returned no audio");
+      reader.cancel().catch(() => {});
+    }).catch(async err => {
+      if (run.cancelled || run.seq !== ttsRequestSeq) return;
+      item.error = err;
+      try {
+        const resp = await fetch(API + "/tts?direct=1", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          signal: item.controller.signal,
+          body: JSON.stringify({
+            text: item.ttsText,
+            voice: ""
+          })
+        });
+        if (!resp.ok) throw new Error("direct tts unavailable");
+        const data = await resp.json();
+        if (!data.url) throw new Error("direct tts returned no url");
+        if (run.cancelled || run.seq !== ttsRequestSeq) return;
+        item.url = data.url;
+        item.objectUrl = false;
+      } catch (fallbackError) {
+        if (!run.cancelled && run.seq === ttsRequestSeq) item.error = fallbackError;
+      }
+    }).finally(() => {
+      run.inflight -= 1;
+      ensureSpeechFetches(run);
+    });
+  }
+}
+
+function base64PcmToFloat32(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const int16 = new Int16Array(bytes.buffer);
+  const pcm = new Float32Array(int16.length);
+  for (let i = 0; i < int16.length; i += 1) {
+    pcm[i] = int16[i] / 32768;
+  }
+  return pcm;
+}
+
+function playPcmSentence(item) {
+  const ctx = primeAudioContext();
+  if (!ctx || !item.pcm) return Promise.resolve(false);
+  let pcm;
+  try {
+    pcm = base64PcmToFloat32(item.pcm);
+  } catch (e) {
+    return Promise.resolve(false);
+  }
+  const buffer = ctx.createBuffer(1, pcm.length, item.sampleRate || 16000);
+  buffer.copyToChannel(pcm, 0);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  const startAt = ctx.currentTime + 0.03;
+  currentPcmSource = source;
+
+  for (const word of item.words || []) {
+    const endIndex = Number(word.end_index);
+    const beginMs = Number(word.begin_time);
+    if (!Number.isFinite(endIndex) || !Number.isFinite(beginMs)) continue;
+    const delayMs = Math.max(
+      0, (startAt + beginMs / 1000 - ctx.currentTime) * 1000
+    );
+    currentPcmTimers.push(setTimeout(() => {
+      revealSpeechItem(item, endIndex / Math.max(1, item.text.length));
+    }, delayMs));
+  }
+
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      if (currentPcmSource === source) currentPcmSource = null;
+      if (ok) revealSpeechItem(item, 1);
+      document.getElementById("stopVoiceBtn").disabled = true;
+      resolve(ok);
+    };
+    source.onended = () => finish(true);
+    try {
+      source.start(startAt);
+      document.getElementById("stopVoiceBtn").disabled = false;
+    } catch (e) {
+      finish(false);
+    }
+  });
+}
+
+function playAudioUrl(url, item) {
+  return new Promise(resolve => {
+    const audio = new Audio(url);
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      if (ok) revealSpeechItem(item, 1);
+      if (currentAudio === audio) currentAudio = null;
+      if (currentAudioResolve === resolve) currentAudioResolve = null;
+      document.getElementById("stopVoiceBtn").disabled = true;
+      resolve(ok);
+    };
+    currentAudio = audio;
+    currentAudioResolve = resolve;
+    audio.onended = () => finish(true);
+    audio.onerror = () => finish(false);
+    audio.onloadedmetadata = audio.ontimeupdate = () => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        revealSpeechItem(item, audio.currentTime / audio.duration);
+      }
+    };
+    audio.onplay = () => {
+      revealSpeechItem(item, 0.01);
+      document.getElementById("stopVoiceBtn").disabled = false;
+    };
+    audio.play().catch(() => finish(false));
+  });
+}
+
+function playBrowserChunk(text, item) {
+  return new Promise(resolve => {
+    if (!("speechSynthesis" in window)) {
+      resolve(false);
+      return;
+    }
+    const utter = new SpeechSynthesisUtterance(text);
+    const startedAt = Date.now();
+    const estimatedMs = Math.max(1400, text.length * 240);
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      if (currentBrowserTimer) {
+        clearInterval(currentBrowserTimer);
+        currentBrowserTimer = null;
+      }
+      if (ok) revealSpeechItem(item, 1);
+      if (currentBrowserResolve === resolve) currentBrowserResolve = null;
+      document.getElementById("stopVoiceBtn").disabled = true;
+      resolve(ok);
+    };
+    utter.lang = "zh-CN";
+    utter.rate = 1.0;
+    utter.pitch = 1.0;
+    utter.onstart = () => {
+      document.getElementById("stopVoiceBtn").disabled = false;
+    };
+    utter.onend = () => finish(true);
+    utter.onerror = () => finish(false);
+    currentBrowserResolve = resolve;
+    currentBrowserTimer = setInterval(() => {
+      revealSpeechItem(item, (Date.now() - startedAt) / estimatedMs);
+    }, 60);
+    window.speechSynthesis.speak(utter);
+  });
+}
+
+function maybeCompleteSpeechStream(run) {
+  if (!run || run.completed || run.cancelled || run.seq !== ttsRequestSeq) return;
+  if (!run.closed || run.pumping || run.nextPlay < run.items.length) return;
+  run.completed = true;
+  if (speechStream === run) speechStream = null;
+  document.getElementById("stopVoiceBtn").disabled = true;
+  const cb = run.onEnd;
+  run.onEnd = null;
+  if (cb) cb();
+}
+
+async function pumpSpeechStream(run) {
+  if (!run || run.pumping || run.cancelled || run.seq !== ttsRequestSeq) return;
+  run.pumping = true;
+  try {
+    while (!run.cancelled && run.seq === ttsRequestSeq
+           && run.nextPlay < run.items.length) {
+      const item = run.items[run.nextPlay];
+      ensureSpeechFetches(run);
+      if (!item.promise) break;
+      await item.promise;
+      if (run.cancelled || run.seq !== ttsRequestSeq) break;
+
+      let played = false;
+      if (item.pcm) played = await playPcmSentence(item);
+      if (!played && item.url) played = await playAudioUrl(item.url, item);
+      if (!played && !run.cancelled && run.seq === ttsRequestSeq) {
+        await playBrowserChunk(item.ttsText || item.text, item);
+      }
+      if (item.url && item.objectUrl) {
+        URL.revokeObjectURL(item.url);
+        item.url = null;
+      }
+      run.nextPlay += 1;
+    }
+  } finally {
+    run.pumping = false;
+    maybeCompleteSpeechStream(run);
+  }
+}
+
+function enqueueSpeechParts(run, parts) {
+  if (!run || run.cancelled || run.seq !== ttsRequestSeq) return;
+  for (const part of parts) {
+    const displayText = typeof part === "string" ? part : part.text;
+    const ttsText = typeof part === "string" ? part.trim() : part.ttsText;
+    const item = {
+      text: displayText,
+      ttsText,
+      promise: null,
+      controller: null,
+      url: null,
+      objectUrl: false,
+      error: null,
+      pcm: null,
+      words: [],
+      sampleRate: 16000,
+      originalText: "",
+      revealed: 0,
+      displayNode: null
+    };
+    if (run.displayEl) {
+      item.displayNode = document.createElement("span");
+      item.displayNode.textContent = "";
+      run.displayEl.appendChild(item.displayNode);
+    }
+    run.items.push(item);
+  }
+  ensureSpeechFetches(run);
+  pumpSpeechStream(run);
+}
+
+function queueSpeechText(run, text, final = true, first = false) {
+  if (!run || run.cancelled || run.seq !== ttsRequestSeq) return;
+  enqueueSpeechParts(run, splitSpeechChunks(text, final, first).chunks);
+}
+
+function appendSpeechStreamText(run, text, displayEl = null) {
+  if (!run) {
+    if (displayEl) displayEl.textContent += String(text || "");
+    return;
+  }
+  if (!run || run.cancelled || run.seq !== ttsRequestSeq) return;
+  run.buffer += String(text || "");
+  const split = splitSpeechChunks(run.buffer, false, run.items.length === 0);
+  run.buffer = split.rest;
+  if (split.chunks.length) enqueueSpeechParts(run, split.chunks);
+}
+
+function finishSpeechStream(run, onEnd) {
+  if (!run) {
+    if (onEnd) onEnd();
+    return;
+  }
+  if (run.cancelled || run.seq !== ttsRequestSeq) {
+    if (onEnd) onEnd();
+    return;
+  }
+  if (onEnd) run.onEnd = onEnd;
+  if (run.buffer) {
+    const rest = run.buffer;
+    run.buffer = "";
+    queueSpeechText(run, rest, true, run.items.length === 0);
+  }
+  run.closed = true;
+  maybeCompleteSpeechStream(run);
+}
+
+function speakText(text, onEnd, displayEl = null) {
+  const clean = String(text || "").trim();
+  if (!clean) {
+    if (onEnd) onEnd();
+    return;
+  }
+  lastInterviewerText = clean;
+  document.getElementById("replayVoiceBtn").disabled = false;
+  if (!document.getElementById("ttsEnabled").checked) {
+    if (displayEl) displayEl.textContent = clean;
+    if (onEnd) onEnd();
+    return;
+  }
+  const run = beginSpeechStream(onEnd, displayEl);
+  if (!run) return;
+  queueSpeechText(run, clean, true, true);
+  finishSpeechStream(run);
+}
+
+function replayVoice() {
+  speakText(lastInterviewerText);
+}
+
+function setRecordingUi(active) {
+  recording = active;
+  const btn = document.getElementById("recordBtn");
+  btn.textContent = active ? "停止录音" : "语音输入";
+  btn.classList.toggle("recording", active);
+}
+
+async function toggleRecording() {
+  if (recording) {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+    return;
+  }
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    addMsg("当前浏览器不支持录音，请使用 Chrome 或 Edge。", "system");
+    return;
+  }
+  try {
+    stopVoice();
+    const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+    const preferred = "audio/webm;codecs=opus";
+    const options = MediaRecorder.isTypeSupported(preferred)
+      ? {mimeType: preferred} : {};
+    mediaRecorder = new MediaRecorder(stream, options);
+    mediaChunks = [];
+    mediaRecorder.ondataavailable = event => {
+      if (event.data && event.data.size) mediaChunks.push(event.data);
+    };
+    mediaRecorder.onstop = async () => {
+      for (const track of stream.getTracks()) track.stop();
+      setRecordingUi(false);
+      const mime = mediaRecorder.mimeType || "audio/webm";
+      const ext = mime.includes("ogg") ? "ogg" : "webm";
+      const blob = new Blob(mediaChunks, {type: mime});
+      mediaChunks = [];
+      await transcribeRecording(blob, `recording.${ext}`);
+    };
+    mediaRecorder.start();
+    setRecordingUi(true);
+    addMsg("正在录音，再次点击“停止录音”后转写。", "system");
+  } catch (e) {
+    addMsg("无法开始录音: " + e.message, "system");
+    setRecordingUi(false);
+  }
+}
+
+async function transcribeRecording(blob, filename, retried) {
+  if (!blob.size) {
+    addMsg("没有录到音频。", "system");
+    return;
+  }
+  addMsg("正在转写语音...", "system");
+  const form = new FormData();
+  form.append("file", blob, filename);
+  form.append(
+    "allow_online",
+    document.getElementById("allowOnlineAsr").checked ? "true" : "false"
+  );
+  try {
+    const resp = await fetch(API + "/asr", {method: "POST", body: form});
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      if (!retried && (data.error === "asr_loading" || resp.status === 503)) {
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        return transcribeRecording(blob, filename, true);
+      }
+      addMsg("语音转写失败: " + (data.detail || data.error || resp.status), "system");
+      return;
+    }
+    const input = document.getElementById("input");
+    input.value = data.text || "";
+    lastSpeech = {
+      duration_ms: data.duration_ms,
+      audio_ms: data.audio_ms,
+      segments: data.segments,
+      asr_model: data.asr_model,
+      pauses: data.pauses,
+      pause_total_ms: data.pause_total_ms,
+      loudness: data.loudness,
+      loudness_cv: data.loudness_cv,
+      tail_ratio: data.tail_ratio,
+      pitch_variation: data.pitch_variation,
+      emotion: data.emotion,
+      emotion_score: data.emotion_score,
+      emotion_dist: data.emotion_dist
+    };
+    addMsg(
+      "语音转写已回填（" + (data.asr_model || "未知模型") +
+      "），请确认或修改后发送。",
+      "system"
+    );
+    input.focus();
+  } catch (e) {
+    addMsg("语音转写请求失败: " + e.message, "system");
+  }
+}
+
 async function startInterview() {
   const job = document.getElementById("job").value;
+  const interviewMode = document.getElementById("modeSelect").value;
+  const resumeText = document.getElementById("resumeText").value.trim();
+  const personaStyle = document.getElementById("personaStyle").value;
+  if (interviewMode === "resume" && !resumeText) {
+    addMsg("基于简历面试需要先粘贴简历内容。", "system");
+    return;
+  }
   addMsg("正在连接面试官...", "system");
   const r = await fetch(API + "/start", {
     method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({job})
+    body: JSON.stringify({
+      job,
+      intro: interviewMode === "resume" ? resumeText : "",
+      resume_text: resumeText,
+      interview_mode: interviewMode,
+      persona_style: personaStyle
+    })
   });
   const data = await r.json();
   if (!r.ok) { addMsg("启动失败: " + (data.err || JSON.stringify(data)), "system"); return; }
   sid = data.session_id;
-  addMsg("会话已建立: " + sid + "\n" + data.message, "interviewer");
+  addMsg("会话已建立: " + sid, "system");
+  if (data.resume_read) {
+    addMsg(
+      `简历模式: ${data.resume_read.enabled ? "已启用" : "未启用"}\n` +
+      `识别技能: ${(data.resume_read.skills || []).join("、") || "未识别"}`,
+      "system"
+    );
+  }
+  const welcomeHolder = data.message ? addMsg("", "interviewer") : null;
   document.getElementById("startBtn").disabled = true;
   document.getElementById("finishBtn").disabled = false;
-  document.getElementById("input").disabled = false;
-  document.getElementById("sendBtn").disabled = false;
-  document.getElementById("input").focus();
+  document.getElementById("modeSelect").disabled = true;
+  document.getElementById("personaStyle").disabled = true;
+  document.getElementById("resumeText").disabled = true;
 
   // 自动要第一道题
+  setInputEnabled(false);
+  if (data.message) {
+    await new Promise(resolve => speakText(data.message, resolve, welcomeHolder));
+  }
   await nextQuestion();
 }
 
@@ -108,9 +958,15 @@ async function nextQuestion() {
   if (!r.ok) { addMsg("出题失败: " + (data.err || JSON.stringify(data)), "system"); return; }
   if (data.finished) {
     addMsg("面试结束: " + (data.message || ""), "system");
+    setInputEnabled(false);
+    document.getElementById("finishBtn").disabled = true;
     return;
   }
-  addMsg(`【${data.stage || ""}】第 ${data.q_index||1}/${data.total||10} 题\n${data.question}`, "interviewer");
+  const questionText = data.question || "";
+  lastSpeech = null;
+  const holder = addMsg("", "interviewer");
+  speakText(questionText, null, holder);
+  setInputEnabled(true);
 }
 
 async function send() {
@@ -124,14 +980,30 @@ async function send() {
 
   // 流式接收
   const holder = addMsg("", "interviewer");
+  const speechRun = beginSpeechStream(null, holder);
+  let bodySummary = null;
+  try {
+    bodySummary = await analyzeBodyNow();
+  } catch (error) {
+    setBodyCameraStatus("分析失败，本轮忽略");
+  }
   const resp = await fetch(API + "/chat", {
     method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({session_id: sid, message: text})
+    body: JSON.stringify({
+      session_id: sid,
+      message: text,
+      speech: lastSpeech || undefined,
+      body_language: bodySummary || undefined
+    })
   });
+  lastSpeech = null;
+  lastBodyLanguage = null;
 
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
+  let roundWillAdvance = false;
+  let doneSeen = false;
   while (true) {
     const {done, value} = await reader.read();
     if (done) break;
@@ -144,15 +1016,19 @@ async function send() {
       try {
         const ev = JSON.parse(line.slice(5).trim());
         if (ev.type === "token") {
-          holder.textContent += ev.text;
+          appendSpeechStreamText(speechRun, ev.text, holder);
           document.getElementById("chat").scrollTop = 999999;
         } else if (ev.type === "done") {
+          doneSeen = true;
           // follow_up=true 表示面试官在追问，等用户继续答；不自动出下一题
           if (ev.follow_up) {
             // 追问中，输入框等着用户继续答
+            finishSpeechStream(speechRun);
           } else {
             // 这题结束了，出下一题
-            setTimeout(nextQuestion, 500);
+            setInputEnabled(false);
+            roundWillAdvance = true;
+            finishSpeechStream(speechRun, () => setTimeout(() => nextQuestion(), 250));
           }
           if (ev.reranker_ok === false) {
             addMsg("（提示：本轮客观评分失败，分数按默认值处理，仅供流程演示）", "system");
@@ -164,25 +1040,192 @@ async function send() {
     }
   }
   streaming = false;
-  document.getElementById("sendBtn").disabled = false;
-  document.getElementById("input").focus();
+  if (!doneSeen) finishSpeechStream(speechRun);
+  if (document.getElementById("input").disabled === false) {
+    document.getElementById("sendBtn").disabled = false;
+  }
+}
+
+function weightMapFromText(text) {
+  const shortToDim = {
+    "技术": "技术水平", "逻辑": "逻辑思维", "沟通": "沟通表达",
+    "应变": "应变能力", "匹配": "岗位匹配度"
+  };
+  const out = {};
+  for (const token of String(text || "").trim().split(/\s+/)) {
+    const m = token.match(/^(技术|逻辑|沟通|应变|匹配)(\d+)%$/);
+    if (m && shortToDim[m[1]]) out[shortToDim[m[1]]] = Number(m[2]);
+  }
+  return out;
+}
+
+function scoreDimensionBlock(dim, row) {
+  const block = document.createElement("div");
+  block.className = "score-dim";
+  const title = document.createElement("div");
+  title.className = "score-dim-title";
+  title.textContent = `${dim}: ${row.score ?? "无分"}`;
+  block.appendChild(title);
+
+  for (const reason of row.reasons || []) {
+    const line = document.createElement("div");
+    line.className = "score-dim-line";
+    line.textContent = "依据: " + reason;
+    block.appendChild(line);
+  }
+  for (const evidence of row.evidence || []) {
+    const line = document.createElement("div");
+    line.className = "score-dim-line score-muted";
+    line.textContent = "证据: " + evidence;
+    block.appendChild(line);
+  }
+  const counts = row.confidence_counts || {};
+  const conf = [
+    ["高", counts.high || 0], ["中", counts.medium || 0], ["低", counts.low || 0]
+  ].map(([k, v]) => `${k}${v}`).join(" / ");
+  if (conf) {
+    const line = document.createElement("div");
+    line.className = "score-dim-line score-muted";
+    line.textContent = "可信度分布: " + conf;
+    block.appendChild(line);
+  }
+  return block;
+}
+
+function renderScoreBreakdown(data) {
+  const bd = data.score_breakdown || {};
+  const wrap = document.createElement("details");
+  wrap.open = true;
+  const summary = document.createElement("summary");
+  summary.textContent = bd.available ? "细化评分依据" : "细化评分依据（本次模型未返回）";
+  wrap.appendChild(summary);
+
+  const dims = bd.dimensions || {};
+  for (const [dim, row] of Object.entries(dims)) {
+    wrap.appendChild(scoreDimensionBlock(dim, row || {}));
+  }
+
+  const cov = bd.coverage || {};
+  const covBox = document.createElement("div");
+  covBox.className = "score-dim";
+  covBox.textContent =
+    `得分点覆盖: 基础 ${cov.base_hit ?? 0}/${cov.base_total ?? 0}` +
+    `，进阶 ${cov.adv_hit ?? 0}/${cov.adv_total ?? 0}` +
+    `（覆盖率信号，不直接等于答对）`;
+  wrap.appendChild(covBox);
+
+  const fs = bd.followup_summary || {};
+  if (fs.transitions) {
+    const box = document.createElement("div");
+    box.className = "score-dim";
+    box.textContent =
+      `追问评估: ${fs.transitions} 次；命中目标 ${fs.target_hits ?? 0} 次；` +
+      `新增信息 ${fs.new_information ?? 0} 次；纠错 ${fs.corrected_errors ?? 0} 次；` +
+      `平均推进 ${fs.avg_depth_gain ?? "无数据"}/2`;
+    wrap.appendChild(box);
+  }
+
+  if ((bd.missing_points || []).length) {
+    const box = document.createElement("div");
+    box.className = "score-dim";
+    box.textContent = "未覆盖得分点:\n- " + bd.missing_points.join("\n- ");
+    wrap.appendChild(box);
+  }
+  if ((bd.misconceptions || []).length) {
+    const box = document.createElement("div");
+    box.className = "score-dim";
+    box.textContent = "明确讲错:\n- " + bd.misconceptions.join("\n- ");
+    wrap.appendChild(box);
+  }
+  return wrap;
 }
 
 async function finishInterview() {
-  if (!sid) return;
-  const r = await fetch(API + "/finish", {
-    method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({session_id: sid, message: ""})
-  });
-  const data = await r.json();
-  if (!r.ok) { addMsg("结束失败: " + (data.err || JSON.stringify(data)), "system"); return; }
+  if (!sid || finishing) return;
+  finishing = true;
+
+  const finishBtn = document.getElementById("finishBtn");
+  const input = document.getElementById("input");
+  const sendBtn = document.getElementById("sendBtn");
+  finishBtn.disabled = true;
+  input.disabled = true;
+  sendBtn.disabled = true;
+
+  let r, data;
+  try {
+    r = await fetch(API + "/finish", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({session_id: sid, message: ""})
+    });
+    data = await r.json();
+  } catch (e) {
+    addMsg("结束失败: " + e.message, "system");
+    finishing = false;
+    finishBtn.disabled = false;
+    input.disabled = false;
+    sendBtn.disabled = false;
+    return;
+  }
+
+  if (!r.ok) {
+    addMsg("结束失败: " + (data.err || JSON.stringify(data)), "system");
+    finishing = false;
+    finishBtn.disabled = false;
+    input.disabled = false;
+    sendBtn.disabled = false;
+    return;
+  }
+  stopBodyCamera();
 
   const partial = data.partial ? "\n⚠️ 本次评分不完整（部分轮次评分失败），分数仅供参考" : "";
-  addMsg("=== 面试结束 ===\n" +
-    "五维均分: " + JSON.stringify(data.five_dim_avg) + "\n" +
-    "总分(加权): " + data.total_score + "\n" +
-    "权重: " + data.weights + partial + "\n\n" +
+  const status = data.score_status || (data.partial ? "partial" : "valid");
+  const statusText = status === "valid"
+    ? "正式评分"
+    : (status === "invalid" ? "本场无效" : "不完整评分");
+  const scoreLabel = status === "valid" ? "总分" : "当前均分（不是最终正式分）";
+  const totalQuestions = data.total_questions || 10;
+  const asked = data.completion_rate != null
+    ? Math.round(data.completion_rate * totalQuestions)
+    : (data.questions_asked ?? "?");
+  const weights = weightMapFromText(data.weights);
+  const terms = Object.entries(data.five_dim_avg || {}).filter(([, v]) => typeof v === "number");
+  const denominator = terms.reduce((s, [d]) => s + (weights[d] || 0), 0);
+  const formula = denominator > 0
+    ? terms.map(([d, v]) => `${v}×${weights[d]}%`).join(" + ") +
+      ` = ${data.total_score}`
+    : "无可用维度";
+  const invalid = status === "invalid";
+  const combined = data.combined || {};
+  const objectiveWeight = typeof combined.objective_weight === "number"
+    ? Math.round(combined.objective_weight * 100) + "%"
+    : "未知";
+  const subjectiveWeight = typeof combined.subjective_weight === "number"
+    ? Math.round(combined.subjective_weight * 100) + "%"
+    : "未知";
+  const scoreLines = invalid
+    ? "本场没有有效回答，不生成五维分和百分制分数。\n"
+    : "五维均分: " + JSON.stringify(data.five_dim_avg) + "\n" +
+      "客观线: " + ((data.objective || {}).score ?? "无数据") + "\n" +
+      "主观线: " + ((data.subjective || {}).score ?? "无数据") + "\n" +
+      "合成分: " + (combined.score ?? "无数据") +
+      "（" + (combined.calibrated ? "已校准" : "未校准") + "）\n" +
+      "合成权重: 客观 " + objectiveWeight + " / 主观 " + subjectiveWeight + "\n" +
+      "两线一致性: " + (combined.agreement || "未知") +
+      "；合成可信度: " + (combined.confidence || "未知") + "\n" +
+      scoreLabel + "(0-5加权): " + data.total_score + "\n" +
+      scoreLabel + "(百分制): " + data.total_score_100 + "\n" +
+      "加权计算: " + formula + "\n" +
+      "评分可信度: " + ((data.score_breakdown || {}).confidence || "未知") + "\n";
+  const resultBox = addMsg("=== 面试结束 ===\n" +
+    "评分状态: " + statusText + "\n" +
+    "完成度: " + asked + "/" + totalQuestions + "\n" +
+    scoreLines +
+    "权重: " + data.weights + "\n" +
+    "表达与姿态记录: " + (data.pace_note || "无数据") + "\n" +
+    "评分粒度: " + ((data.score_semantics || {}).score_step ?? "?") + " 分" +
+    partial + "\n\n" +
     "【面试评价】\n" + data.summary, "score");
+  if (!invalid) resultBox.appendChild(renderScoreBreakdown(data));
 
   // 本次新增：把给 3 号评估用的完整明细折叠展示，方便自查
   if (data.raw) {
@@ -196,10 +1239,39 @@ async function finishInterview() {
     document.getElementById("chat").scrollTop = 999999;
   }
 
-  document.getElementById("finishBtn").disabled = true;
-  document.getElementById("input").disabled = true;
-  document.getElementById("sendBtn").disabled = true;
 }
+
+(function applyStoredInterviewSetup() {
+  try {
+    const setup = JSON.parse(localStorage.getItem("a11_interview_setup") || "null");
+    if (!setup) return;
+    if (setup.resumeJob) document.getElementById("job").value = setup.resumeJob;
+    if (setup.mode) document.getElementById("modeSelect").value = setup.mode;
+    if (setup.persona) document.getElementById("personaStyle").value = setup.persona;
+    if (setup.resumeText) document.getElementById("resumeText").value = setup.resumeText;
+    toggleResumeBox();
+  } catch (e) {}
+})();
+
+(function applyServerFeatureFlags() {
+  fetch(API + "/health").then(r => r.json()).then(h => {
+    if (h.asr_enabled === false) {
+      document.getElementById("recordBtn").hidden = true;
+    }
+    if (h.tts_enabled === false) {
+      document.getElementById("ttsToggleLabel").hidden = true;
+      document.getElementById("voiceSelect").hidden = true;
+      document.getElementById("replayVoiceBtn").hidden = true;
+      document.getElementById("stopVoiceBtn").hidden = true;
+      document.getElementById("ttsEnabled").checked = false;
+    }
+    if (h.resume_enabled === false) {
+      document.getElementById("modeSelect").value = "general";
+      document.getElementById("modeSelect").disabled = true;
+      document.getElementById("resumeBox").hidden = true;
+    }
+  }).catch(() => {});
+})();
 </script>
 </body>
 </html>

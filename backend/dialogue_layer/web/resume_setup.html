@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>A11 简历面试设置</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f4f6f8; color: #18212b;
+         font-family: -apple-system, "Microsoft YaHei", sans-serif; }
+  header { background: #17324d; color: #fff; padding: 18px 28px; }
+  header h1 { margin: 0; font-size: 22px; font-weight: 650; }
+  header p { margin: 6px 0 0; color: #cbd7e2; font-size: 13px; }
+  main { max-width: 1180px; margin: 24px auto; padding: 0 20px;
+         display: grid; grid-template-columns: 320px 1fr 340px; gap: 18px; }
+  section { background: #fff; border: 1px solid #d8dee5; border-radius: 8px; padding: 18px; }
+  h2 { margin: 0 0 14px; font-size: 17px; }
+  button { border: 0; border-radius: 6px; padding: 9px 14px; cursor: pointer;
+           background: #2d5d8a; color: #fff; font-size: 13px; }
+  button.secondary { background: #e7edf3; color: #17324d; }
+  button.danger { background: #a33b3b; }
+  button:disabled { background: #9da9b5; cursor: not-allowed; }
+  .resume-card { border: 1px solid #d8dee5; border-left: 4px solid #2d5d8a;
+                 border-radius: 6px; padding: 10px; margin-bottom: 10px; cursor: pointer; }
+  .resume-card.active { background: #eef5fb; border-color: #2d5d8a; }
+  .resume-card strong { display: block; font-size: 14px; margin-bottom: 4px; }
+  .resume-card small { color: #627282; }
+  .card-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .card-actions button { padding: 5px 8px; font-size: 12px; }
+  label { display: block; margin: 10px 0 5px; font-size: 13px; color: #435365; }
+  input, select, textarea { width: 100%; border: 1px solid #bcc7d2; border-radius: 6px;
+                            padding: 9px 10px; font: 13px/1.5 inherit; background: #fff; }
+  textarea { min-height: 310px; resize: vertical; }
+  .row { display: flex; gap: 10px; margin-top: 14px; }
+  .row button { flex: 1; }
+  .hint { color: #627282; font-size: 12px; line-height: 1.6; margin-top: 8px; }
+  .selected { padding: 10px; background: #eef5fb; border-radius: 6px;
+              font-size: 13px; margin-bottom: 10px; }
+  .status { min-height: 18px; color: #1f6a3a; font-size: 12px; margin-top: 8px; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; }
+    textarea { min-height: 220px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>A11 模拟面试</h1>
+  <p>第一版：文本简历、简历列表、面试设置、基于简历出题、三种面试官风格</p>
+</header>
+
+<main>
+  <section>
+    <h2>我的简历</h2>
+    <button id="newBtn" onclick="newResume()">新建简历</button>
+    <div id="resumeList" style="margin-top:14px"></div>
+  </section>
+
+  <section>
+    <h2 id="editorTitle">新建简历</h2>
+    <label>简历名称</label>
+    <input id="resumeName" placeholder="例如：Java 后端求职简历">
+    <label>目标岗位</label>
+    <select id="resumeJob"></select>
+    <label>简历内容</label>
+    <textarea id="resumeText" placeholder="建议写：技能栈、项目名称、个人职责、使用技术、项目难点、个人贡献。"></textarea>
+    <div class="hint">第一版只支持文本简历。PDF、Word 和拍照识别暂未开放。</div>
+    <div class="row">
+      <button onclick="saveResume()">保存简历</button>
+      <button class="secondary" onclick="newResume()">清空</button>
+    </div>
+    <div id="saveStatus" class="status"></div>
+  </section>
+
+  <section>
+    <h2>面试设置</h2>
+    <label>面试模式</label>
+    <select id="modeSelect">
+      <option value="general">一般场景</option>
+      <option value="resume">基于简历</option>
+    </select>
+    <label>面试官风格</label>
+    <select id="personaStyle">
+      <option value="relaxed">温和型</option>
+      <option value="standard" selected>严谨型</option>
+      <option value="strict">严肃型</option>
+    </select>
+    <label>当前选择</label>
+    <div id="selectedResume" class="selected">未选择简历</div>
+    <div class="hint">选择“基于简历”后，面试官会根据技能和项目优先出题和追问。</div>
+    <div class="row">
+      <button onclick="startInterview()">开始面试</button>
+    </div>
+    <div id="setupStatus" class="status"></div>
+  </section>
+</main>
+
+<script>
+const JOBS = [
+  "Java 后端开发工程师",
+  "Web 前端开发工程师",
+  "测试开发工程师",
+  "算法工程师",
+  "系统设计工程师"
+];
+const LS_RESUMES = "a11_resumes";
+const LS_SELECTED = "a11_selected_resume";
+const LS_SETUP = "a11_interview_setup";
+let resumes = [];
+let selectedId = "";
+let editingId = "";
+
+function uid() {
+  return "resume-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
+}
+
+function load() {
+  try { resumes = JSON.parse(localStorage.getItem(LS_RESUMES) || "[]"); } catch { resumes = []; }
+  selectedId = localStorage.getItem(LS_SELECTED) || "";
+  if (!resumes.some(r => r.id === selectedId)) selectedId = resumes[0]?.id || "";
+  const jobSelect = document.getElementById("resumeJob");
+  jobSelect.innerHTML = "";
+  for (const job of JOBS) {
+    const option = document.createElement("option");
+    option.value = job;
+    option.textContent = job;
+    jobSelect.appendChild(option);
+  }
+  render();
+}
+
+function persist() {
+  localStorage.setItem(LS_RESUMES, JSON.stringify(resumes));
+  localStorage.setItem(LS_SELECTED, selectedId || "");
+}
+
+function render() {
+  const list = document.getElementById("resumeList");
+  list.innerHTML = "";
+  if (!resumes.length) {
+    list.innerHTML = '<div class="hint">还没有简历，先新建一份。</div>';
+  }
+  for (const resume of resumes) {
+    const card = document.createElement("div");
+    card.className = "resume-card" + (resume.id === selectedId ? " active" : "");
+    card.onclick = () => selectResume(resume.id);
+    const title = document.createElement("strong");
+    title.textContent = resume.name || "未命名简历";
+    const meta = document.createElement("small");
+    meta.textContent = resume.job || "未设置岗位";
+    const actions = document.createElement("div");
+    actions.className = "card-actions";
+    const edit = document.createElement("button");
+    edit.textContent = "编辑";
+    edit.className = "secondary";
+    edit.onclick = event => { event.stopPropagation(); editResume(resume.id); };
+    const del = document.createElement("button");
+    del.textContent = "删除";
+    del.className = "danger";
+    del.onclick = event => { event.stopPropagation(); deleteResume(resume.id); };
+    actions.append(edit, del);
+    card.append(title, meta, actions);
+    list.appendChild(card);
+  }
+  const selected = resumes.find(r => r.id === selectedId);
+  document.getElementById("selectedResume").textContent =
+    selected ? `已选择：${selected.name || "未命名简历"}` : "未选择简历";
+  if (editingId) {
+    const current = resumes.find(r => r.id === editingId);
+    if (current) {
+      document.getElementById("editorTitle").textContent = "编辑简历";
+      document.getElementById("resumeName").value = current.name || "";
+      document.getElementById("resumeJob").value = current.job || JOBS[0];
+      document.getElementById("resumeText").value = current.text || "";
+    }
+  }
+}
+
+function selectResume(id) {
+  selectedId = id;
+  editingId = id;
+  persist();
+  render();
+}
+
+function newResume() {
+  editingId = "";
+  document.getElementById("editorTitle").textContent = "新建简历";
+  document.getElementById("resumeName").value = "";
+  document.getElementById("resumeJob").value = JOBS[0];
+  document.getElementById("resumeText").value = "";
+  document.getElementById("saveStatus").textContent = "";
+}
+
+function editResume(id) {
+  editingId = id;
+  render();
+}
+
+function saveResume() {
+  const name = document.getElementById("resumeName").value.trim();
+  const job = document.getElementById("resumeJob").value;
+  const text = document.getElementById("resumeText").value.trim();
+  if (!name || !text) {
+    document.getElementById("saveStatus").textContent = "简历名称和内容不能为空。";
+    return;
+  }
+  const now = Date.now();
+  if (editingId) {
+    const target = resumes.find(r => r.id === editingId);
+    Object.assign(target, {name, job, text, updatedAt: now});
+  } else {
+    const item = {id: uid(), name, job, text, createdAt: now, updatedAt: now};
+    resumes.unshift(item);
+    editingId = item.id;
+    selectedId = item.id;
+  }
+  persist();
+  render();
+  document.getElementById("saveStatus").textContent = "已保存。";
+}
+
+function deleteResume(id) {
+  resumes = resumes.filter(r => r.id !== id);
+  if (selectedId === id) selectedId = resumes[0]?.id || "";
+  if (editingId === id) newResume();
+  persist();
+  render();
+}
+
+function startInterview() {
+  const mode = document.getElementById("modeSelect").value;
+  const persona = document.getElementById("personaStyle").value;
+  const resume = resumes.find(r => r.id === selectedId);
+  if (mode === "resume" && !resume) {
+    document.getElementById("setupStatus").textContent = "请先选择一份简历。";
+    return;
+  }
+  localStorage.setItem(LS_SETUP, JSON.stringify({
+    mode,
+    persona,
+    resumeId: resume?.id || "",
+    resumeName: resume?.name || "",
+    resumeJob: resume?.job || "",
+    resumeText: resume?.text || ""
+  }));
+  location.href = "/ui/test_chat.html";
+}
+
+load();
+</script>
+</body>
+</html>

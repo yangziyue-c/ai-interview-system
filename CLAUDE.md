@@ -103,6 +103,13 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
 
 - 独立 FastAPI 服务（**8005**，源码一行未改），`start.py` 在 RAG 之后拉起；开关 `DIALOGUE_ENGINE=a11`
   （`.env`，默认空 = 关）。开启后出题/追问/五维评分全部委托它，主后端只镜像落库
+- **2026-09-29 版升级**：原 10 个端点全部保留，新增 `/tts`（朗读）与 `/body-language/analyze`（体态），
+  另加简历模式、客观题评分、知识库检索（KB）。主后端已接三个转发口（`uploads/audio/tts`、
+  `body-language/analyze`，建面试可带 `resume_text`），**前端页面尚未接**
+- **三家密钥**（DeepSeek / 硅基流动 / DashScope）来自 P5 的 Private 交接包，落在 **`backend/.env`**
+  （已 gitignore）。⚠️ Private 包本身**绝不进仓库**——它明确要求不许上传 GitHub、云盘与公开群
+- ⚠️ `quality/body_language.py` 被 `app/api/body_language.py` import：**`quality/` 与 `app/` 必须同级**，
+  只搬 `app/` 会让服务起不来
 - **引擎链路 10 题制**（3/5/2 阶段），与原链路 7 轮制并存；链路在 `POST /interviews` 时定死、整场只读
   （`interviews.engine`），中途不切换
 - **未就绪即报 503（错误码 50300），不回落原链路**：半场换口径事后无从分辨。就绪判据是 `/health` 的
@@ -111,14 +118,16 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
   `question` 保持题库原题面逐字不变——学习计划与评分素材按题干反查题库，靠这条不变量
 - 报告：引擎 1~5 分制 ×20 换算（`app/core/engine_report.py`），三栏由主后端从引擎明细推导；
   `reports.engine_meta` **只存摘要**，引擎 raw 里的得分点原文不进本表
-- **语音转写**：`POST /uploads/audio/asr` 转发给引擎的 `/asr`（faster-whisper 本地模型），
-  一次调用同时返回文本与 `audio_url`（前端不必传两次）。情感模型权重由 P5 直接提供
-  （HF 与魔搭都没有这个模型），放在 `.hf_cache/wav2vec2-base-superb-er`，启动注入里用
-  `A11_ASR_EMOTION_MODEL` **显式指过去**——加载走 `local_files_only=True`，默认的 HF 仓库名
-  在本机必然失败，且失败形态是「直接报坏」而不是「慢慢下」。
-  ⚠️ 该模型是**英语表演情绪**数据训的，**中文上标签不可信**（实测中文 3/3 判 `hap`）：
-  只说「有情感分布、中文看波动」，**演示时别说「情感识别很准」**。
-  引擎侧另有内存门槛（start.py 注入 `A11_ASR_MIN_FREE_MB=800`）：内存不足时转写返 503 而不是硬加载到 OOM
+- **语音转写**：`POST /uploads/audio/asr` 转发给引擎的 `/asr`，本地模型是 **SenseVoice**
+  （sherpa-onnx，239MB，在 `数据/models/`，不入库），首次加载约 3 秒；默认档下情感标签由它自己给
+  （闭集 neu/hap/ang/sad），`emotion_score`/`emotion_dist` 可能为 null。旧版的 faster-whisper 与
+  wav2vec2 情感模型在默认档下**都不再加载**。
+  ⚠️ 情感的口径不能松：引擎定位它是「韵律信号」，**中文标签不可信**，一律说「有情感分布、
+  中文看波动」，**演示时别说「情感识别很准」**。引擎侧有内存门槛
+  （start.py 注入 `A11_ASR_MIN_FREE_MB=800`）：不足时转写返 503 而不是硬加载到 OOM
+- **reranker 默认走在线**（硅基流动 API），省下本地那份 2.27GB 常驻内存；`.hf_cache` 里的本地模型
+  只在没配 key 时回退。**RAG 与 KB 默认关**，`.env` 设 `DIALOGUE_FULL=1` 开全功能：KB 索引 20396 块、
+  懒加载（首次 `/finish` 才加载编码器）；RAG / KB / SenseVoice 三份数据都已 gitignore
 - **成长档案**：每场 `/finish` 的顶层 `digest` 存进 `reports.digest`。
   ⚠️ 该 JSON 列**必须带 `none_as_null=True`**——默认行为会把 Python 的 None 存成 JSON 的
   `null` 字面量，于是「原链路场次没有档案」会被 `IS NOT NULL` 误判成「有」。
@@ -127,8 +136,9 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
   演示前端的报告页已渲染成「考后复盘」卡片。与 digest 同款：JSON 列要 `none_as_null`，
   `null` = 引擎关掉了该功能（不是「空清单」）
 - 题库复用 `backend/rag/数据/`（与 A11 自带那份已逐字段核对一致），不拷第二份；
-  模型缓存 `backend/.hf_cache`（已 gitignore）：reranker 2.27GB + whisper-small 464MB，
-  下载与环境清单见 `dialogue_layer/README-集成说明.md`
+  冒烟测试**必须显式给三个路径**（`A11_MAIN_DB` / `A11_KG_PATH` / `A11_RESOURCES_JSON`），
+  否则引擎按自己的默认值去找交付方本机的题库，报「题库文件不存在」。判据「失败 0 项」（本机实测 2824）
+- **正式 8005 暂由 P5 运行**（2026-09-29 定），`DIALOGUE_ENGINE_URL` 指对方地址，定稿后再切回本项目自运行
 
 ### 领域约定（改代码前必读）
 

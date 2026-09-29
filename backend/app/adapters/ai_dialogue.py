@@ -128,10 +128,21 @@ class DialogueEngineAdapter:
         return "、".join(missing)
 
     # ---------------- 会话流程 ----------------
-    async def start(self, position: str) -> dict:
-        """建会话；返回 {session_id, ...}"""
+    async def start(self, position: str, *, resume_text: str = "",
+                    resume_id: str = "") -> dict:
+        """建会话；返回 {session_id, ...}
+
+        带 resume_text 时切引擎的简历模式（interview_mode="resume"）：考官 prompt
+        与开场白都会用到它。**不传则一个字段都不多送** —— 引擎侧那两种情况是
+        逐字节相同的两条路径，多送空串虽然也无害，但会让人以为「传过什么」。
+        """
+        payload: dict = {"job": self._job_of(position)}
+        if resume_text:
+            payload["resume_text"] = resume_text
+            payload["resume_id"] = resume_id
+            payload["interview_mode"] = "resume"
         return await self._call_json(
-            "/start", {"job": self._job_of(position)}, settings.DIALOGUE_START_TIMEOUT_SECONDS
+            "/start", payload, settings.DIALOGUE_START_TIMEOUT_SECONDS
         )
 
     async def next_question(self, session_id: str) -> dict:
@@ -202,6 +213,53 @@ class DialogueEngineAdapter:
         if not body.get("ok"):
             raise EngineError(body.get("error") or body.get("detail") or "语音转写失败")
         return body
+
+    # ---------------- 扩展能力（2026-09-29 版引擎新增）----------------
+    async def synthesize(self, text: str, voice: str = "") -> tuple[bytes, str]:
+        """面试官文本转语音，返回 (音频字节, content_type)
+
+        用引擎 /tts 的默认档（audio/wav 二进制）。它另有个 `?direct=true` 档会回
+        引擎自己那份临时文件的 URL，本项目**不用**——把 8005 的地址交给前端，
+        就等于让前端直连引擎，而本项目的口径是前端只认 8001（地址由本后端发）。
+
+        合成失败时引擎返 503 + `{code: "tts_unavailable", err}`，这里转成 EngineError。
+        **不返回空音频**：空音频在前端表现为「播放了但没有声音」，比一次报错难查得多。
+        """
+        if not self.base_url:
+            raise EngineUnavailableError("对话层引擎未配置（DIALOGUE_ENGINE_URL 为空）")
+        payload: dict = {"text": text}
+        if voice:
+            payload["voice"] = voice
+        timeout = settings.DIALOGUE_TTS_TIMEOUT_SECONDS
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await asyncio.wait_for(
+                    client.post(f"{self.base_url}/tts", json=payload), timeout=timeout
+                )
+        except asyncio.TimeoutError:
+            raise EngineUnavailableError(f"对话层 /tts 超时（>{timeout:.0f}s）") from None
+        except httpx.HTTPError as exc:
+            raise EngineUnavailableError(f"对话层 /tts 网络错误：{exc}") from exc
+        if resp.status_code >= 400:
+            try:
+                body = resp.json()
+            except ValueError:
+                body = None
+            detail = body.get("detail") if isinstance(body, dict) else None
+            err = detail.get("err") if isinstance(detail, dict) else None
+            raise EngineError(err or f"对话层 /tts 失败（HTTP {resp.status_code}）")
+        return resp.content, resp.headers.get("content-type") or "audio/wav"
+
+    async def analyze_body_language(self, frames: list[dict]) -> dict:
+        """把本地提取的姿态关键点交给引擎分析
+
+        **只收数字关键点**：引擎侧刻意不接受图片、视频与音频。浏览器用 MediaPipe
+        在本地提取归一化坐标后只上传数字，本项目沿用这条边界，不在这边放宽。
+        """
+        return await self._call_json(
+            "/body-language/analyze", {"frames": frames},
+            settings.DIALOGUE_BODY_TIMEOUT_SECONDS,
+        )
 
     # ---------------- 内部 ----------------
     def _job_of(self, position: str) -> str:

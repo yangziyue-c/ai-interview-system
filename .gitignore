@@ -41,6 +41,12 @@ backend/.hf_cache/
 # AI 对话层 RAG 旁路数据（约 224MB，A11_RAG=0 时不加载，可由 P2 的构建产物重取）
 backend/dialogue_layer/数据/rag/
 
+# AI 对话层知识库检索索引（约 123MB，P5 的数据包提供，A11_KB_REC=0 时不加载）
+backend/dialogue_layer/数据/kb_index/
+
+# 语音转写模型 SenseVoice（约 239MB，P5 的交接包提供，无公开下载路径）
+backend/dialogue_layer/数据/models/
+
 # AI 对话层运行时日志
 backend/dialogue_layer/logs/
 

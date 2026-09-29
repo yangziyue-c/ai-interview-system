@@ -4,3 +4,6 @@
 *.bat -text
 *.py text eol=lf
 *.md text eol=lf
+# MediaPipe 运行时（体态识别的浏览器端）：wasm/task 是二进制、js 是第三方产物，
+# 一律原样存入不做行尾转换——二进制被转换一次就废了，第三方文件也不该被我们改写
+backend/dialogue_layer/web/vendor/** -text

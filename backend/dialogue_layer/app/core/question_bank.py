@@ -47,7 +47,26 @@ F_KNOWLEDGE = "关联知识点"       # 每行 id|title|description
 
 _RE_FOLLOWUP_TAG = re.compile(r"^\[追问\]\s*(.*)$")
 _RE_TRIGGER_TAG = re.compile(r"^\[触发\]")
+_RE_FALSE_ATTRIBUTION = re.compile(
+    r"(?:你)?(?:之前|前面|刚才|刚刚)(?:提到|说到|说过|讲到|说的|讲的)(?:的|过)?"
+    r"|你(?:提到|说到|说过|讲过)(?:的|过)?"
+)
 _RE_PURE_NUMBERING = re.compile(r"^\d+[\.、]\s*$")
+_RE_CJK = re.compile(r"[\u4e00-\u9fff]")
+_RE_NUMBERED_ITEM = re.compile(r"^(?:[-*•]\s*|\d{1,2}[\.、)]\s*)\S")
+_RE_SECTION_LABEL = re.compile(r"^【[^】]{1,24}】$")
+_RE_META_HEADING = re.compile(
+    r"^(?:示例|例\s*\d+|输入|输出|题目|题干|原题面|解题要点|分析思路|"
+    r"思路分析|代码如下|核心代码|代码实现|参考代码|复杂度|说明|注意|提示|"
+    r"注意事项|适用场景|应用场景|工作流程|实现方案|解决方案|面试考察重点|"
+    r"引用本文的文章|引用本文的题目)\s*[:：]?\s*$"
+)
+_RE_CODE_LINE = re.compile(
+    r"^(?:```|//|/\*|\*|@|"
+    r"(?:public|private|protected|class|interface|def|return|if|for|while|"
+    r"try|catch|else|switch|case|break|continue|import|from|package)\b)"
+)
+_RE_ASCII_TERM = re.compile(r"^[A-Za-z][A-Za-z0-9+#._ -]{1,40}$")
 
 # 题库缓存：job -> [record, ...]
 _BANK: dict[str, list[dict]] = {}
@@ -339,18 +358,52 @@ def all_knowledge_points(job: str) -> list[dict]:
 def split_points(text: str) -> list[str]:
     """
     把「基础得分点 / 进阶得分点」拆成单条。
-    过滤掉太短的行（标题、编号、残句）和明显的标题行。
+
+    旧实现只看字数：少于 15 字一律丢弃。实测这会把「4. 渠道对账」
+    「1. 状态机驱动」这类真正考点一起丢掉，同时又把长标题和代码行留下。
+    现在的口径分两类：
+
+      · 编号/项目符号条目：只要不是标题、示例元数据或代码，短条目也保留；
+      · 未编号句子：仍需达到 MIN_POINT_CHARS，并过滤标题、代码和纯格式行。
+
+    这是结构优先、长度兜底的解析，不再用一个长度阈值冒充语义判断。
     """
     if not text:
         return []
     out = []
     for line in text.split("\n"):
         p = line.strip()
-        if len(p) < config.MIN_POINT_CHARS:
+        if not p:
             continue
         if p.startswith("【") or p.endswith("："):
             continue
         if _RE_PURE_NUMBERING.match(p):
+            continue
+        if _RE_SECTION_LABEL.match(p) or _RE_META_HEADING.match(p):
+            continue
+
+        numbered = bool(_RE_NUMBERED_ITEM.match(p))
+        # 代码行和示例输出不是得分点。编号只作为结构证据，不能把代码救回来。
+        code_like = bool(_RE_CODE_LINE.match(p)) or (
+            p.startswith(("{", "}", "[")) and not _RE_CJK.search(p)
+        )
+        if code_like:
+            continue
+
+        has_cjk = bool(_RE_CJK.search(p))
+        if not has_cjk:
+            # 保留 CAP、SPI、Redis 这类技术名词；纯代码/符号在这一步之前已过滤。
+            term = p
+            if numbered:
+                term = re.sub(r"^(?:[-*•]\s*|\d{1,2}[\.、)]\s*)", "", p).strip()
+            if not _RE_ASCII_TERM.match(term) or len(term) < 2:
+                continue
+        elif len(p) < 4:
+            continue
+
+        if not numbered and len(p) < config.MIN_POINT_CHARS:
+            continue
+        if not numbered and p.endswith(("?", "？")) and len(p) < 30:
             continue
         out.append(p)
     return out
@@ -369,13 +422,26 @@ def parse_follow_up(text: str) -> str:
     for line in text.split("\n"):
         m = _RE_FOLLOWUP_TAG.match(line.strip())
         if m and m.group(1).strip():
-            return m.group(1).strip()
+            return sanitize_follow_up(m.group(1))
     # 没有 [追问] 标记：退回第一行非 [触发] 的正文
     for line in text.split("\n"):
         s = line.strip()
         if s and not _RE_TRIGGER_TAG.match(s):
-            return s
+            return sanitize_follow_up(s)
     return ""
+
+
+def sanitize_follow_up(text: str) -> str:
+    """
+    Remove fabricated attribution from generated follow-up questions.
+
+    The source bank contains hundreds of phrases such as
+    "重写和你之前提到的重载有什么联系和区别？" even when the candidate
+    has not mentioned that concept. Keep the technical content, but make the
+    question neutral instead of claiming the candidate said it.
+    """
+    clean = _RE_FALSE_ATTRIBUTION.sub("", str(text or ""))
+    return re.sub(r"\s+", " ", clean).strip()
 
 
 def parse_knowledge_points(text: str) -> list[dict]:

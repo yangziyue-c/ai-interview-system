@@ -206,6 +206,9 @@ class _FakeEngine:
         self.turns = 0
         # 记录调用入参，供断言「原样回传」「确实转发」这类行为
         self.growth_calls: list[list[dict]] = []
+        self.start_calls: list[dict] = []
+        self.tts_calls: list[dict] = []
+        self.body_calls: list[list[dict]] = []
         self.transcribed_bytes = 0
 
     async def is_ready(self, **_) -> bool:
@@ -214,8 +217,21 @@ class _FakeEngine:
     async def unavailable_reason(self) -> str:
         return ""
 
-    async def start(self, position: str) -> dict:
+    async def start(self, position: str, *, resume_text: str = "",
+                    resume_id: str = "") -> dict:
+        # 记下开场入参：简历模式是否真的转发给了引擎，靠这里断言
+        self.start_calls.append(
+            {"position": position, "resume_text": resume_text, "resume_id": resume_id}
+        )
         return {"session_id": "0a1b2c3d"}
+
+    async def synthesize(self, text: str, voice: str = "") -> tuple[bytes, str]:
+        self.tts_calls.append({"text": text, "voice": voice})
+        return b"RIFF\x00\x00\x00\x00WAVEfmt fake-pcm", "audio/wav"
+
+    async def analyze_body_language(self, frames: list[dict]) -> dict:
+        self.body_calls.append(frames)
+        return {"score": 82.0, "notes": ["肩线平稳"], "frames_used": len(frames)}
 
     async def next_question(self, session_id: str) -> dict:
         self.asked += 1
@@ -275,16 +291,18 @@ class _FakeEngine:
 def engine_mode(monkeypatch):
     """开引擎开关 + 换假适配器
 
-    三个模块各自 `from app.adapters import get_dialogue_adapter`，所以三处的
-    模块级名字都要换——只换 interviews 会让 reports/uploads 仍去连真服务。
+    四个模块各自 `from app.adapters import get_dialogue_adapter`，所以四处的
+    模块级名字都要换——只换 interviews 会让 reports/uploads/body_language
+    仍去连真服务。
     """
+    from app.api import body_language as body_language_api
     from app.api import interviews as interviews_api
     from app.api import reports as reports_api
     from app.api import uploads as uploads_api
 
     fake = _FakeEngine()
     monkeypatch.setattr(settings, "DIALOGUE_ENGINE", "a11")
-    for module in (interviews_api, reports_api, uploads_api):
+    for module in (interviews_api, reports_api, uploads_api, body_language_api):
         monkeypatch.setattr(module, "get_dialogue_adapter", lambda: fake)
     return fake
 
@@ -559,3 +577,82 @@ async def test_transcribe_reports_engine_failure(client: AsyncClient, monkeypatc
     )
     assert r.status_code == 503
     assert r.json()["code"] == 50300
+
+
+# ============================================================
+# 简历模式 / 面试官朗读 / 体态分析（2026-09-29 版引擎新增）
+# ============================================================
+async def test_resume_mode_forwards_resume_text(client: AsyncClient, engine_mode):
+    """简历模式：建面试时带上简历，原样转给引擎（切引擎的 resume 档）"""
+    headers = await _auth_headers(client, "resume")
+    resume = "三年 Java 后端，做过订单与支付系统，熟悉 JVM 调优。"
+    r = await client.post(
+        f"{BASE}/interviews",
+        json={"position": "backend", "resume_text": resume}, headers=headers,
+    )
+    assert r.status_code == 200
+    assert engine_mode.start_calls[-1]["resume_text"] == resume
+    assert engine_mode.start_calls[-1]["position"] == "backend"
+
+
+async def test_start_without_resume_still_opens_a_session(client: AsyncClient, engine_mode):
+    """不带简历的常规开场照常走通（简历位传空串）"""
+    headers = await _auth_headers(client, "noresume")
+    r = await client.post(f"{BASE}/interviews", json={"position": "backend"}, headers=headers)
+    assert r.status_code == 200
+    assert engine_mode.start_calls[-1]["resume_text"] == ""
+
+
+async def test_tts_endpoint_saves_audio_and_returns_url(client: AsyncClient, engine_mode):
+    """面试官朗读：文本经主后端转给引擎，落盘后返回可播放的站内地址"""
+    headers = await _auth_headers(client, "tts")
+    text = "请讲讲你对 JVM 内存模型的理解。"
+    r = await client.post(f"{BASE}/uploads/audio/tts", json={"text": text}, headers=headers)
+    assert r.status_code == 200
+    data = r.json()["data"]
+    # 地址必须是本站的（前端只认 8001），不能把引擎的 8005 地址透出去
+    assert data["url"].startswith("/uploads/tts/")
+    assert data["content_type"] == "audio/wav"
+    assert data["chars"] == len(text)
+    assert engine_mode.tts_calls[-1]["text"] == text
+
+
+async def test_tts_reports_engine_failure(client: AsyncClient, monkeypatch):
+    """合成失败明确报 503，不返回空音频（空音频在前端表现为「播放了但没声音」）"""
+    from app.adapters.ai_dialogue import EngineError
+    from app.api import uploads as uploads_api
+
+    class _DeadEngine:
+        async def synthesize(self, *a, **kw):
+            raise EngineError("tts_unavailable：DashScope 未配置密钥")
+
+    monkeypatch.setattr(uploads_api, "get_dialogue_adapter", lambda: _DeadEngine())
+    headers = await _auth_headers(client, "ttsdead")
+    r = await client.post(f"{BASE}/uploads/audio/tts", json={"text": "你好"}, headers=headers)
+    assert r.status_code == 503
+    assert r.json()["code"] == 50300
+
+
+async def test_body_language_forwards_landmarks(client: AsyncClient, engine_mode):
+    """体态分析：只转发数字关键点，结果原样透传"""
+    headers = await _auth_headers(client, "body")
+    frames = [
+        {"timestamp_ms": 0, "landmarks": [{"x": 0.5, "y": 0.4}, {"x": 0.6, "y": 0.4}]},
+        {"timestamp_ms": 100, "landmarks": [{"x": 0.5, "y": 0.41}]},
+    ]
+    r = await client.post(
+        f"{BASE}/body-language/analyze", json={"frames": frames}, headers=headers
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["score"] == 82.0
+    forwarded = engine_mode.body_calls[-1]
+    assert len(forwarded) == 2
+    assert forwarded[0]["landmarks"][0]["x"] == 0.5
+
+
+async def test_body_language_rejects_empty_frames(client: AsyncClient):
+    """空帧列表在入口就被挡下（引擎侧同样要求至少 1 帧），不必白跑一趟网络"""
+    headers = await _auth_headers(client, "bodyempty")
+    r = await client.post(f"{BASE}/body-language/analyze", json={"frames": []}, headers=headers)
+    assert r.status_code == 422
+    assert r.json()["code"] == 40000       # 参数校验错误统一归到这个码

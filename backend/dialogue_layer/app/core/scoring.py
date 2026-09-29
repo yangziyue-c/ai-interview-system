@@ -3,7 +3,7 @@
 scoring.py · 可插拔评分
 ============================================================
 两层：
-- RerankerScorer  客观命中分：本地 bge-reranker-v2-m3 算「考生回答 vs 每个得分点」的相似度
+- RerankerScorer  覆盖率信号：本地 bge-reranker-v2-m3 算「整段回答及句窗 vs 每个得分点」的相似度
 - LLMScorer       主观五维分：调 DeepSeek 按五个维度打分
 
 对外只用 Scorer 门面。想换评分模型，只改本文件。
@@ -14,6 +14,8 @@ scoring.py · 可插拔评分
 #9 device 不再硬编码 "cpu" —— 由 SCORER_DEVICE 控制（auto/cpu/cuda），
    cuda 加载失败会自动回退 cpu，而不是整个服务挂掉。
 """
+import math
+import re
 import threading
 import time
 from typing import Optional
@@ -23,6 +25,8 @@ from app.core import question_bank as qb
 from app.logging_conf import get_logger
 
 logger = get_logger(__name__)
+
+_RE_WINDOW_SPLIT = re.compile(r"(?<=[。！？!?；;])\s*|\n+")
 
 
 # ============================================================
@@ -44,6 +48,71 @@ def _sigmoid(x: float) -> float:
     return z / (1.0 + z)
 
 
+def answer_windows(answer: str,
+                   max_chars: Optional[int] = None,
+                   max_windows: Optional[int] = None) -> list[str]:
+    """
+    长回答 → 用于覆盖率匹配的句窗。
+
+    cross-encoder 面对整段几百字回答时，真正相关的一句会被大量无关内容稀释。
+    这里先按中英文句末标点和换行切段，再把短段合并到预算内。返回结果
+    最多 `SCORE_MAX_WINDOWS` 个；空回答返回空列表。
+    """
+    text = (answer or "").strip()
+    if not text:
+        return []
+    limit = int(max_chars or config.SCORE_WINDOW_CHARS)
+    top = int(max_windows or config.SCORE_MAX_WINDOWS)
+    if limit <= 0 or top <= 0:
+        return []
+
+    raw = [x.strip() for x in _RE_WINDOW_SPLIT.split(text) if x and x.strip()]
+    if not raw:
+        raw = [text]
+
+    pieces: list[str] = []
+    for part in raw:
+        if len(part) <= limit:
+            pieces.append(part)
+            continue
+        # 单句仍过长时按逗号/顿号继续切，最后才硬切。
+        sub = [x.strip() for x in re.split(r"(?<=[，,、])", part) if x.strip()]
+        if len(sub) == 1:
+            sub = [part[i:i + limit] for i in range(0, len(part), limit)]
+        pieces.extend(sub)
+
+    windows: list[str] = []
+    cur = ""
+    for part in pieces:
+        if not cur:
+            cur = part
+            continue
+        if len(cur) + 1 + len(part) <= limit:
+            cur += " " + part
+        else:
+            windows.append(cur)
+            cur = part
+    if cur:
+        windows.append(cur)
+    if len(windows) <= top:
+        return windows
+    # 极端长回答只按**均匀抽样**保留窗口，包含首尾，避免把最后才出现的
+    # 关键句永远截掉。常规 10 题场景下窗口数远小于 top，不会走到这里。
+    idx = [round(i * (len(windows) - 1) / (top - 1)) for i in range(top)]
+    return [windows[i] for i in sorted(set(idx))]
+
+
+def weighted_llm_score(five_dim: dict, job: str) -> Optional[float]:
+    """五维 0-5 分 → 按岗位权重折算的 0-5 总分；缺维度时按已有权重归一。"""
+    weights = config.weights_for(job)
+    usable = {d: v for d, v in (five_dim or {}).items()
+              if d in weights and isinstance(v, (int, float))}
+    denom = sum(weights[d] for d in usable)
+    if not usable or denom <= 0:
+        return None
+    return round(sum(usable[d] * weights[d] for d in usable) / denom, 4)
+
+
 def resolve_device() -> str:
     want = (config.SCORER_DEVICE or "auto").lower()
     if want != "auto":
@@ -56,7 +125,7 @@ def resolve_device() -> str:
 
 
 # ============================================================
-# 客观命中分
+# 覆盖率信号
 # ============================================================
 class RerankerScorer:
     def __init__(self):
@@ -134,6 +203,8 @@ class RerankerScorer:
 
         try:
             model = self._get_model()
+            windows = [w for w in answer_windows(answer)
+                       if w.strip() and w.strip() != answer.strip()]
 
             def _hit(points: list[str]) -> list[str]:
                 if not points:
@@ -144,13 +215,27 @@ class RerankerScorer:
                 #    更要命的是长度差：回答 150~400 字、得分点 20~60 字，把长的
                 #    那段塞进 query 槽之后，判出来的相似度整体塌到 0 附近 ——
                 #    这正是「真会的考生有一半的题被判 0 分、然后被降难度」的成因。
-                raw = model.predict([[p, answer] for p in points]).tolist()
+                full_raw = model.predict([[p, answer] for p in points]).tolist()
                 # ⚠️ 不要再叠 _sigmoid：num_labels=1 时 CrossEncoder 内部
                 #    已经过了一次 Sigmoid，predict 的输出**本身就是 0~1 概率**。
                 #    再压一次会把 [0,1] 挤进 [0.5, 0.731]，等于把及格线从 0.70
                 #    悄悄抬到 0.847 —— 这个方向的错只可能漏判，不可能误判。
-                return [p for p, s in zip(points, raw)
-                        if s >= config.MATCH_THRESHOLD]
+                best: dict[str, float] = {}
+                pending: list[str] = []
+                for i, p in enumerate(points):
+                    best[p] = float(full_raw[i])
+                    if windows and best[p] < config.MATCH_THRESHOLD:
+                        pending.append(p)
+                if pending:
+                    pairs = [[p, w] for p in pending for w in windows]
+                    raw = model.predict(pairs).tolist()
+                    cursor = 0
+                    for p in pending:
+                        for _w in windows:
+                            best[p] = max(best[p], float(raw[cursor]))
+                            cursor += 1
+                return [p for p in points
+                        if best.get(p, 0.0) >= config.MATCH_THRESHOLD]
 
             base_hit = _hit(base_pts)
             adv_hit = _hit(adv_pts)
@@ -164,7 +249,7 @@ class RerankerScorer:
 
     def _mock_hit(self, answer: str, base_pts: list[str], adv_pts: list[str]
                   ) -> tuple[float, list[str], list[str], bool]:
-        """确定性桩：分数随回答长度上升，便于冒烟测试覆盖 L1/L2/degrade 三条分支。"""
+        """确定性桩：分数随回答长度上升，覆盖 L1/L2/degrade 等分支。"""
         n = len(answer.strip())
         score = round(min(95.0, n * 1.5), 1)
         base_hit = base_pts[: max(1, len(base_pts) // 2)] if score >= config.LEVEL_L1_MIN else []
@@ -172,9 +257,282 @@ class RerankerScorer:
         return score, base_hit, adv_hit, True
 
 
+class OnlineRerankerScorer:
+    """
+    用在线 LLM 逐条核对得分点，替代本地 bge-reranker。
+
+    输出形状与 RerankerScorer.hit_scores 完全一致；失败时 ok=False。
+    """
+
+    device = "online"
+    coverage_method = "online_llm_pointwise"
+    coverage_windows = 0
+
+    def __init__(self, llm=None):
+        self.llm = llm
+
+    @property
+    def ready(self) -> bool:
+        return self.llm is not None
+
+    def warmup(self) -> None:
+        return None
+
+    def hit_scores(self, answer: str, base_text: str, adv_text: str
+                   ) -> tuple[float, list[str], list[str], bool]:
+        from app.core.prompts import ONLINE_RERANK_PROMPT, ONLINE_RERANK_SYSTEM
+
+        base_pts = qb.split_points(base_text)
+        adv_pts = qb.split_points(adv_text)
+        if self.llm is None:
+            return 0.0, [], [], False
+        if not base_pts and not adv_pts:
+            return 100.0, [], [], True
+
+        prompt = ONLINE_RERANK_PROMPT.safe_substitute(
+            question="（当前轮）",
+            base_points="\n".join(base_pts) or "（无）",
+            adv_points="\n".join(adv_pts) or "（无）",
+            answer=qb.truncate(answer, config.ANSWER_TRUNCATE),
+        )
+        try:
+            data = self.llm.chat_json(
+                ONLINE_RERANK_SYSTEM,
+                [{"role": "user", "content": prompt}],
+                temperature=0.0,
+            )
+        except Exception:
+            logger.exception("在线 reranker 调用失败")
+            return 0.0, [], [], False
+        if not isinstance(data, dict):
+            return 0.0, [], [], False
+
+        def _hit_rows(value, allowed: list[str]) -> list[str]:
+            rows = value if isinstance(value, list) else []
+            by_point = {}
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                point = str(row.get("point") or "").strip()
+                if point:
+                    by_point[point] = row.get("hit") is True
+            return [p for p in allowed if by_point.get(p) is True]
+
+        base_hit = _hit_rows(data.get("base"), base_pts)
+        adv_hit = _hit_rows(data.get("adv"), adv_pts)
+        base_rate = len(base_hit) / len(base_pts) if base_pts else 1.0
+        adv_rate = len(adv_hit) / len(adv_pts) if adv_pts else 0.0
+        score = round((0.6 * base_rate + 0.4 * adv_rate) * 100, 1)
+        return score, base_hit, adv_hit, True
+
+
+class SiliconFlowRerankerScorer:
+    """SiliconFlow rerank API, pointwise scores converted to explicit hits."""
+
+    device = "online"
+    coverage_method = "siliconflow_rerank"
+    coverage_windows = 0
+
+    @property
+    def ready(self) -> bool:
+        return bool(config.RERANK_BASE_URL and config.RERANK_API_KEY
+                    and config.RERANK_MODEL)
+
+    def warmup(self) -> None:
+        return None
+
+    def hit_scores(self, answer: str, base_text: str, adv_text: str
+                   ) -> tuple[float, list[str], list[str], bool]:
+        import httpx
+
+        base_pts = qb.split_points(base_text)
+        adv_pts = qb.split_points(adv_text)
+        docs = base_pts + adv_pts
+        if not docs:
+            return 100.0, [], [], True
+        if not self.ready:
+            return 0.0, [], [], False
+        url = config.RERANK_BASE_URL.rstrip("/")
+        if not url.endswith("/rerank"):
+            url += "/rerank"
+        try:
+            resp = httpx.post(
+                url,
+                headers={"Authorization": f"Bearer {config.RERANK_API_KEY}"},
+                json={
+                    "model": config.RERANK_MODEL,
+                    "query": qb.truncate(answer, config.ANSWER_TRUNCATE),
+                    "documents": docs,
+                    "top_n": len(docs),
+                    "return_documents": False,
+                },
+                timeout=config.RERANK_TIMEOUT,
+            )
+            resp.raise_for_status()
+            rows = resp.json().get("results") or []
+        except Exception:
+            logger.exception("SiliconFlow reranker 调用失败")
+            return 0.0, [], [], False
+
+        scores = {
+            int(row.get("index", -1)): float(row.get("relevance_score") or 0.0)
+            for row in rows if isinstance(row, dict)
+        }
+        base_hit = [
+            p for i, p in enumerate(base_pts)
+            if scores.get(i, 0.0) >= config.RERANK_MIN_SCORE
+        ]
+        adv_hit = [
+            p for i, p in enumerate(adv_pts, start=len(base_pts))
+            if scores.get(i, 0.0) >= config.RERANK_MIN_SCORE
+        ]
+        base_rate = len(base_hit) / len(base_pts) if base_pts else 1.0
+        adv_rate = len(adv_hit) / len(adv_pts) if adv_pts else 0.0
+        score = round((0.6 * base_rate + 0.4 * adv_rate) * 100, 1)
+        return score, base_hit, adv_hit, True
+
+
 # ============================================================
 # 主观五维分
 # ============================================================
+def _clean_dim_score(value) -> tuple[Optional[float], str]:
+    """0-5 分、按 config.SCORE_STEP 步进；非法值不入分，并返回可读原因。"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None, "不是数字"
+    score = float(value)
+    if not math.isfinite(score) or score < 0.0 or score > 5.0:
+        return None, f"{score:g} 超出 0-5"
+    units = score / config.SCORE_STEP
+    if abs(units - round(units)) > 1e-6:
+        return None, f"{score:g} 不是 {config.SCORE_STEP:g} 的整数倍"
+    return round(score, 2), ""
+
+
+_SCORE_CONFIDENCE = {"high", "medium", "low"}
+
+
+def _clean_detail_text(value, limit: int) -> str:
+    return str(value or "").strip()[:limit]
+
+
+def _clean_detail_list(value, limit: int, item_chars: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = _clean_detail_text(item, item_chars)
+        if text and text not in out:
+            out.append(text)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _clean_followup_eval(value) -> list[dict]:
+    """Validate the per-follow-up delta report without inventing missing rows."""
+    if not isinstance(value, list):
+        return []
+    out: list[dict] = []
+    for row in value[:config.MAX_FOLLOW_UP]:
+        if not isinstance(row, dict):
+            continue
+        try:
+            attempt_no = int(row.get("attempt_no"))
+        except (TypeError, ValueError):
+            continue
+        if attempt_no < 2:
+            continue
+        raw_level = str(row.get("probe_level") or "").strip()
+        level = ("degrade" if raw_level.lower() == "degrade"
+                 else raw_level.upper())
+        if level not in {"L1", "L2", "L3", "degrade"}:
+            level = ""
+        target = _clean_detail_text(row.get("target"), 100)
+
+        def _tri(name):
+            v = row.get(name)
+            return v if isinstance(v, bool) else None
+
+        try:
+            gain = int(row.get("depth_gain"))
+        except (TypeError, ValueError):
+            gain = None
+        if gain is not None:
+            gain = max(0, min(2, gain))
+        evidence = _clean_detail_list(row.get("evidence"), 2, 80)
+        if not (level or target or evidence
+                or any(_tri(k) is not None for k in
+                       ("target_hit", "new_information", "corrected_error"))
+                or gain is not None):
+            continue
+        out.append({
+            "attempt_no": attempt_no,
+            "probe_level": level,
+            "target": target,
+            "target_hit": _tri("target_hit"),
+            "new_information": _tri("new_information"),
+            "corrected_error": _tri("corrected_error"),
+            "depth_gain": gain,
+            "evidence": evidence,
+        })
+    return out
+
+
+def _clean_score_detail(value, dim1_aliases: list[str]) -> dict:
+    """校验并裁剪逐维评分依据；缺字段时保持空结构，不影响主五维分。"""
+    empty = {
+        "available": False,
+        "dimensions": {
+            d: {"reason": "", "evidence": [], "confidence": ""}
+            for d in config.DIMENSIONS
+        },
+        "missing_points": [],
+        "misconceptions": [],
+        "followup_eval": [],
+        "confidence": "",
+    }
+    if not isinstance(value, dict):
+        return empty
+
+    raw_dims = value.get("dimensions")
+    raw_dims = raw_dims if isinstance(raw_dims, dict) else {}
+    d0 = config.DIMENSIONS[0]
+    has_any = False
+    for dim in config.DIMENSIONS:
+        payload = raw_dims.get(dim)
+        if not isinstance(payload, dict) and dim == d0:
+            payload = next(
+                (raw_dims.get(alias) for alias in dim1_aliases
+                 if isinstance(raw_dims.get(alias), dict)),
+                None,
+            )
+        if not isinstance(payload, dict):
+            continue
+        reason = _clean_detail_text(payload.get("reason"), 80)
+        evidence = _clean_detail_list(payload.get("evidence"), 3, 80)
+        confidence = _clean_detail_text(payload.get("confidence"), 10).lower()
+        if confidence not in _SCORE_CONFIDENCE:
+            confidence = ""
+        empty["dimensions"][dim] = {
+            "reason": reason,
+            "evidence": evidence,
+            "confidence": confidence,
+        }
+        has_any = has_any or bool(reason or evidence or confidence)
+
+    empty["missing_points"] = _clean_detail_list(
+        value.get("missing_points"), 3, 100)
+    empty["misconceptions"] = _clean_detail_list(
+        value.get("misconceptions"), 3, 100)
+    empty["followup_eval"] = _clean_followup_eval(value.get("followup_eval"))
+    confidence = _clean_detail_text(value.get("confidence"), 10).lower()
+    empty["confidence"] = confidence if confidence in _SCORE_CONFIDENCE else ""
+    empty["available"] = has_any or bool(
+        empty["missing_points"] or empty["misconceptions"]
+        or empty["followup_eval"] or empty["confidence"])
+    return empty
+
+
 class LLMScorer:
     def __init__(self, llm):
         self.llm = llm
@@ -193,6 +551,7 @@ class LLMScorer:
         # category 缺省时 dim1_label 回落到「技术水平」，与今天的行为一致。
         label = config.dim1_label(ctx.get("category", ""))
         user = ROUND_SCORING.safe_substitute(
+            score_step=f"{config.SCORE_STEP:g}",
             dim1_label=label,
             dim1_rubric=config.DIM1_RUBRIC[label],
             question=ctx.get("question", ""),
@@ -204,7 +563,7 @@ class LLMScorer:
             # 传的是**一句话摘要**（含 reranker 失败时的说明），不是一个裸数字。
             # 原来这里是 ctx.get("reranker_score", 50) —— 缺省值 50 意味着
             # reranker 挂掉时会凭空空降一个「客观命中 50 分」给评分模型当真。
-            reranker_note=ctx.get("reranker_note") or "（无客观匹配信息）",
+            reranker_note=ctx.get("reranker_note") or "（无覆盖率信号）",
             # 表达客观测量（用时/语速/停顿/填充词）。缺省值与上面那条同款：
             # 宁可说"没有"，也不给一个假的数字。规则文字由 session.pace_note() 拼。
             pace_note=ctx.get("pace_note") or "（无客观测量数据）",
@@ -220,28 +579,50 @@ class LLMScorer:
 
         d0 = config.DIMENSIONS[0]
         dims = {}
+        invalid = []
         for d in config.DIMENSIONS:
-            v = data.get(d)
-            if isinstance(v, (int, float)):
-                dims[d] = round(float(v), 2)
+            score, why = _clean_dim_score(data.get(d))
+            if score is not None:
+                dims[d] = score
+            elif why and why != "不是数字":
+                invalid.append(f"{d}={why}")
         # 第一维：模型是按**本题型的标签**回键的（行为素质题回「岗位胜任力关联度」）。
         # 这里认全所有标签、归一到存储键 —— 下游（逐轮平均 / 权重加权 /
         # blindspot._avg_five_dim / 3 号）一律不用分情况。
         if d0 not in dims:
             for alias in config.dim1_labels():
-                v = data.get(alias)
-                if isinstance(v, (int, float)):
-                    dims[d0] = round(float(v), 2)
+                score, why = _clean_dim_score(data.get(alias))
+                if score is not None:
+                    dims[d0] = score
                     break
+                if why and why != "不是数字":
+                    invalid.append(f"{alias}={why}")
         if not dims:
             return {}, "返回的 JSON 里没有可用的维度分"
         # 重建一遍，保证键序恒为 DIMENSIONS 序 —— 走上面别名分支时 d0 会排到最后，
         # 而 session.py 拼面试评价时是按 items() 顺序取的。
         dims = {d: dims[d] for d in config.DIMENSIONS if d in dims}
+        errors = [str(x)[:200] for x in (data.get("errors") or []) if str(x).strip()]
+        errors.extend(f"评分值非法：{x}" for x in dict.fromkeys(invalid))
+        raw_cc = data.get("code_check")
+        code_check = {
+            "applicable": False,
+            "correct": None,
+            "note": "",
+        }
+        if isinstance(raw_cc, dict):
+            code_check["applicable"] = raw_cc.get("applicable") is True
+            correct = raw_cc.get("correct")
+            code_check["correct"] = correct if isinstance(correct, bool) else None
+            code_check["note"] = str(raw_cc.get("note") or "")[:200]
+        score_detail = _clean_score_detail(
+            data.get("score_detail"), config.dim1_labels())
         return {
             "five_dim": dims,
             "comment": str(data.get("comment", "") or "")[:200],
-            "errors": [str(x)[:200] for x in (data.get("errors") or []) if str(x).strip()],
+            "errors": errors[:20],
+            "code_check": code_check,
+            "score_detail": score_detail,
         }, None
 
 
@@ -250,7 +631,7 @@ class LLMScorer:
 # ============================================================
 class DepthJudge:
     """
-    直接问模型：这个回答该往深里问、该追基础、还是该降难度？
+    直接问模型：这个回答该做 L3/L2/L1 追问，还是该降级？
 
     为什么不让 reranker 判：它在真实数据上不稳定 —— 只换一下 (得分点, 回答)
     的传参顺序，29% 的题判档就变，最大变动 100 分（详见 config.A11_JUDGE）。
@@ -265,7 +646,7 @@ class DepthJudge:
     # "swap" 是第 4 档，语义上**不是深浅判断而是类别判断**（"这个方向他没学过"），
     # 所以它不参与 fuse_bands 的深浅比较 —— 见 session.fuse_bands 里那条提前返回。
     # 放在最后只是为了让 raw.startswith 的匹配顺序好读；四个前缀互不包含。
-    BANDS = ("L2", "L1", "degrade", "swap")
+    BANDS = ("L3", "L2", "L1", "degrade", "swap")
 
     def __init__(self, llm):
         self.llm = llm
@@ -273,9 +654,10 @@ class DepthJudge:
     def judge(self, question: str, difficulty: str, stage: str,
               base_text: str, adv_text: str, answer: str,
               history: Optional[list[str]] = None
-              ) -> tuple[Optional[str], str, bool]:
+              ) -> tuple[Optional[str], str, str, str, bool]:
         """
-        返回 (档位, 理由, 是否成功)。档位 ∈ L2/L1/degrade；失败时是 None。
+        返回 (档位, 理由, 追问目标, 追问类型, 是否成功)。
+        档位 ∈ L3/L2/L1/degrade；失败时是 None。
 
         history —— 本题**之前**的回答（由旧到新）。第一次回答时是空/None，
                    此时提示词与加这个参数之前**逐字节相同**。
@@ -311,10 +693,10 @@ class DepthJudge:
                                       temperature=config.LLM_TEMPERATURE_SCORE)
         except Exception:
             logger.exception("LLM 判档调用失败，本轮退回 reranker 判档")
-            return None, "", False
+            return None, "", "", "", False
 
         if not data:
-            return None, "", False
+            return None, "", "", "", False
         raw = str(data.get("depth", "") or "").strip().upper()
         # 容错：模型可能回 "L2"、也可能是 "l2 原理深挖" 或 "L2。" 这种。
         # ⚠️ 两边都要 .upper() 再比 —— raw 已经被转成大写，拿它去 startswith
@@ -325,8 +707,20 @@ class DepthJudge:
         band = next((b for b in self.BANDS if raw.startswith(b.upper())), None)
         if band is None:
             logger.warning("LLM 判档返回了无法识别的 depth=%r，本轮退回 reranker", raw)
-            return None, "", False
-        return band, str(data.get("why", "") or "")[:60], True
+            return None, "", "", "", False
+        target = str(data.get("probe_target") or "").strip()[:120]
+        kind = str(data.get("probe_kind") or "").strip().lower()
+        if kind not in (
+                "clarify_basic", "deepen_reason",
+                "extend_engineering", "scaffold"):
+            kind = ""
+        return (
+            band,
+            str(data.get("why", "") or "")[:60],
+            target,
+            kind,
+            True,
+        )
 
 
 def _make_judge(llm) -> Optional["DepthJudge"]:
@@ -352,7 +746,14 @@ def _make_judge(llm) -> Optional["DepthJudge"]:
 # ============================================================
 class Scorer:
     def __init__(self, llm=None):
-        self.reranker = RerankerScorer()
+        if (config.RERANKER_PROVIDER in ("siliconflow",)
+                and not config.RERANKER_MOCK):
+            self.reranker = SiliconFlowRerankerScorer()
+        elif (config.RERANKER_PROVIDER in ("llm", "online")
+                and not config.RERANKER_MOCK):
+            self.reranker = OnlineRerankerScorer(llm=llm)
+        else:
+            self.reranker = RerankerScorer()
         self.llm = LLMScorer(llm) if llm is not None else None
         # 判档器与主观评分器同生共死：同一个 llm、同一道门（_make_judge 里
         # 桩模式直接返回 None）。为 None 时 session 侧退回纯 reranker 判档。
@@ -376,7 +777,14 @@ class Scorer:
                 "base_hit": base_hit, "adv_hit": adv_hit,
                 "base_miss": [p for p in base_all if p not in base_hit],
                 "adv_miss": [p for p in adv_all if p not in adv_hit],
-                "reranker_ok": ok}
+                "reranker_ok": ok,
+                "coverage_method": getattr(
+                    self.reranker, "coverage_method", "full_then_window_max"),
+                "coverage_windows": (
+                    len(answer_windows(answer))
+                    if not hasattr(self.reranker, "coverage_windows")
+                    else self.reranker.coverage_windows
+                )}
 
 
 _scorer: Optional[Scorer] = None
@@ -400,6 +808,8 @@ def get_scorer(llm=None) -> Scorer:
             _scorer = Scorer(llm=llm)
         elif llm is not None and _scorer.llm is None:
             _scorer.llm = LLMScorer(llm)
+            if isinstance(_scorer.reranker, OnlineRerankerScorer):
+                _scorer.reranker.llm = llm
         # 判档器补挂：与上面那个 elif 同一个理由 —— 预热线程可能先建出一个
         # llm=None 的实例。放在 if/elif **之外**、但同在锁内，所以既不会被
         # 那个 if/elif 结构漏掉，也不会被两个线程各建一个。

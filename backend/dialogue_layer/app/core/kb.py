@@ -600,15 +600,15 @@ def interview_query(answer: str,
     ⚠️ **默认档走第一个分支**（`RAG_KB_QUERY_SRC != "miss"` ⇒ 原样返回考生回答，
     `src="answer"`）。下面的回退语义**只作用于保留的实验档**。
 
-    ⚠️ 回退（`answer_fallback`，仅 `"miss"` 档）：漏点一条都拼不出来 = 他**全答到了**
-    （含进阶点）。这时退回考生回答，**不是**为了「总得有材料」，而是为了让这一档两臂
+    ⚠️ 回退（`answer_fallback`，仅 `"miss"` 档）：漏点一条都拼不出来，或拼出来
+    仍短于 `RAG_KB_MIN_CHARS` 时，退回考生回答。它**不再等价于**「他全答到了」——
+    新解析器会保留短编号考点，现实输入可能确实很短。回退**不是**为了「总得有材料」，而是为了让这一档两臂
     **逐字节相同** ⇒ 它只会**稀释**结论（这些轮的 Δ 恒 0），**不会引入混杂**。
     改成「干脆不检索」会让这些轮的两臂差掺进「**有没有材料**」这个无关变量 ——
     `session.py` 已经为「材料放哪」那个变体拒绝过一次同样的做法。
     改成「回退到 `base_points` 全文」更糟：那是**第三种处理**，Δ=0 的前提没了，结论没法归因。
-    ✅ 一条算术（回退几乎只发生在「全答到了」）：`split_points()` 丢掉短于
-    `MIN_POINT_CHARS`(=15) 的行，而漏点正是它的产物 ⇒ **单条漏点最短 15 字 >
-    `RAG_KB_MIN_CHARS`(=12)** ⇒ 只要漏点列表非空就必然过闸。
+    ⚠️ 2026-09-27 起，编号型短考点会被保留，所以单条漏点可能短于
+    `RAG_KB_MIN_CHARS`(=12)；这时同样回退，并记 `answer_fallback`。
 
     ⚠️ `src` 只进**服务日志**（元数据），绝不进 `raw`、绝不进 prompt。
     """
@@ -664,10 +664,20 @@ def kb_status() -> dict:
     `kb_error` 非空才是「坏了」。`kb_n` 只在就绪后才有值。
     """
     k = _kb
+    interview_error = ""
+    if config.A11_RAG_KB and not config.A11_RAG:
+        interview_error = ("A11_RAG=0：面试期知识库检索只借不载，"
+                           "当前没有可借用的编码器，本轮不会注入背景材料")
+    elif config.A11_RAG_KB and k is not None and k.error:
+        interview_error = k.error
     return {
         "kb_enabled": config.A11_KB_REC,
         "kb_ready": bool(k is not None and k.usable),
         "kb_error": (k.error if k is not None else ""),
         "kb_n": (k.n if (k is not None and k.usable) else 0),
         "kb_dir": config.KB_DIR,
+        "kb_interview_enabled": config.A11_RAG_KB,
+        "kb_interview_ready": bool(config.A11_RAG_KB and config.A11_RAG
+                                   and k is not None and k.usable),
+        "kb_interview_error": interview_error,
     }

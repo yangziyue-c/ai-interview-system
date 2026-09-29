@@ -31,10 +31,15 @@ blindspot.py · 知识盲区诊断（纯结构化，不加 LLM 调用）
      直接拿来诊断会把「出了题没答」读成「考了 0 分」。一律用本文件里显式
      返回 None 的取值。
   3. **hit 是 Optional[bool]，绝不用 False 冒充「没答上来」**：
-     True  = 有一轮 reranker 客观判他答到了（复用既有阈值 LEVEL_L1_MIN，不自创）
-     False = 有客观依据地判他没答到
-     None  = 无法判定（该轮没答题，或 reranker 全程不可用）
+     True  = 两个客观信号里**任一个**说答到了（复用既有阈值 LEVEL_L1_MIN，不自创）
+     False = 两个信号都有读数、且都说没答到
+     None  = 两个信号都没读数（该轮没答题，或 reranker 与判档器全程都不可用）
      与 reranker_5 / tech_gap 的「None = 数据不足，不是 0」约定一致。
+
+     ⚠️ **2026-09-27 改过口径**（理由与三个过滤条件见下面 hit 判定处的长注释）：
+     旧口径只看**每个覆盖轮最后一次作答**的 reranker 分，一次判不了就整轮作废；
+     新口径两个信号都按**整轮**取「任意一次」，且 LLM 判档器单独也能给出「答到了」。
+     字段含义变了 ⇒ `review.py` 的 `REVIEW_VERSION` 同步升到 2。
 """
 from typing import Optional
 
@@ -89,6 +94,15 @@ def _kp_map(kg, qid: str, knowledge_points: Optional[list[dict]]) -> dict[str, d
             for kid, title in kgmod.kp_map_bank(knowledge_points).items()}
 
 
+# 只有这两个档算「答到了」。degrade 是「这题没答上来」、swap 是「这题就不该问他」，
+# 都是负面 —— 判档器给出它们时不能算 hit。
+#
+# ⚠️ 与 `session.py:601` 的 `BAND_L1` / `BAND_L2` 是**同一批字面量**，这里是镜像：
+#    不能 import session（`session.py:31` 反过来 import 本模块，会成环），
+#    所以照 `SOFT_TAGS` 那条先例抄一份。那边改了，这里要跟着改。
+HIT_BANDS = ("L1", "L2", "L3")
+
+
 def _round_facts(rec) -> dict:
     """
     单轮的客观事实。**不复用 RoundRecord.last_score / last_ok** ——
@@ -98,11 +112,18 @@ def _round_facts(rec) -> dict:
     att = rec.attempts[-1] if rec.attempts else None
     # reranker 失败时 hit_scores 返回的是**兜底 50.0**，那个假分不能进任何统计
     ok_scores = [float(a.reranker_score) for a in rec.attempts if a.reranker_ok]
+    # 判档信号（第二路证据）。整轮**任意一次**判档成功且判成 L1/L2 ⇒ True；
+    # 判过但一次都没到 L1 ⇒ False；一次都没判出来（没建判档器 / 全超时）⇒ None。
+    # ⚠️ **不是末次键控** —— 本函数里 reranker_ok / last_score 取的是末次，
+    #    本字段刻意与它们不同：一轮的末次回答常是收尾那句（常被判 degrade），
+    #    拿末次判「答没答到」会系统性漏判。
+    judged = [a for a in rec.attempts if a.judge_ok]
     return {
         "attempts": len(rec.attempts),
         "reranker_ok": (bool(att.reranker_ok) if att else None),
         "best_score": (max(ok_scores) if ok_scores else None),
         "last_score": (float(att.reranker_score) if (att and att.reranker_ok) else None),
+        "judge_hit": (any(a.judge_band in HIT_BANDS for a in judged) if judged else None),
         "five_dim": (dict(rec.five_dim) if rec.five_dim else None),
         "degrade_used": int(rec.degrade_used or 0),
         "follow_ups_used": int(rec.follow_ups_used or 0),
@@ -171,6 +192,7 @@ def diagnose(rounds: list, kg=None, job: Optional[str] = None) -> dict:
                     "hit": None, "rounds": [], "question_ids": [],
                     "appearances": 0, "src": v["src"],
                     "best_score": None, "last_score": None,
+                    "hit_src": None,
                     "per_round": [],
                 }
             e["appearances"] += 1
@@ -186,6 +208,10 @@ def diagnose(rounds: list, kg=None, job: Optional[str] = None) -> dict:
                 "reranker_ok": f["reranker_ok"],
                 "best_score": f["best_score"],
                 "last_score": f["last_score"],
+                # 判档信号的三态读数（True/False/None），见 _round_facts。
+                # ⚠️ 刻意**不带 judge_why** —— 那个字段在给 4 号的契约里是「仅排查用」
+                #    （交接说明-给4号.md:54），而 per_round 离 review 只差一次重构。
+                "judge_hit": f["judge_hit"],
                 "five_dim": f["five_dim"],
                 "degrade_used": f["degrade_used"],
                 "base_miss": f["base_miss"],
@@ -203,14 +229,43 @@ def diagnose(rounds: list, kg=None, job: Optional[str] = None) -> dict:
     dom_resolved = 0
 
     for e in kps.values():
-        # hit：任一覆盖轮**客观判他答到了**。
-        # 复用既有已校准的阈值 LEVEL_L1_MIN，不自创一个。
-        # p["reranker_ok"] is True 蕴含 p["last_score"] is not None（见 _round_facts）。
-        # 注意这里**不看 best_score** —— 若某轮最后一次回答时 reranker 挂了，
-        # 这一轮就是「判不了」，不能拿它早先的分数替它下结论。
-        judged = [p for p in e["per_round"] if p["reranker_ok"] is True]
-        e["hit"] = (any(p["last_score"] >= config.LEVEL_L1_MIN for p in judged)
-                    if judged else None)
+        # ---------- hit：两个信号取「或」（2026-09-27 改口径，**推翻了旧口径**） ----------
+        # 旧口径只看每个覆盖轮**最后一次作答**的 reranker 分，并且明写「不看 best_score」，
+        # 理由是防 reranker 挂掉时返回的**兜底 50.0 假分**。那条顾虑在新口径下**仍然防住了**
+        # —— _round_facts 的 ok_scores 只收 reranker_ok 的尝试，兜底分进不来。
+        # 真正被推翻的是另一件事：**某轮最后一次判不了时，同轮更早的真实分不再被一并作废**，
+        # 而且 LLM 判档器单独说「答到了」也算数。
+        #
+        # 动机是一场真跑（sid 49f6e471，2026-09-27 我当考生）：
+        #   · 第 3 题三次作答 reranker 给 56 / 12 / 22，末次 22 < 30 ⇒ 该题挂的 3 个考点
+        #     全判「没答到」，而 LLM 判档三次都是 L2 —— 报告与面试过程互相打脸；
+        #   · 第 2 题首次 90、后两次 0 ⇒ 「内存碎片」被判薄弱，与总评里的「强项」直接冲突。
+        #
+        # 三个过滤条件都是刻意的，别顺手改回去：
+        #   1) 覆盖率侧用 `best_score is not None`（**不是** `reranker_ok is True`）：
+        #      _round_facts 的 reranker_ok 取的是**末次**，best_score 取的是**所有 ok 次**，
+        #      用前者等于把刚拆掉的「末次偏置」在下一层重新装回来。
+        #   2) 判档侧用整轮的 `judge_hit` 三态（**不读** per_round 里的 judge_ok / judge_band）：
+        #      那两个值是末次键控，而一轮的末次回答恰恰常是收尾那句（常被判 degrade），
+        #      读它们会把刚拆掉的偏置在判档侧原样装回来 ⇒ 系统性漏判。
+        #   3) 只有 L1 / L2 算「答到了」：swap 与 degrade 都是负面（见 HIT_BANDS）。
+        #
+        # 桩模式不变式：桩下判档器根本不建（_make_judge(MockLLM()) is None）⇒ judge_hit 恒为
+        # None ⇒ jd == [] ⇒ 本式**逐字节退化**成 `any(best_score >= LEVEL_L1_MIN)`，
+        # 样例生成链（gen_samples.py 的两条硬断言）依赖这一点。
+        rr = [p for p in e["per_round"] if p["best_score"] is not None]
+        jd = [p for p in e["per_round"] if p.get("judge_hit") is not None]
+        rr_hit = any(p["best_score"] >= config.LEVEL_L1_MIN for p in rr)
+        jd_hit = any(p["judge_hit"] for p in jd)
+        e["hit"] = (rr_hit or jd_hit) if (rr or jd) else None
+        # 这个考点是**靠哪个信号**判出来的。只给排查用（3 号 的报告不展示它）。
+        # hit 为 None（两个信号都没读数）时没有 hit_src。
+        e["hit_src"] = (None if e["hit"] is None else
+                        "both_hit" if (rr_hit and jd_hit) else
+                        "reranker_hit" if rr_hit else
+                        "judge_hit" if jd_hit else
+                        "both_miss" if (rr and jd) else
+                        "reranker_only_miss" if rr else "judge_only_miss")
 
         if e["hit"] is True:
             kp_hit += 1

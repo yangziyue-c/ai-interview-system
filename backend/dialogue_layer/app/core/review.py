@@ -20,6 +20,14 @@ review 就是把这份诊断**搬出来、翻成人话、配一个今天就能�
      **不是**漏点 —— 单列 `uncovered[]`，并在 `caveats` 里**明说它不是漏点**。
      （`blindspot.domains[].kps_weak` 用的是更宽的 `hit is not True`，**不许混用**。）
 
+     ⚠️ **2026-09-27 起 `hit=False` 的含义变了**：不再是「最后一次回答的覆盖率没到线」，
+     而是**覆盖率与判档（LLM）两个信号都有读数、且都说没答到**（`blindspot` 里
+     `hit_src` 记的就是靠哪个信号判的）。所以 `REVIEW_VERSION` 同步升到 2。
+     两条随之而来的约束：
+       ① `actions[]` 只给**有数值 `best_score`** 的漏点开动作 —— 否则 `/practice`
+          会返 409 `no_weak_point`，那等于给考生一个点不动的按钮；
+       ② 「判档单独判负、覆盖率那一路没读数」的这批要单独在 `caveats` 里交代。
+
   2. **绝不出现得分点原文**：只出**考点名** + **条数**。`per_round[]`（里面装着
      `base_miss`/`adv_miss` 原文）与 `recommendations[].missed_points` 一律不读。
      它是 `raw` 之外**又一处无论 `A11_RAW_DETAIL` 都会出门**的字段 ⇒ 冒烟里有一条
@@ -71,7 +79,10 @@ from app.logging_conf import get_logger
 logger = get_logger(__name__)
 
 # 清单结构版本。**前端可以据此判断字段语义**；变了意味着字段含义变了。
-REVIEW_VERSION = 1
+#   1 → 2（2026-09-27）：`hit=False` 的口径从「最后一次回答的覆盖率没到线」改成
+#     「覆盖率与判档两个信号都读到、且都说没答到」；`actions[]` 只收有数值
+#     `best_score` 的漏点；caveats 相应多一句。结构本身没动，**语义动了**。
+REVIEW_VERSION = 4
 
 
 def _str(v, default: str = "") -> str:
@@ -140,14 +151,35 @@ def _advice(k: dict) -> str:
        『索引优化』…先把（题库没记下是哪几题）重新讲一遍」。**没有题号就换一句**，
        不拿括号短语去填主语的坑。
     """
+    miss = []
+    if k.get("missed_base"):
+        miss.append(f"{k['missed_base']} 个基础点")
+    if k.get("missed_adv"):
+        miss.append(f"{k['missed_adv']} 个进阶点")
+    miss_txt = ("漏掉的是 " + "、".join(miss) + "。") if miss else ""
     if not k["rounds"]:
-        return (f"「{k['title']}」这个考点这一次没答到。"
-                f"建议：把当时那一段重新讲一遍（不看答案，讲给自己听），"
+        return (f"「{k['title']}」这个考点这一次没答到。{miss_txt}"
+                f"建议：按「结论、原因、例子、取舍」重新讲一遍（不看答案），"
                 f"再用专项练习重练这个考点。")
     where = _rounds_text(k["rounds"])
-    return (f"{where}考的就是「{k['title']}」，这一次没答到。"
-            f"建议：先把{where}重新讲一遍（不看答案，讲给自己听），"
-            f"再用专项练习重练这个考点。")
+    return (f"{where}考的就是「{k['title']}」，这一次没答到。{miss_txt}"
+            f"建议：先把{where}按「结论、原因、例子、取舍」重新讲一遍"
+            f"（不看答案，讲给自己听），再用专项练习重练这个考点。")
+
+
+def _next_steps(k: dict) -> list[str]:
+    """给考生的可执行步骤。只使用计数与题号，不读取得分点原文。"""
+    steps: list[str] = []
+    if k.get("missed_base"):
+        steps.append(f"补齐 {k['missed_base']} 个基础点：先讲定义和机制，再各补一个例子。")
+    if k.get("missed_adv"):
+        steps.append(f"补齐 {k['missed_adv']} 个进阶点：增加边界条件、工程取舍或真实案例。")
+    if k.get("rounds"):
+        steps.append(f"把{_rounds_text(k['rounds'])}重新讲一遍，录音后检查有没有只给结论、没讲原因。")
+    else:
+        steps.append("把当时那一段重新讲一遍，录音后检查有没有只给结论、没讲原因。")
+    steps.append(f"用专项练习重练「{k['title']}」，练完对比两次覆盖率。")
+    return steps
 
 
 def _min_opt(a, b):
@@ -198,6 +230,20 @@ def _merge_by_topic(kps: list[dict]) -> list[dict]:
     return out
 
 
+def _effective_answer_count(raw: dict) -> Optional[int]:
+    """从 raw 逐次作答里数有效回答。没有逐次明细时返回 None，不误判整场无效。"""
+    n = 0
+    saw_exchange = False
+    for r in (raw.get("rounds") or []):
+        if not isinstance(r, dict):
+            continue
+        for ex in (r.get("exchanges") or []):
+            saw_exchange = True
+            if isinstance(ex, dict) and ex.get("effective", True) is not False:
+                n += 1
+    return n if saw_exchange else None
+
+
 def build_review(env: dict) -> dict:
     """
     从 `/finish`（或 `/result`）的响应体里取一份**给考生看的复盘清单**。
@@ -223,9 +269,17 @@ def build_review(env: dict) -> dict:
     #    考生看的是主题数，与 digest 对账看的是原始考点条目数。
     kps = _merge_by_topic(kps_raw)
 
-    gaps = [k for k in kps if k["hit"] is False]
-    covered = [k for k in kps if k["hit"] is True]
-    uncovered = [k for k in kps if k["hit"] is None]
+    effective_n = _effective_answer_count(raw)
+    no_effective = effective_n == 0
+    if no_effective:
+        # 没有有效回答时，系统不能把“未答到”升级成“薄弱点”。
+        gaps = []
+        covered = []
+        uncovered = list(kps)
+    else:
+        gaps = [k for k in kps if k["hit"] is False]
+        covered = [k for k in kps if k["hit"] is True]
+        uncovered = [k for k in kps if k["hit"] is None]
 
     # 排序：漏得最多的先看 → 分数低的先看 → kp_id 稳定序。
     #   `best_score` 是 None（没数据）时排最后（口径 4：绝不当 0 顶）。
@@ -238,7 +292,9 @@ def build_review(env: dict) -> dict:
 
     n_seen = len(kps)
     n_hit, n_gap, n_unc = len(covered), len(gaps), len(uncovered)
-    if n_seen == 0:
+    if no_effective:
+        headline = "本场所有回答都没有提供有效技术内容，无法判断具体考点的薄弱程度。"
+    elif n_seen == 0:
         headline = "这场没有可用于复盘的考点诊断（可能整场没评出分，或题库没给这几题挂考点）。"
     else:
         # ⚠️ 0 的那一档**不报**（文案 QA 抓到：「0 个答到了、0 个没答到、2 个判不了」）。
@@ -262,8 +318,14 @@ def build_review(env: dict) -> dict:
     # 下一步：只给**漏点**，最多 config.REVIEW_MAX_ACTIONS 条，指向已有功能
     # （`/practice` 收 kp_id ⇒ 4 号 能一键开练）。动作文案是**给考生看的**，
     # 不带端点名；机器字段（kind/kp_id）才是给 4 号 挂钩子用的。
+    # ⚠️ 只给**有数值 best_score** 的漏点开动作：`/practice` 的 `_weak_of`
+    #    （practice.py:110-113）要求数值 best_score，否则返 409 `no_weak_point`
+    #    —— 那等于给考生一个点不动的按钮。判档单独判负、覆盖率那一路没读数的那批
+    #    照旧出现在 `gaps[]` 里（清单不藏），但不开动作，并在 caveats 里交代一句。
+    actionable = [] if no_effective else [k for k in gaps if k["best_score"] is not None]
+    n_no_score = len(gaps) - len(actionable)
     actions = []
-    for k in gaps[:config.REVIEW_MAX_ACTIONS]:
+    for k in actionable[:config.REVIEW_MAX_ACTIONS]:
         actions.append({
             "kind": "practice",
             "kp_id": k["kp_id"],
@@ -273,6 +335,8 @@ def build_review(env: dict) -> dict:
         })
 
     caveats: list[str] = []
+    if no_effective:
+        caveats.append("“未覆盖”不等于“薄弱”：本场没有有效回答，不能据此判断你会或不会。")
     failed = raw.get("scoring_failed_rounds")
     failed_n = len(failed) if isinstance(failed, list) else 0
     if failed_n:
@@ -281,13 +345,18 @@ def build_review(env: dict) -> dict:
     if uncovered:
         caveats.append(f"「判不了」的 {len(uncovered)} 个考点是指这场没有可用于判分的"
                        f"轮次（没问到，或那几轮评分失败），不算漏点。")
+    if n_no_score:
+        caveats.append(f"有 {n_no_score} 个「没答到」的考点这次没有可量化的覆盖率"
+                       f"（判档说没答到，但那几轮覆盖率没测出来），"
+                       f"暂时开不出专项练习。")
     if env.get("partial") is True and not failed_n:
         caveats.append("这场有轮次没评出分，分数与清单都不完整。")
     if _str(raw.get("mode")) == "practice":
         caveats.append("这是专项练习场次，题量与阶段设计和正式面试不同，"
                        "不与正式成绩横向比较。")
-    caveats.append("「没答到」是判分系统对「这一轮回答」的判定（未达及格线），"
-                   "不代表你完全不会这个考点；换个问法可能就答上了。")
+    caveats.append("「没答到」是判分系统这一场对这个考点的总体判定（覆盖率没到及格线，"
+                   "或判档判了降级 / 这个方向没接触过），不代表你完全不会这个考点；"
+                   "换个问法可能就答上了。")
     caveats.append("这份清单只到考点这一层；具体哪句说得好、哪句该展开，"
                    "看成绩单正文那段评价。")
 
@@ -300,7 +369,8 @@ def build_review(env: dict) -> dict:
         "job": _str(raw.get("job")) or _str(env.get("job")),
         "mode": _str(raw.get("mode")),
         "headline": headline,
-        "gaps": [dict(k, advice=_advice(k)) for k in gaps],
+        "gaps": [dict(k, advice=_advice(k), next_steps=_next_steps(k))
+                 for k in gaps],
         "covered": covered,
         "uncovered": uncovered,
         "actions": actions,
@@ -313,6 +383,7 @@ def build_review(env: dict) -> dict:
             "topics_missed": len(gaps),
             "topics_uncovered": len(uncovered),
             "kps_raw": len(kps_raw),
+            "effective_answers": effective_n if effective_n is not None else 0,
             "rounds_asked": raw.get("questions_asked")
                             if isinstance(raw.get("questions_asked"), int) else 0,
             "rounds_scored": scored_n,

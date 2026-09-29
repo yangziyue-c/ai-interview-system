@@ -10,6 +10,7 @@ llm.py · DeepSeek 客户端（OpenAI 兼容接口）
 LLM_MOCK=1 时启用本地桩：不联网、不烧额度，用于冒烟测试。
 """
 import json
+import re
 import time
 from typing import Generator, Optional
 
@@ -86,21 +87,41 @@ class DeepSeekClient:
         不要拿 {} 当 0 分用 —— 那是"评分失败"和"考得很差"的混淆）。
         """
         t = config.LLM_TEMPERATURE_SCORE if temperature is None else temperature
-        text = ""
-        try:
+
+        def _json_call(msgs: list[Message], temp: float) -> str:
             resp = self._client.chat.completions.create(
                 model=self.model,
-                messages=[{"role": "system", "content": system}] + messages,
-                temperature=t,
+                messages=[{"role": "system", "content": system}] + msgs,
+                temperature=temp,
                 response_format={"type": "json_object"},  # DeepSeek JSON 模式
             )
-            text = (resp.choices[0].message.content or "").strip()
+            return (resp.choices[0].message.content or "").strip()
+
+        text = ""
+        try:
+            text = _json_call(messages, t)
         except Exception as e:
             # JSON 模式不被支持时退回普通模式，而不是直接失败
             logger.warning("JSON 模式不可用（%s），退回普通模式重试", e)
             text = self.chat(system, messages, temperature=t)
 
         data = _extract_json(text)
+        if not data:
+            # JSON 偶发截断/尾逗号/转义错误时，再给模型一次只修格式的机会。
+            # 这次失败才真正返回 {}；不要拿一个临时格式错误当“考生没答好”。
+            repair = messages + [{
+                "role": "user",
+                "content": ("上一次输出不是合法 JSON。请保持原有评分内容，"
+                            "只重新输出一个完整、合法的 JSON 对象；"
+                            "不要 markdown，不要解释，不要省略括号或引号。"),
+            }]
+            try:
+                text2 = _json_call(repair, 0.0)
+                data = _extract_json(text2)
+                if not data:
+                    text = text2
+            except Exception:
+                logger.exception("评分 JSON 修复重试失败")
         if not data:
             logger.error("评分 JSON 解析失败，原文前 300 字：%s", text[:300])
         return data
@@ -117,16 +138,20 @@ def _extract_json(text: str) -> dict:
         if s.lower().startswith("json"):
             s = s[4:]
         s = s.strip()
-    try:
-        obj = json.loads(s)
+    def _load(candidate: str) -> dict:
+        # JSON 模式偶发带尾逗号/控制字符；先做最小的确定性修复。
+        candidate = re.sub(r",\s*([}\]])", r"\1", candidate)
+        obj = json.loads(candidate, strict=False)
         return obj if isinstance(obj, dict) else {}
+
+    try:
+        return _load(s)
     except Exception:
         pass
     i, j = s.find("{"), s.rfind("}")
     if i >= 0 and j > i:
         try:
-            obj = json.loads(s[i:j + 1])
-            return obj if isinstance(obj, dict) else {}
+            return _load(s[i:j + 1])
         except Exception:
             return {}
     return {}
@@ -159,6 +184,18 @@ class MockLLM:
         self.last_system = ""
         self.last_messages: list[Message] = []
         self.calls = 0
+        # 测试用的**单次开关**：置 True 之后，追问轮也返回收尾式的话（不带问句）。
+        # 存在的唯一理由是 `session` 的收尾污染守卫（`needs_question`）——
+        # 那条代码要跑，得先有一个"面试官该提问却没提问"的回复，而默认桩
+        # 在追问轮**永远**返回带问句的 `_MOCK_REPLY`（那是刻意的，见上）。
+        # 于是冒烟里那条路径永不触发、等于没覆盖。这个开关让冒烟能真的走到它。
+        # ⚠️ 它**只影响桩**，且默认 False ⇒ 不开启时行为与加这个字段之前逐字节相同。
+        self.force_wrapup = False
+        # 同上，另一个测试用单次开关：置成一个**场外考点名**之后，总评里会带上它
+        # （且**不加** `[[ ]]` 标注）⇒ 走 `summary_guard` 的外来标题扫描那条路。
+        # 用来在冒烟里真的跑到"重生一次 → 仍不过 → 确定性兜底"这条链路，
+        # 而不用去连真模型。空串 = 关。
+        self.force_alien = ""
 
     def _record(self, system, messages):
         self.last_system = system
@@ -171,13 +208,48 @@ class MockLLM:
         from app.core.prompts import CLOSE_DIRECTIVE
         return any(m.get("content") == CLOSE_DIRECTIVE for m in (messages or []))
 
+    def _reply_text(self, messages) -> str:
+        if self._is_close(messages) or self.force_wrapup:
+            return _MOCK_CLOSE
+        return _MOCK_REPLY
+
+    def _is_summary(self, system) -> bool:
+        """这次请求是不是**整场总评**？`MockLLM` 里只有总评走 `chat()`。"""
+        return "负责写面试评价" in (system or "")
+
+    def _summary_text(self, messages) -> str:
+        """
+        桩版总评。**必须照真模型的契约来写**（提到考点就用 `[[考点名]]` 标出、
+        且只用清单里的名字）—— 否则一开 `A11_SUMMARY_GUARD` 就会成片走到
+        "没有标注 ⇒ 重生 ⇒ 兜底"，冒烟的 summary 全变成兜底文案，
+        既没覆盖到正常路径，又会打掉一批既有断言。
+        与 `chat_json` 里那段"第一维按题型标签回键"是同一条纪律：
+        **桩要模仿真模型的形状，不然桩会把 bug 掩盖掉。**
+        """
+        body = "".join(m.get("content", "") for m in (messages or []))
+        names: list[str] = []
+        for line in body.splitlines():
+            if "考点：" not in line:
+                continue
+            for n in line.split("考点：", 1)[1].split("、"):
+                n = n.strip()
+                if n and "未绑" not in n and n not in names:
+                    names.append(n)
+        tagged = (("第 1 题的 " + "、".join(f"[[{n}]]" for n in names[:2]))
+                  if names else "本场没有测出明确的知识点")
+        tail = f"另外值得注意的是 {self.force_alien}。" if self.force_alien else ""
+        return (f"[MOCK] 本场整体表现平稳。强项集中在 {tagged} 这一块，"
+                f"薄弱点是原理层面的展开还不够深。建议把关键机制讲到实现层再练一轮。{tail}")
+
     def chat(self, system, messages, temperature=None) -> str:
         self._record(system, messages)
-        return "[MOCK] " + (_MOCK_CLOSE if self._is_close(messages) else _MOCK_REPLY)
+        if self._is_summary(system):
+            return self._summary_text(messages)
+        return "[MOCK] " + self._reply_text(messages)
 
     def chat_stream(self, system, messages, temperature=None):
         self._record(system, messages)
-        text = _MOCK_CLOSE if self._is_close(messages) else _MOCK_REPLY
+        text = self._reply_text(messages)
         for piece in text:
             yield piece
 
@@ -191,7 +263,26 @@ class MockLLM:
         scores = dict(_MOCK_SCORES)
         if config.DIM1_LABEL_BEHAVIORAL in text:
             scores[config.DIM1_LABEL_BEHAVIORAL] = scores.pop(config.DIMENSIONS[0])
-        return dict(scores, comment="[MOCK] 桩评分", errors=[])
+        detail = {
+            dim: {
+                "reason": "[MOCK] 桩评分依据",
+                "evidence": ["[MOCK] 桩证据"],
+                "confidence": "medium",
+            }
+            for dim in scores
+        }
+        return dict(
+            scores,
+            comment="[MOCK] 桩评分",
+            errors=[],
+            score_detail={
+                "dimensions": detail,
+                "missing_points": [],
+                "misconceptions": [],
+                "followup_eval": [],
+                "confidence": "medium",
+            },
+        )
 
 
 # ============================================================

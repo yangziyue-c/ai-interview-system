@@ -36,7 +36,11 @@ import re
 import tempfile
 import threading
 import time
+import mimetypes
+import base64
 from typing import Optional
+
+import httpx
 
 from app import config
 from app.core.rag import free_mb          # 复用，不抄第二份（方案 §四 明确要求）
@@ -67,8 +71,21 @@ SPEECH_EMPTY = {
     "chars_per_min": None,  # 语速（字/分）
     "pauses": None,         # 长停顿次数（相邻段间隔 > PAUSE_MIN_MS）
     "pause_total_ms": None, # 长停顿累计毫秒
+    "pause_rate_per_min": None, # 长停顿次数 / 净说话分钟
+    "speech_start_delay_ms": None, # 从音频开头到第一段人声的静音
     "fillers": None,        # 填充词个数
     "filler_rate": None,    # 填充词占字数比
+    # 可选的真实音高变化；当前本地管线尚未产出时不伪造。
+    "pitch_variation": None,
+    # 个人基线：累计 2 轮且 >=10 秒后才启用，之后当前轮与基线比较。
+    "baseline_used": False,
+    "baseline_samples": 0,
+    "baseline_speech_ms": 0,
+    "baseline_chars_per_min": None,
+    "baseline_pause_rate_per_min": None,
+    "baseline_loudness_cv": None,
+    "baseline_tail_ratio": None,
+    "baseline_deviation": None,
     # ---- 韵律：音量三指标（赛题 3b「语气自信度」的**可解释**那一半）----
     # ⚠️ 量的单位是「**窗**」不是「VAD 人声段」：人声先按**不超过 3 秒**等分切窗
     #    （`_loudness_windows`，2026-09-25 改）。原来一人声段出一个数，而 silero
@@ -121,6 +138,7 @@ def derive_speech(text: str, duration_ms: Optional[int] = None,
                   loudness: Optional[float] = None,
                   loudness_cv: Optional[float] = None,
                   tail_ratio: Optional[float] = None,
+                  pitch_variation: Optional[float] = None,
                   emotion: Optional[str] = None,
                   emotion_score: Optional[float] = None,
                   emotion_dist: Optional[dict] = None) -> dict:
@@ -185,6 +203,16 @@ def derive_speech(text: str, duration_ms: Optional[int] = None,
         long_gaps = [g for g in gaps if g > PAUSE_MIN_MS]
         out["pauses"] = len(long_gaps)
         out["pause_total_ms"] = int(sum(long_gaps))
+    if out["pauses"] is not None:
+        out["pause_rate_per_min"] = round(
+            float(out["pauses"]) / (duration_ms / 60000.0), 2)
+    if segs:
+        try:
+            starts = [int(s["start_ms"]) for s in segs]
+            if starts:
+                out["speech_start_delay_ms"] = max(0, min(starts))
+        except (TypeError, ValueError):
+            pass
 
     # 填充词：在**去标点**的文本上数字面量（whisper 加不加逗号不稳定，
     # 在带标点的原文上数会把「嗯，那个」数漏）。
@@ -204,6 +232,8 @@ def derive_speech(text: str, duration_ms: Optional[int] = None,
         out["loudness_cv"] = float(loudness_cv)
     if tail_ratio is not None:
         out["tail_ratio"] = float(tail_ratio)
+    if pitch_variation is not None:
+        out["pitch_variation"] = float(pitch_variation)
     if emotion is not None:
         out["emotion"] = str(emotion)
     if emotion_score is not None:
@@ -216,6 +246,76 @@ def derive_speech(text: str, duration_ms: Optional[int] = None,
     #    「取值域封闭」那条论证。`pace_note()` 需要时**重算**一次即可 ——
     #    `confidence_band()` 是纯函数，同一组输入永远给同一句话。
     out["confidence"] = confidence_band(out["loudness_cv"], out["tail_ratio"])[0]
+    return out
+
+
+def _median(values: list[float]) -> Optional[float]:
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+
+def apply_personal_baseline(speech: Optional[dict],
+                            history: Optional[list[dict]] = None,
+                            min_samples: int = 2,
+                            min_speech_ms: int = 10000) -> dict:
+    """Add relative-to-person features without changing absolute speech data."""
+    out = dict(speech or SPEECH_EMPTY)
+    valid = [
+        dict(row) for row in (history or [])
+        if isinstance(row, dict) and row.get("used")
+        and row.get("duration_ms") is not None
+    ]
+    total_ms = sum(int(row.get("duration_ms") or 0) for row in valid)
+    out["baseline_samples"] = len(valid)
+    out["baseline_speech_ms"] = total_ms
+    if len(valid) < min_samples or total_ms < min_speech_ms:
+        return out
+
+    def baseline(key: str):
+        vals = [float(row[key]) for row in valid
+                if row.get(key) is not None]
+        return _median(vals) if vals else None
+
+    base_speed = baseline("chars_per_min")
+    base_pause = baseline("pause_rate_per_min")
+    base_cv = baseline("loudness_cv")
+    base_tail = baseline("tail_ratio")
+    out.update({
+        "baseline_used": True,
+        "baseline_chars_per_min": (round(base_speed, 1)
+                                   if base_speed is not None else None),
+        "baseline_pause_rate_per_min": (round(base_pause, 2)
+                                        if base_pause is not None else None),
+        "baseline_loudness_cv": (round(base_cv, 4)
+                                 if base_cv is not None else None),
+        "baseline_tail_ratio": (round(base_tail, 4)
+                                if base_tail is not None else None),
+    })
+
+    deviations: list[float] = []
+    speed = out.get("chars_per_min")
+    if speed is not None and base_speed:
+        deviations.append(min(1.0, abs(float(speed) - base_speed)
+                              / max(30.0, base_speed)))
+    pause = out.get("pause_rate_per_min")
+    if pause is not None and base_pause is not None:
+        deviations.append(min(1.0, abs(float(pause) - base_pause)
+                              / max(1.0, base_pause + 1.0)))
+    cv = out.get("loudness_cv")
+    if cv is not None and base_cv is not None:
+        deviations.append(min(1.0, abs(float(cv) - base_cv)
+                              / max(0.15, base_cv + 0.15)))
+    tail = out.get("tail_ratio")
+    if tail is not None and base_tail is not None:
+        deviations.append(min(1.0, abs(float(tail) - base_tail)
+                              / max(0.25, abs(base_tail) + 0.25)))
+    out["baseline_deviation"] = (
+        round(sum(deviations) / len(deviations), 3) if deviations else None)
     return out
 
 
@@ -266,6 +366,11 @@ def speech_regions(audio, sampling_rate: int = 16000) -> list:
 CONFIDENCE_LOW = "偏低"
 CONFIDENCE_MID = "中等"
 CONFIDENCE_HIGH = "偏高"
+
+# 情感模型口径。当前默认模型在英语表演式情感语料上训练，中文没有可靠标注；
+# 因此输出保留为原始韵律信号，不把标签包装成中文情绪结论。
+EMOTION_RELIABILITY = "low_for_chinese"
+EMOTION_USAGE = "prosody_signal_only"
 
 # 喂给情感模型的最长**人声**秒数。为什么必须有这个上限（2026-09-25 实测）：
 #   · 慢：CPU 上约 65ms/秒音频 —— 40 秒就是 2.7 秒，而这一层是加在 `/asr` 上的，
@@ -371,6 +476,67 @@ def loudness_metrics(audio, regions: list, sampling_rate: int = 16000) -> dict:
         var = sum((x - mean) ** 2 for x in rms) / len(rms)
         out["loudness_cv"] = round((var ** 0.5) / mean, 4)
         out["tail_ratio"] = round(rms[-1] / mean, 4)
+    return out
+
+
+def pitch_metrics(audio, regions: list,
+                  sampling_rate: int = 16000) -> dict:
+    """Estimate pitch variation from voiced frames without another model.
+
+    This is deliberately conservative: low-energy or ambiguous frames are
+    ignored, and fewer than eight voiced frames returns None instead of a
+    fabricated number.
+    """
+    out = {"pitch_variation": None, "pitch_voiced_frames": 0}
+    if audio is None or not regions:
+        return out
+    try:
+        import numpy as np
+        a = np.asarray(audio, dtype="float32").reshape(-1)
+    except Exception:
+        return out
+    if a.size < 1024:
+        return out
+    win = 1024
+    hop = max(1, int(0.04 * sampling_rate))
+    min_lag = max(1, int(sampling_rate / 350.0))
+    max_lag = min(win - 1, int(sampling_rate / 80.0))
+    window = np.hanning(win).astype("float32")
+    pitches = []
+    for region in regions or []:
+        try:
+            s = max(0, int(region["start_ms"]) * sampling_rate // 1000)
+            e = min(a.size, int(region["end_ms"]) * sampling_rate // 1000)
+        except (KeyError, TypeError, ValueError):
+            continue
+        for start in range(s, max(s, e - win + 1), hop):
+            frame = a[start:start + win].astype("float32")
+            if frame.size < win:
+                break
+            rms = float(np.sqrt(float(np.mean(frame * frame))))
+            if rms < 0.008:
+                continue
+            frame = (frame - float(np.mean(frame))) * window
+            spectrum = np.fft.rfft(frame)
+            ac = np.fft.irfft(spectrum * np.conjugate(spectrum))
+            denom = float(ac[0])
+            if denom <= 1e-9:
+                continue
+            lag_slice = ac[min_lag:max_lag + 1]
+            if lag_slice.size == 0:
+                continue
+            offset = int(np.argmax(lag_slice))
+            corr = float(lag_slice[offset] / denom)
+            if corr < 0.30:
+                continue
+            lag = min_lag + offset
+            pitch = sampling_rate / max(1, lag)
+            if 70.0 <= pitch <= 350.0:
+                pitches.append(pitch)
+    out["pitch_voiced_frames"] = len(pitches)
+    if len(pitches) >= 8:
+        logs = np.log(np.asarray(pitches, dtype="float64"))
+        out["pitch_variation"] = round(float(np.std(logs)), 4)
     return out
 
 
@@ -594,12 +760,26 @@ def emotion_status() -> dict:
        而同一次请求真的去转写时又会变 true。这个差别写在这里，别被误读成
        「模型坏了」—— 那是 `emotion_error` 非空才代表的事。
     """
+    if config.A11_ASR_PROVIDER in ("sensevoice", "sensevoice_small",
+                                   "sherpa_onnx"):
+        return {
+            "emotion_enabled": config.A11_ASR_EMOTION,
+            "emotion_ready": config.A11_ASR_EMOTION,
+            "emotion_error": "",
+            "emotion_model": "sensevoice-small-int8",
+            "emotion_reliability": EMOTION_RELIABILITY,
+            "emotion_usage": EMOTION_USAGE,
+        }
     if not config.A11_ASR_EMOTION:
         return {"emotion_enabled": False, "emotion_ready": False,
-                "emotion_error": "", "emotion_model": ""}
+                "emotion_error": "", "emotion_model": "",
+                "emotion_reliability": EMOTION_RELIABILITY,
+                "emotion_usage": EMOTION_USAGE}
     eng = get_emotion()
     return {"emotion_enabled": True, "emotion_ready": eng.usable,
-            "emotion_error": eng.error, "emotion_model": eng.model_id}
+            "emotion_error": eng.error, "emotion_model": eng.model_id,
+            "emotion_reliability": EMOTION_RELIABILITY,
+            "emotion_usage": EMOTION_USAGE}
 
 
 # ============================================================
@@ -616,6 +796,7 @@ class AsrEngine:
     """
 
     def __init__(self):
+        self.provider = config.A11_ASR_PROVIDER
         self.model_name = config.A11_ASR_MODEL
         self.device = config.A11_ASR_DEVICE
         self.compute_type = config.A11_ASR_COMPUTE_TYPE
@@ -623,15 +804,20 @@ class AsrEngine:
         self.warmup_sec: Optional[float] = None
         self.last_elapsed_ms: Optional[int] = None
         self._model = None
+        self._sensevoice = None
+        self._vad_config = None
         self._failed = False
         self._loading = False          # 有线程正在加载（别的请求别再起一个）
         self._ready_ev = threading.Event()
         self._lock = threading.Lock()
+        self._vad_lock = threading.Lock()
 
     # ---------- 标签 ----------
     @property
     def tag(self) -> str:
         """进 /health 与 `speech.asr_model`。换档位后历史语速口径会变，靠它分辨。"""
+        if self.provider in ("sensevoice", "sensevoice_small", "sherpa_onnx"):
+            return "sensevoice-small-int8"
         return f"faster-whisper-{self.model_name}({self.compute_type})"
 
     @property
@@ -642,6 +828,28 @@ class AsrEngine:
     @property
     def loading(self) -> bool:
         return self._loading and not self._ready_ev.is_set()
+
+    def _ensure_vad_config(self) -> None:
+        """Load only the small VAD model when acoustic metrics are needed."""
+        if self._vad_config is not None:
+            return
+        with self._vad_lock:
+            if self._vad_config is not None:
+                return
+            import sherpa_onnx
+
+            vad_path = os.path.join(
+                config.SENSEVOICE_MODEL_DIR, "silero_vad.onnx")
+            if not os.path.isfile(vad_path):
+                return
+            cfg = sherpa_onnx.VadModelConfig()
+            cfg.silero_vad.model = vad_path
+            cfg.silero_vad.threshold = 0.5
+            cfg.silero_vad.min_silence_duration = 1.5
+            cfg.silero_vad.min_speech_duration = 0.25
+            cfg.sample_rate = 16000
+            cfg.num_threads = 1
+            self._vad_config = cfg
 
     # ---------- 加载 ----------
     def load(self) -> None:
@@ -673,6 +881,34 @@ class AsrEngine:
                 logger.info("ASR 内存预检通过：空闲 %s MB（门槛 %d MB）",
                             avail if avail is not None else "未知",
                             config.A11_ASR_MIN_FREE_MB)
+
+                if self.provider in ("sensevoice", "sensevoice_small",
+                                     "sherpa_onnx"):
+                    import sherpa_onnx
+
+                    root = config.SENSEVOICE_MODEL_DIR
+                    model_path = os.path.join(root, "model.int8.onnx")
+                    tokens_path = os.path.join(root, "tokens.txt")
+                    vad_path = os.path.join(root, "silero_vad.onnx")
+                    missing = [
+                        p for p in (model_path, tokens_path) if not os.path.isfile(p)
+                    ]
+                    if missing:
+                        raise FileNotFoundError(
+                            "SenseVoice 模型文件缺失：" + "、".join(missing))
+                    self._sensevoice = sherpa_onnx.OfflineRecognizer.from_sense_voice(
+                        model=model_path,
+                        tokens=tokens_path,
+                        num_threads=config.A11_ASR_NUM_THREADS,
+                        use_itn=True,
+                        language="zh",
+                    )
+                    self._ensure_vad_config()
+                    self._model = "sensevoice"
+                    self.warmup_sec = time.time() - t0
+                    logger.info("ASR 就绪 provider=sensevoice model=%s 耗时 %.1fs",
+                                self.tag, self.warmup_sec)
+                    return
 
                 # ② 真加载（这里才 import faster_whisper）
                 from faster_whisper import WhisperModel
@@ -723,6 +959,50 @@ class AsrEngine:
             return "ready"
         return "failed" if self._failed else "loading"
 
+    def analyze_audio(self, path: str, text: str = "",
+                      asr_model: str = "") -> dict:
+        """Measure VAD, pauses, loudness and pitch without running ASR."""
+        t0 = time.time()
+        audio = self._decode_audio_av(path, sampling_rate=16000)
+        audio_ms = int(len(audio) / 16000 * 1000)
+        if audio_ms > config.A11_ASR_MAX_SEC * 1000:
+            raise AudioTooLong(
+                f"音频 {audio_ms / 1000:.1f} 秒 > 上限 "
+                f"{config.A11_ASR_MAX_SEC} 秒")
+        regions = self._sensevoice_regions(audio)
+        net_ms = sum(r["end_ms"] - r["start_ms"] for r in regions)
+        speech = derive_speech(text, duration_ms=net_ms, segments=regions)
+        loud = {"loudness": None, "loudness_cv": None, "tail_ratio": None}
+        pitch = {"pitch_variation": None, "pitch_voiced_frames": 0}
+        if regions:
+            try:
+                loud = loudness_metrics(audio, regions)
+            except Exception as e:
+                logger.warning("在线 ASR 路径音量测量失败：%s", e)
+            try:
+                pitch = pitch_metrics(audio, regions)
+            except Exception as e:
+                logger.warning("在线 ASR 路径音高测量失败：%s", e)
+        return {
+            "text": str(text or "").strip(),
+            "audio_ms": audio_ms,
+            "duration_ms": net_ms,
+            "segments": regions,
+            "pauses": speech["pauses"],
+            "pause_total_ms": speech["pause_total_ms"],
+            "elapsed_ms": int((time.time() - t0) * 1000),
+            "asr_model": asr_model or self.tag,
+            "loudness": loud["loudness"],
+            "loudness_cv": loud["loudness_cv"],
+            "tail_ratio": loud["tail_ratio"],
+            "pitch_variation": pitch["pitch_variation"],
+            "emotion": None,
+            "emotion_score": None,
+            "emotion_dist": None,
+            "emotion_reliability": EMOTION_RELIABILITY,
+            "emotion_usage": EMOTION_USAGE,
+        }
+
     # ---------- 转写 ----------
     def transcribe(self, path: str) -> dict:
         """
@@ -749,6 +1029,9 @@ class AsrEngine:
         """
         if config.A11_ASR_MOCK:
             return self._mock_result()
+
+        if self.provider in ("sensevoice", "sensevoice_small", "sherpa_onnx"):
+            return self._transcribe_sensevoice(path)
 
         from faster_whisper import WhisperModel      # noqa: F401  （仅为类型可读性）
         from faster_whisper.audio import decode_audio
@@ -808,11 +1091,16 @@ class AsrEngine:
         #    情感模型没装不该连累转写，转写更不该因为这两个附加项而失败。
         #    这与上面 VAD 那段同一条姿态：附加测量失败就降级成 None，如实报出来。
         loud = {"loudness": None, "loudness_cv": None, "tail_ratio": None}
+        pitch = {"pitch_variation": None, "pitch_voiced_frames": 0}
         if regions:
             try:
                 loud = loudness_metrics(audio, regions)
             except Exception as e:
                 logger.warning("音量三指标测量失败，记 None（本次转写照常）：%s", e)
+            try:
+                pitch = pitch_metrics(audio, regions)
+            except Exception as e:
+                logger.warning("音高变化测量失败，记 None（本次转写照常）：%s", e)
         emo = None
         try:
             emo = get_emotion().infer(audio, regions)
@@ -834,9 +1122,163 @@ class AsrEngine:
             "loudness": loud["loudness"],
             "loudness_cv": loud["loudness_cv"],
             "tail_ratio": loud["tail_ratio"],
+            "pitch_variation": pitch["pitch_variation"],
             "emotion": (emo or {}).get("emotion"),
             "emotion_score": (emo or {}).get("emotion_score"),
             "emotion_dist": (emo or {}).get("emotion_dist"),
+            "emotion_reliability": EMOTION_RELIABILITY,
+            "emotion_usage": EMOTION_USAGE,
+        }
+
+    @staticmethod
+    def _decode_audio_av(path: str, sampling_rate: int = 16000):
+        """Decode any browser/container format to mono float32 with PyAV."""
+        import av
+        import numpy as np
+
+        container = av.open(path)
+        try:
+            stream = container.streams.audio[0]
+            resampler = av.AudioResampler(
+                format="flt", layout="mono", rate=sampling_rate)
+            chunks = []
+            for frame in container.decode(stream):
+                out = resampler.resample(frame)
+                if out is None:
+                    continue
+                if not isinstance(out, list):
+                    out = [out]
+                chunks.extend(f.to_ndarray().reshape(-1) for f in out)
+            out = resampler.resample(None)
+            if out:
+                if not isinstance(out, list):
+                    out = [out]
+                chunks.extend(f.to_ndarray().reshape(-1) for f in out)
+        finally:
+            container.close()
+        if not chunks:
+            return np.zeros(0, dtype="float32")
+        return np.concatenate(chunks).astype("float32", copy=False)
+
+    def _sensevoice_regions(self, audio) -> list[dict]:
+        self._ensure_vad_config()
+        if self._vad_config is None:
+            return [{"start_ms": 0,
+                     "end_ms": int(len(audio) / 16000 * 1000)}]
+        import sherpa_onnx
+
+        duration_sec = len(audio) / 16000
+        vad = sherpa_onnx.VoiceActivityDetector(
+            self._vad_config,
+            buffer_size_in_seconds=max(60, int(duration_sec) + 2),
+        )
+        # Silero VAD 期望按固定窗口喂入；整段一次喂会丢掉前面的 internal state，
+        # 实测第一段起点会错误地落到音频尾部。
+        for i in range(0, len(audio), 512):
+            vad.accept_waveform(audio[i:i + 512])
+        vad.flush()
+        regions = []
+        while not vad.empty():
+            seg = vad.front
+            start = int(seg.start / 16000 * 1000)
+            end = int((seg.start + len(seg.samples)) / 16000 * 1000)
+            if end > start:
+                regions.append({"start_ms": start, "end_ms": end, "text": ""})
+            vad.pop()
+        if not regions:
+            regions = [{"start_ms": 0,
+                        "end_ms": int(len(audio) / 16000 * 1000),
+                        "text": ""}]
+        return regions
+
+    def _transcribe_sensevoice(self, path: str) -> dict:
+        """
+        SenseVoiceSmall + Silero VAD, fully local via sherpa-onnx.
+
+        SenseVoice returns token timestamps directly, so we can build subtitle
+        segments without carrying the old faster-whisper runtime.
+        """
+        if self._sensevoice is None:
+            raise RuntimeError("SenseVoice 尚未加载")
+        t0 = time.time()
+        audio = self._decode_audio_av(path, sampling_rate=16000)
+        audio_ms = int(len(audio) / 16000 * 1000)
+        if audio_ms > config.A11_ASR_MAX_SEC * 1000:
+            raise AudioTooLong(
+                f"音频 {audio_ms / 1000:.1f} 秒 > 上限 {config.A11_ASR_MAX_SEC} 秒")
+
+        stream = self._sensevoice.create_stream()
+        stream.accept_waveform(16000, audio)
+        self._sensevoice.decode_stream(stream)
+        result = stream.result
+        text = str(getattr(result, "text", "") or "").strip()
+        tokens = list(getattr(result, "tokens", None) or [])
+        timestamps = list(getattr(result, "timestamps", None) or [])
+        if not text and tokens:
+            text = "".join(str(t) for t in tokens).strip()
+
+        regions = self._sensevoice_regions(audio)
+        segments = []
+        for region in regions:
+            start_s = region["start_ms"] / 1000
+            end_s = region["end_ms"] / 1000
+            pieces = [
+                str(tok) for tok, ts in zip(tokens, timestamps)
+                if start_s - 0.15 <= float(ts) < end_s
+            ]
+            txt = "".join(pieces).strip()
+            if txt:
+                segments.append({
+                    "start_ms": region["start_ms"],
+                    "end_ms": region["end_ms"],
+                    "text": txt,
+                })
+        if not segments and text:
+            segments = [{
+                "start_ms": 0,
+                "end_ms": audio_ms,
+                "text": text,
+            }]
+
+        net_ms = sum(r["end_ms"] - r["start_ms"] for r in regions)
+        speech = derive_speech(text, duration_ms=net_ms, segments=regions)
+        loud = {"loudness": None, "loudness_cv": None, "tail_ratio": None}
+        pitch = {"pitch_variation": None, "pitch_voiced_frames": 0}
+        try:
+            loud = loudness_metrics(audio, regions)
+        except Exception as e:
+            logger.warning("SenseVoice 音量三指标测量失败：%s", e)
+        try:
+            pitch = pitch_metrics(audio, regions)
+        except Exception as e:
+            logger.warning("SenseVoice 音高变化测量失败：%s", e)
+
+        emotion_map = {
+            "<|NEUTRAL|>": "neu",
+            "<|HAPPY|>": "hap",
+            "<|ANGRY|>": "ang",
+            "<|SAD|>": "sad",
+        }
+        raw_emotion = str(getattr(result, "emotion", "") or "").upper()
+        emotion = emotion_map.get(raw_emotion) if config.A11_ASR_EMOTION else None
+        self.last_elapsed_ms = int((time.time() - t0) * 1000)
+        return {
+            "text": text,
+            "audio_ms": audio_ms,
+            "duration_ms": net_ms,
+            "segments": segments,
+            "pauses": speech["pauses"],
+            "pause_total_ms": speech["pause_total_ms"],
+            "elapsed_ms": self.last_elapsed_ms,
+            "loudness": loud["loudness"],
+            "loudness_cv": loud["loudness_cv"],
+            "tail_ratio": loud["tail_ratio"],
+            "pitch_variation": pitch["pitch_variation"],
+            "emotion": emotion,
+            "emotion_score": None,
+            "emotion_dist": ({emotion: 1.0} if emotion else None),
+            "emotion_reliability": EMOTION_RELIABILITY,
+            "emotion_usage": EMOTION_USAGE,
         }
 
     def _mock_result(self) -> dict:
@@ -855,6 +1297,7 @@ class AsrEngine:
         # tail_ratio < 1、loudness_cv > 0）。桩不许给出自相矛盾的数字 ——
         # 那是给 4 号看的样例，自相矛盾的样例会被照抄进前端。
         loud = {"loudness": 0.0525, "loudness_cv": 0.1429, "tail_ratio": 0.8571}
+        pitch = {"pitch_variation": 0.1832}
         # 情感：**跟着开关走**，否则 `A11_ASR_EMOTION=0` 时桩会凭空报出情感，
         # 与真服务（那几个键恒 None）在同一个开关下给出两套行为 —— 桩就失去意义了。
         # 分布**和为 1**（真服务由 softmax 保证，桩必须自己对上）。
@@ -874,8 +1317,144 @@ class AsrEngine:
             "pauses": 1,
             "pause_total_ms": 2200,
             "elapsed_ms": 1,
-            **loud, **emo,
+            "emotion_reliability": EMOTION_RELIABILITY,
+            "emotion_usage": EMOTION_USAGE,
+            **loud, **pitch, **emo,
         }
+
+
+class OnlineAsrEngine:
+    """Online ASR used only after explicit user consent.
+
+    The default provider is DashScope's native multimodal endpoint
+    (qwen-audio-3.1-asr-flash), which accepts a Data URL with base64 audio.
+    An OpenAI-compatible /audio/transcriptions adapter is kept as a fallback
+    for deployments that provide such an endpoint.
+    """
+
+    def __init__(self):
+        self.provider = config.A11_ASR_ONLINE_PROVIDER
+        self.model = config.A11_ASR_ONLINE_MODEL
+        self.error = ""
+        self.last_elapsed_ms: Optional[int] = None
+
+    @property
+    def ready(self) -> bool:
+        return bool(
+            config.A11_ASR_ONLINE
+            and config.A11_ASR_ONLINE_BASE_URL
+            and config.A11_ASR_ONLINE_API_KEY
+            and config.A11_ASR_ONLINE_MODEL
+        )
+
+    @property
+    def tag(self) -> str:
+        return f"online:{self.provider}:{self.model}"
+
+    def transcribe(self, path: str) -> dict:
+        if not self.ready:
+            raise RuntimeError("在线 ASR 未配置")
+        t0 = time.time()
+        filename = os.path.basename(path)
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        try:
+            if self.provider in (
+                    "dashscope", "dashscope_multimodal", "qwen_audio"):
+                body = self._transcribe_dashscope(path, content_type)
+                output = body.get("output") or {}
+                text = str(
+                    output.get("text")
+                    or ((output.get("output") or {}).get("text"))
+                    or ((output.get("output") or {}).get("sentence") or {}).get("text")
+                    or ""
+                ).strip()
+                sentence = (
+                    ((output.get("output") or {}).get("sentence"))
+                    or output.get("sentence")
+                    or {}
+                )
+                segments = []
+                if sentence:
+                    segments = [{
+                        "start_ms": int(sentence.get("begin_time") or 0),
+                        "end_ms": int(sentence.get("end_time") or 0),
+                        "text": str(sentence.get("text") or text),
+                    }]
+            else:
+                body = self._transcribe_openai(path, filename, content_type)
+                text = str(body.get("text") or "").strip()
+                segments = body.get("segments") or []
+            if not text:
+                raise RuntimeError(f"在线 ASR 未返回文字：{str(body)[:200]}")
+            self.last_elapsed_ms = int((time.time() - t0) * 1000)
+            return {
+                "text": text,
+                "elapsed_ms": self.last_elapsed_ms,
+                "asr_model": self.tag,
+                "segments": segments,
+            }
+        except Exception as e:
+            self.error = f"{type(e).__name__}: {e}"
+            raise
+
+    def _transcribe_dashscope(self, path: str, content_type: str) -> dict:
+        base = config.A11_ASR_ONLINE_BASE_URL.rstrip("/")
+        url = (base if base.endswith("/multimodal-generation/generation")
+               else base + "/services/aigc/multimodal-generation/generation")
+        with open(path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode("ascii")
+        payload = {
+            "model": self.model,
+            "input": {
+                "messages": [{
+                    "role": "user",
+                    "content": [{
+                        "type": "input_audio",
+                        "input_audio": {
+                            "data": f"data:{content_type};base64,{encoded}",
+                        },
+                    }],
+                }],
+            },
+            "parameters": {
+                "format": os.path.splitext(path)[1].lstrip(".") or "wav",
+                "sample_rate": "16000",
+            },
+        }
+        resp = httpx.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {config.A11_ASR_ONLINE_API_KEY}",
+                "Content-Type": "application/json",
+                "X-DashScope-SSE": "disable",
+            },
+            json=payload,
+            timeout=config.A11_ASR_ONLINE_TIMEOUT,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    @staticmethod
+    def _transcribe_openai(path: str, filename: str, content_type: str) -> dict:
+        base = config.A11_ASR_ONLINE_BASE_URL.rstrip("/")
+        url = base if base.endswith("/audio/transcriptions") else (
+            base + "/audio/transcriptions")
+        with open(path, "rb") as f:
+            resp = httpx.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {config.A11_ASR_ONLINE_API_KEY}",
+                },
+                data={
+                    "model": config.A11_ASR_ONLINE_MODEL,
+                    "language": config.A11_ASR_LANGUAGE,
+                    "response_format": "json",
+                },
+                files={"file": (filename, f, content_type)},
+                timeout=config.A11_ASR_ONLINE_TIMEOUT,
+            )
+        resp.raise_for_status()
+        return resp.json()
 
 
 class AudioTooLong(ValueError):
@@ -887,6 +1466,8 @@ class AudioTooLong(ValueError):
 # ============================================================
 _asr: Optional[AsrEngine] = None
 _asr_lock = threading.Lock()
+_online_asr: Optional[OnlineAsrEngine] = None
+_online_asr_lock = threading.Lock()
 
 
 def get_asr() -> Optional[AsrEngine]:
@@ -906,14 +1487,30 @@ def get_asr() -> Optional[AsrEngine]:
     return _asr
 
 
+def get_online_asr() -> OnlineAsrEngine:
+    global _online_asr
+    if _online_asr is None:
+        with _online_asr_lock:
+            if _online_asr is None:
+                _online_asr = OnlineAsrEngine()
+    return _online_asr
+
+
 def asr_status() -> dict:
     """ /health 用。区分「关掉」与「失败」，理由同 kg_status() / rag_status()。"""
     e = _asr
+    online = get_online_asr()
     return {
         "asr_enabled": config.A11_ASR,
         "asr_ready": bool(e is not None and e.usable),
         "asr_error": (e.error if e is not None else ""),
         "asr_model": (e.tag if e is not None else ""),
+        "asr_provider": config.A11_ASR_PROVIDER,
+        "online_asr_enabled": config.A11_ASR_ONLINE,
+        "online_asr_ready": online.ready,
+        "online_asr_provider": config.A11_ASR_ONLINE_PROVIDER,
+        "online_asr_model": config.A11_ASR_ONLINE_MODEL,
+        "online_asr_error": online.error,
     }
 
 

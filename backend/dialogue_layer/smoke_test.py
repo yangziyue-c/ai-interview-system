@@ -66,9 +66,11 @@ from app.core.kg import CoverageTracker, deepen_directions  # noqa: E402
 from app.core.llm import MockLLM, get_llm                  # noqa: E402
 from app.core.prompts import (CLOSE_DIRECTIVE, DEEPEN_BLOCK_EMPTY,
                               HINT_BLOCK_CLOSE, INTERVIEWER_SYSTEM,
+                              NO_INFO_CLOSE_REPLIES, NO_INFO_DEGRADE_REPLIES,
+                              NO_INFO_WITH_HINT_REPLIES,
                               RAG_BLOCK_EMPTY, RAG_KB_BLOCK,
                               RAG_KB_BLOCK_EMPTY, ROUND_CONTEXT,
-                              ROUND_SCORING)               # noqa: E402
+                              ROUND_SCORING, WRAPUP_NUDGE)  # noqa: E402
 from app.core.session import (AttemptRecord, RoundRecord,
                               load_persona)                # noqa: E402
 
@@ -321,6 +323,16 @@ def play(client, job: str, answer_maker, label: str, quiet: bool = False):
 
         if nx.get("finished"):
             ok(True, f"/next 正常收尾（reason={nx.get('reason')}）")
+            # 收尾那句 `message` 是**给考生看的**（2026-09-27 改）。
+            # 原来写的是"请调用 /finish 结束面试" —— 把内部端点名摆到了考生面前，
+            # 而这个字段经 `_finished_payload` → `NextResp` 直接下发。
+            # `reason` 是机器信号，**不动**；这里只管文案。
+            _fmsg = nx.get("message") or ""
+            ok(not any(t in _fmsg for t in ("/finish", "/next", "题库")),
+               "收尾文案里没有内部端点名（/finish、/next）也没有「题库」",
+               _fmsg)
+            ok("交卷" in _fmsg or "成绩单" in _fmsg,
+               "收尾文案说的是**考生该做的事**（交卷 / 看成绩单）", _fmsg)
             break
 
         rno = nx.get("q_index")
@@ -412,7 +424,13 @@ def play(client, job: str, answer_maker, label: str, quiet: bool = False):
             ok(d.get("reranker_band") == _band_of(d.get("reranker_score") or 0.0),
                f"第 {rno} 题第 {attempts} 答：reranker_band 与覆盖率自洽"
                f"（{d.get('reranker_score')} → {d.get('reranker_band')}）")
-            if config.LLM_MOCK:
+            if d.get("effective") is False:
+                ok(d.get("fuse_rule") in ("no_effective", "no_effective_swap"),
+                   f"第 {rno} 题第 {attempts} 答：无效回答走确定性短路",
+                   str(d.get("fuse_rule")))
+                ok(d.get("judge_ok") is True,
+                   f"第 {rno} 题第 {attempts} 答：无效回答已确定性判定，不再伪装成判档失败")
+            elif config.LLM_MOCK:
                 # 桩模式下判档整个不参与，融合必须恒等于 reranker 那一档 ——
                 # 这就是"关掉后行为与加判档之前逐字节相同"的机器化断言。
                 ok(d.get("judge_ok") is False,
@@ -436,7 +454,25 @@ def play(client, job: str, answer_maker, label: str, quiet: bool = False):
                 stats["close_turns"] += 1
                 stats["close_asked"] += ("？" in text) or ("?" in text)
 
-            if client.inproc and _LLM is not None:
+            if (client.inproc and _LLM is not None
+                    and d.get("effective") is False):
+                # 无效回答由确定性话术处理，不再调用面试官 LLM。
+                # 因而不应期望收尾旁白或 HINT_BLOCK_CLOSE 出现在某次新请求里。
+                if d.get("action") == "close":
+                    ok(text in NO_INFO_CLOSE_REPLIES,
+                       f"第 {rno} 题第 {attempts} 答：无效收尾用确定性话术")
+                else:
+                    ok(text in NO_INFO_DEGRADE_REPLIES
+                       or any(text.startswith(
+                           t.template.split("$hint", 1)[0])
+                           for t in NO_INFO_WITH_HINT_REPLIES),
+                       f"第 {rno} 题第 {attempts} 答：无效降级用确定性话术",
+                       repr(text))
+                ok("本题" not in text and "不作能力评价" not in text,
+                   f"第 {rno} 题第 {attempts} 答：现场话术不是报告语言")
+                ok("抓住" not in text and "主干" not in text,
+                   f"第 {rno} 题第 {attempts} 答：无效回答不被硬夸")
+            elif client.inproc and _LLM is not None:
                 passed = any(m.get("content") == CLOSE_DIRECTIVE
                              for m in _LLM.last_messages)
                 if d.get("action") == "close":
@@ -504,6 +540,18 @@ def play(client, job: str, answer_maker, label: str, quiet: bool = False):
     ok(isinstance(fin.get("weights"), str), "/finish.weights 是字符串（前端当字符串拼）")
     ok(isinstance(fin.get("summary"), str) and fin["summary"],
        "/finish.summary 是非空字符串")
+    # 总评护栏（2026-09-27）：这一场是默认档（开着），summary 必须**过了护栏**。
+    # 桩版总评照真模型契约带 `[[考点名]]` 标注（见 llm.MockLLM._summary_text），
+    # 所以这两条真的在验东西：括号该被剥掉、且不该掉进确定性兜底。
+    _sm = fin.get("summary") or ""
+    ok("[[" not in _sm and "［［" not in _sm,
+       "/finish.summary 里没有残留的 [[考点名]] 标注", _sm[:200])
+    if (fin.get("raw") or {}).get("effective_rounds") == 0:
+        ok("没有提供有效技术内容" in _sm,
+           "/finish.summary 在无效场次走确定性说明，不再评价个人能力", _sm[:200])
+    else:
+        ok("[MOCK]" in _sm,
+           "/finish.summary 走的是模型那一版、不是确定性兜底", _sm[:200])
     fda = fin.get("five_dim_avg") or {}
     ok(set(fda.keys()) <= set(config.DIMENSIONS),
        "/finish.five_dim_avg 的键都是五维名", str(list(fda.keys())))
@@ -530,12 +578,16 @@ def play(client, job: str, answer_maker, label: str, quiet: bool = False):
        "raw.rounds[0].tech_gap 是数值或 None（数据不足时不许填 0）",
        f"实际 {r0.get('tech_gap')!r}")
     if r0.get("reranker_5") is not None:
-        ok(1.0 <= r0["reranker_5"] <= 5.0,
-           "reranker_5 归一在 1-5 之间", f"实际 {r0['reranker_5']}")
+        ok(0.0 <= r0["reranker_5"] <= 5.0,
+           "reranker_5 归一在 0-5 之间", f"实际 {r0['reranker_5']}")
     ex = (r0.get("exchanges") or [{}])[0]
     for k in ("answer", "reranker_score", "base_hit", "adv_hit", "follow_up_level",
-              "base_miss", "adv_miss"):
+              "base_miss", "adv_miss", "coverage_method", "coverage_windows"):
         ok(k in ex, f"raw.rounds[0].exchanges[0] 有字段 {k}")
+    ok(ex.get("coverage_method") in ("full_then_window_max", "no_effective_answer")
+       and isinstance(ex.get("coverage_windows"), int),
+       "raw 记录覆盖率算法与切窗数（报告能区分覆盖率信号和正确性判断）",
+       f"{ex.get('coverage_method')} / {ex.get('coverage_windows')}")
     ok(isinstance(ex.get("base_miss"), list) and isinstance(ex.get("adv_miss"), list),
        "exchanges[0] 的未命中点是列表（评分模型复核的依据）")
 
@@ -782,7 +834,209 @@ def scoring_bridge():
     守的是**输入**：明细要真的递进评分 Prompt，reranker 失败时不许拿默认分冒充。
     真模型是随机的，断言不了它的输出，所以断言我们喂进去的东西。
     """
-    section("▸ reranker → LLM 传导（明细下传 / 失败不冒充 / 可复核）")
+    section("▸ 得分点解析 / 长答切窗 / reranker → LLM 传导")
+
+    # ---- 0. 结构解析：短编号考点保留，标题/代码/示例元数据仍要丢掉 ----
+    from app.core import question_bank as QB
+    parsed = QB.split_points(
+        "【基础得分点】\n"
+        "1. 渠道对账\n"
+        "2. Redis 原子扣减\n"
+        "代码如下:\n"
+        "return result;\n"
+        "示例 1：\n"
+        "这是一个未编号但足够长的有效考点说明。"
+    )
+    ok("1. 渠道对账" in parsed and "2. Redis 原子扣减" in parsed,
+       "短编号考点不再被 15 字门槛误删", str(parsed))
+    ok("代码如下:" not in parsed and "return result;" not in parsed
+       and "示例 1：" not in parsed,
+       "标题、代码和示例元数据在结构解析里被过滤", str(parsed))
+
+    # 题库里有一批追问把题目自带的词写成了“你之前提到 X”。考生没说过也必须
+    # 能安全显示，去掉归属措辞后只保留技术问题。
+    _follow = QB.parse_follow_up(
+        "[触发] 基础得分点答出时触发\n"
+        "[追问] 重写和你之前提到的重载有什么联系和区别？"
+    )
+    ok("之前提到" not in _follow and "重写和重载" in _follow,
+       "追问里的错误归因会被清理成中性问法", _follow)
+
+    from app.core import session as SS
+    _r = _bare_round()
+    _r.raw[QB.F_FOLLOW_L1] = (
+        "[触发] 基础得分点答出时触发\n"
+        "[追问] 重写和你之前提到的重载有什么联系和区别？"
+    )
+    _r.raw[QB.F_DEGRADE] = (
+        "如果候选人一时答不上来，先引导聚焦核心概念："
+        "「不用展开全部，先说说重写在你理解里是做什么用的？一句话即可。」"
+        "若仍卡壳，给一个具体场景：「假设在项目中要用到重写，你第一步会做什么？」"
+    )
+    _hint = SS._guiding_hint(_r)
+    ok("之前提到" not in _hint and "不用展开全部" in _hint,
+       "“我不知道”优先读题库降级引导，不照读误归因的 L1 追问", _hint)
+    _r.raw[QB.F_DEGRADE] = (
+        "如果候选人回答困难，降低问题粒度："
+        "「先不用讲原理，SSO 和单点登录你更熟悉哪个？说说你知道的部分就行。」")
+    _r.round_no = 1
+    _h1 = SS._guided_no_info_reply(_r, 1, "standard")
+    _r.round_no = 2
+    _h2 = SS._guided_no_info_reply(_r, 1, "standard")
+    ok("先不用讲原理" not in _h1
+       and "说说你知道的部分就行" not in _h1
+       and _h1 != _h2,
+       "“我不知道”会剥掉题库套话，并在连续题目间轮换引导话术",
+       _h1 + " / " + _h2)
+
+    _probe1 = SS.build_probe_plan(
+        "L1", _bare_round(),
+        {"base_miss": ["基础缺口甲"], "adv_miss": ["进阶缺口乙"]})
+    _probe2 = SS.build_probe_plan(
+        "L2", _bare_round(),
+        {"base_miss": ["基础缺口甲"], "adv_miss": ["进阶缺口乙"]})
+    _probe3 = SS.build_probe_plan(
+        "L3", _bare_round(deepen=[{"title": "高并发下的失败恢复"}]),
+        {"base_miss": [], "adv_miss": []})
+    ok(_probe1.get("target") == "基础缺口甲"
+       and _probe2.get("target") == "进阶缺口乙"
+       and _probe3.get("kind") == "extend_engineering"
+       and not SS.build_probe_plan("close", _bare_round(), {}),
+       "追问规划：一轮只选一个目标，L1 取基础、L2 取进阶、L3 取工程落地、close 不发追问",
+       f"{_probe1} / {_probe2} / {_probe3}")
+
+    _comb_ok = SS.combine_scores(4, 4, "high", "high")
+    _comb_gap = SS.combine_scores(4, 2, "high", "high")
+    _comb_weak = SS.combine_scores(4, 4, "low", "high")
+    ok(_comb_ok["score"] == 4.0 and _comb_ok["confidence"] == "high"
+       and abs(_comb_ok["objective_weight"] + _comb_ok["subjective_weight"] - 1) < 1e-9,
+       "合成分：高置信一致时权重和为 1，分数不被无故改动", str(_comb_ok))
+    ok(abs(_comb_gap["score"] - 3.1) < 1e-9
+       and _comb_gap["agreement"] == "low"
+       and _comb_gap["confidence"] == "low",
+       "合成分：客观/主观差距大时降低合成分置信度", str(_comb_gap))
+    ok(abs(_comb_weak["objective_weight"] - 0.05) < 1e-9
+       and _comb_weak["confidence"] == "low",
+       "合成分：客观线低置信时自动降权", str(_comb_weak))
+    ok(SS.combine_scores(None, 3.5, "", "medium")["score"] == 3.5,
+       "合成分：客观线不可用时只展示主观线，不拿虚构分补齐")
+
+    from app.core import objective as OM
+    _obj, _obj_err = OM.parse_objective_payload({
+        "correctness_score": 4,
+        "evidence": ["考生说重写要求参数列表兼容"],
+        "missing_points": ["未提异常边界"],
+        "misconceptions": [],
+        "claims": [
+            {"claim": "重写只要求方法名相同", "verdict": "contradicted",
+             "severity": "major", "evidence": "重写还要求参数列表和返回类型兼容"},
+            {"claim": "重载发生在同一类中", "verdict": "supported",
+             "severity": "none", "evidence": "与得分点一致"},
+            {"claim": "重写一定在运行时选择", "verdict": "insufficient",
+             "severity": "none", "evidence": "缺少上下文"},
+        ],
+        "target_results": [
+            {"target": "重写规则", "covered": True, "correct": True,
+             "evidence": "参数列表兼容"},
+        ],
+        "confidence": "high",
+    })
+    ok(not _obj_err
+       and _obj["claim_counts"] == {"supported": 1, "contradicted": 1,
+                                    "insufficient": 1}
+       and _obj["misconceptions"] == ["重写只要求方法名相同"]
+       and _obj["target_results"][0]["correct"] is True,
+       "客观线 claim-level：逐条主张分类、矛盾提取和目标核验都保留",
+       str(_obj))
+    _obj_score = SS.objective_round_score(
+        5.0, 4.0, _obj["claims"], _obj["misconceptions"])
+    ok(abs(_obj_score - 3.6) < 1e-9,
+       "客观轮分：明确矛盾按严重度扣分，insufficient 不当作讲错",
+       f"{_obj_score}")
+
+    _detail = S._clean_score_detail({
+        "dimensions": {},
+        "followup_eval": [
+            {"attempt_no": 2, "probe_level": "L2",
+             "target": "解释运行时多态", "target_hit": True,
+             "new_information": True, "corrected_error": False,
+             "depth_gain": 2, "evidence": ["运行时根据实际类型分派"]},
+            {"attempt_no": 1, "probe_level": "L1", "target": "非法行",
+             "target_hit": True},
+        ],
+    }, config.dim1_labels())
+    _fu = _detail.get("followup_eval") or []
+    ok(_detail["available"] and len(_fu) == 1 and _fu[0]["depth_gain"] == 2
+       and _fu[0]["target_hit"] is True,
+       "followup_eval：只接受真实后续回答，并保留目标命中与推进度",
+       str(_detail))
+
+    # 真实主库的回归门槛：保留率不能回到“大量短考点被丢掉”的旧状态。
+    try:
+        _lines = _kept = _base_empty = _adv_empty = 0
+        for _job in config.JOBS:
+            for _rec in QB.load_bank(_job):
+                for _field, _is_adv in ((QB.F_BASE_POINTS, False),
+                                        (QB.F_ADV_POINTS, True)):
+                    _text = str(_rec.get(_field) or "")
+                    _raw_lines = [x.strip() for x in _text.split("\n") if x.strip()]
+                    _got = QB.split_points(_text)
+                    _lines += len(_raw_lines)
+                    _kept += len(_got)
+                    if _raw_lines and not _got:
+                        if _is_adv:
+                            _adv_empty += 1
+                        else:
+                            _base_empty += 1
+        ok(_lines > 0 and _kept / _lines >= 0.70,
+           "真实主库得分点保留率 ≥ 70%（短编号考点不再被 15 字门槛大面积误删）",
+           f"kept={_kept}/{_lines} ({(_kept / _lines if _lines else 0):.1%})")
+        ok(_base_empty + _adv_empty <= 250,
+           "真实主库整段清空的字段数 ≤ 250（旧实现 478 个进阶字段清空）",
+           f"base_empty={_base_empty}, adv_empty={_adv_empty}")
+    except Exception as _e:                                  # noqa: BLE001
+        skipped("真实主库得分点解析回归", f"题库不可读：{_e}")
+
+    # ---- 0b. 长回答切窗：整段保留之外，仍会生成受控数量的相关窗口 ----
+    from app.core import scoring as SC
+    long_answer = ("先讲结论：缓存穿透用空值缓存和布隆过滤器。" * 8
+                   + "补充工程取舍：空值缓存要设置短 TTL。")
+    windows = SC.answer_windows(long_answer)
+    ok(bool(windows) and len(windows) <= config.SCORE_MAX_WINDOWS,
+       "长回答切成受控数量的匹配窗口", f"{len(windows)} windows")
+    ok(all(len(w) <= config.SCORE_WINDOW_CHARS for w in windows),
+       "每个匹配窗口不超过 SCORE_WINDOW_CHARS", str([len(w) for w in windows]))
+
+    class _WindowModel:
+        def __init__(self):
+            self.pairs = []
+
+        def predict(self, pairs):
+            self.pairs.extend(pairs)
+            vals = []
+            for point, passage in pairs:
+                if "命中点" in point and len(passage) > 200:
+                    vals.append(0.95)
+                elif "窗口点" in point and "相关句" in passage:
+                    vals.append(0.92)
+                else:
+                    vals.append(0.05)
+            return type("_Arr", (), {"tolist": lambda _self: vals})()
+
+    _wm = _WindowModel()
+    _rs = S.RerankerScorer()
+    _rs.mock = False
+    _rs._model = _wm
+    _answer = ("无关内容。" * 45
+               + "相关句：这里必须命中窗口点。"
+               + "无关内容。" * 45)
+    _sc, _bh, _ah, _ok = _rs.hit_scores(
+        _answer, "1. 命中点\n2. 窗口点", "")
+    ok(_ok and _sc >= 60 and len(_bh) == 2,
+       "两阶段覆盖率：整段命中与低分项窗口补判都能覆盖", f"{_sc} {_bh}")
+    ok(len(_wm.pairs) < 2 * (1 + len(S.answer_windows(_answer))),
+       "两阶段只给低分得分点算窗口，不重复计算已命中项",
+       f"pairs={len(_wm.pairs)}")
 
     rendered = ROUND_SCORING.safe_substitute(
         dim1_label=config.DIMENSIONS[0], dim1_rubric=config.DIM1_RUBRIC[config.DIMENSIONS[0]],
@@ -790,7 +1044,7 @@ def scoring_bridge():
         base_points="B", adv_points="A", qa_block="QA", reranker_note="N")
     ok("与后四维" in rendered,
        "评分 prompt 划清边界：客观分只锚第一维，不推后四维")
-    ok("会出错" in rendered, "评分 prompt 承认客观匹配会出错（假阳性 / 假阴性）")
+    ok("会出错" in rendered, "评分 prompt 承认覆盖率信号会出错（假阳性 / 假阴性）")
     ok("以你的判断为准" in rendered, "评分 prompt 要求复核，以模型自己的判断为准")
     ok("$reranker_score" not in rendered,
        "评分 prompt 里不再有裸分占位符 $reranker_score")
@@ -815,12 +1069,12 @@ def scoring_bridge():
     ok("20" in qa and "80" in qa, "qa_block 里每次回答各带各的分（落差没被抹平）")
     ok("20 → 80" in rec2.reranker_note(), "摘要给出覆盖率轨迹",
        rec2.reranker_note())
-    ok(rec2.reranker_5 == round(1 + 80 / 100 * 4, 2), "reranker_5 归一正确",
+    ok(rec2.reranker_5 == round(80 / 100 * 5, 2), "reranker_5 归一正确",
        f"实际 {rec2.reranker_5}")
 
     # ---- 一致性校验：只暴露信号，不改评分 ----
     rec2.five_dim = {d: 3.0 for d in config.DIMENSIONS}
-    ok(rec2.tech_gap == 1.2, "tech_gap = |reranker 归一 - 技术水平|，只作信号",
+    ok(rec2.tech_gap == 1.0, "tech_gap = |reranker 归一 - 技术水平|，只作信号",
        f"实际 {rec2.tech_gap}（reranker_5={rec2.reranker_5}，技术水平=3.0）")
 
 
@@ -862,6 +1116,7 @@ def judge_fusion(client=None):
     # ---- 一、DepthJudge 的解析 ----
     D = S.DepthJudge
     cases = [
+        ({"depth": "L3"}, "L3"),
         ({"depth": "L2"}, "L2"),
         ({"depth": "l2"}, "L2"),
         ({"depth": "L2 原理深挖"}, "L2"),
@@ -872,7 +1127,7 @@ def judge_fusion(client=None):
         ({"depth": "Degrade，该给提示"}, "degrade"),
     ]
     for payload, want in cases:
-        band, _, okk = D(_CannedLLM(payload)).judge("Q", "easy", "开场热身", "B", "A", "答")
+        band, _, _, _, okk = D(_CannedLLM(payload)).judge("Q", "easy", "开场热身", "B", "A", "答")
         ok(okk and band == want, f"判档解析 {payload['depth']!r} → {want}",
            f"实际 ok={okk} band={band!r}")
 
@@ -882,10 +1137,10 @@ def judge_fusion(client=None):
            ({}, "没回 depth 键"),
            (None, "回了空 JSON")]
     for payload, why in bad:
-        band, _, okk = D(_CannedLLM(payload)).judge("Q", "easy", "开场热身", "B", "A", "答")
+        band, _, _, _, okk = D(_CannedLLM(payload)).judge("Q", "easy", "开场热身", "B", "A", "答")
         ok(band is None and not okk, f"判档 {why} → 如实返回「没判出来」（不伪装成档位）",
            f"实际 ok={okk} band={band!r}")
-    band, _, okk = D(_CannedLLM(boom=True)).judge("Q", "easy", "开场热身", "B", "A", "答")
+    band, _, _, _, okk = D(_CannedLLM(boom=True)).judge("Q", "easy", "开场热身", "B", "A", "答")
     ok(band is None and not okk, "判档调用抛异常 → 如实返回「没判出来」（不吞成默认档）")
 
     # 判档用的是**低温度**：判档要的是稳，不是文采
@@ -896,8 +1151,10 @@ def judge_fusion(client=None):
        f"{config.LLM_TEMPERATURE}）", f"实际 {fake.seen and fake.seen[0][2]}")
 
     # ---- 二、覆盖率 → 档位 ----
-    from app.core.session import (BAND_DEGRADE, BAND_L1, BAND_L2,
+    from app.core.session import (BAND_DEGRADE, BAND_L1, BAND_L2, BAND_L3,
                                   band_of, decide_action, fuse_bands)
+    ok(band_of(config.LEVEL_L3_MIN) == BAND_L3, "刚好到 L3 线 = L3")
+    ok(band_of(config.LEVEL_L3_MIN - 0.1) == BAND_L2, "差 0.1 分到 L3 线 = L2")
     ok(band_of(config.LEVEL_L2_MIN) == BAND_L2, "刚好到 L2 线 = L2（不是 L1）")
     ok(band_of(config.LEVEL_L2_MIN - 0.1) == BAND_L1, "差 0.1 分到 L2 线 = L1")
     ok(band_of(config.LEVEL_L1_MIN) == BAND_L1, "刚好到 L1 线 = L1（不是降难度）")
@@ -969,6 +1226,8 @@ def judge_fusion(client=None):
 
     # ---- 六、动作决策：caps 仍然压得住 ----
     rec = _bare_round()
+    ok(decide_action(BAND_L3, rec) == "L3", "档位 L3 → 动作 L3")
+    rec = _bare_round()
     ok(decide_action(BAND_L2, rec) == "L2", "档位 L2 → 动作 L2")
     ok(rec.follow_ups_used == 1, "决策同时记账：follow_ups_used +1（决策与计数不能分家）")
     rec.follow_ups_used = config.MAX_FOLLOW_UP
@@ -998,7 +1257,7 @@ def judge_fusion(client=None):
     class _StubJudge:
         def judge(self, *a, **k):
             seen["judge"] = threading.current_thread()
-            return (BAND_L2, "桩理由", True)
+            return (BAND_L2, "桩理由", "桩追问目标", "deepen_reason", True)
 
     class _StubScorer:
         judge = _StubJudge()
@@ -1186,8 +1445,14 @@ def swap_exit():
             n = self.per_q.get(question, 0) + 1
             self.per_q[question] = n
             if question in self.swap_q and n >= self.swap_after:
-                return BAND_SWAP, "考生表示该技术方向从未接触过", True
-            return BAND_L2, "桩理由", True
+                return (
+                    BAND_SWAP,
+                    "考生表示该技术方向从未接触过",
+                    "",
+                    "",
+                    True,
+                )
+            return BAND_L2, "桩理由", "桩追问目标", "deepen_reason", True
 
     class _SwapScorer:
         def __init__(self):
@@ -1474,11 +1739,11 @@ def dim1_by_category():
             **_DIM1_SCORING_PARAMS)
 
     rb, rt = render(config.CATEGORY_BEHAVIORAL), render("技术知识题")
-    # ⚠️ 本条是这一节最硬的断言：技术题的 prompt 与**改动前逐字节相同**。
+    # ⚠️ 本条是这一节最硬的断言：技术题渲染结果必须与当前冻结文本**逐字节相同**。
     #    只查关键词是不够的 —— 我在把第一维改成占位符时就漏过一个空格，
     #    关键词断言全绿、只有逐字节比对会响。
     ok(rt == _FROZEN_ROUND_SCORING,
-       "技术知识题的评分 prompt 与改动前逐字节相同（技术题一个字都没变）")
+       "技术知识题的评分 prompt 与当前冻结文本逐字节相同")
     ok(rb != _FROZEN_ROUND_SCORING,
        "行为素质题的 prompt 与冻结串不同（否则等于没改）")
     ok(_FROZEN_ROUND_SCORING.count(d0) >= 5,
@@ -1517,6 +1782,32 @@ def dim1_by_category():
     data, err = S.LLMScorer(llm).score_round(dict(ctx))
     ok(err is None and len(data.get("five_dim") or {}) == 5,
        "缺 category 时按「技术水平」渲染 —— 与加这个分支之前逐字节相同")
+
+    class _BadScoreLLM:
+        def chat_json(self, system, messages, temperature=None):
+            return {"技术水平": 6, "逻辑思维": 4.33, "沟通表达": 3.5,
+                    "应变能力": 2, "岗位匹配度": 1, "comment": "x", "errors": []}
+
+    bad_data, bad_err = S.LLMScorer(_BadScoreLLM()).score_round(dict(ctx))
+    ok(bad_err is None and bad_data.get("five_dim") == {
+        "沟通表达": 3.5, "应变能力": 2.0, "岗位匹配度": 1.0},
+       "LLM 五维只接受 0-5 且按 SCORE_STEP 步进，越界/异常精度不入分",
+       f"{bad_data.get('five_dim')} / {bad_data.get('errors')}")
+    ok(sum(1 for e in bad_data.get("errors") or [] if "评分值非法" in e) == 2,
+       "非法评分值写入 errors，便于排查模型漂移")
+
+    class _CodeScoreLLM:
+        def chat_json(self, system, messages, temperature=None):
+            return {**{d: 3.5 for d in config.DIMENSIONS},
+                    "comment": "x", "errors": [],
+                    "code_check": {"applicable": True, "correct": True,
+                                   "note": "边界完整"}}
+
+    code_data, code_err = S.LLMScorer(_CodeScoreLLM()).score_round(dict(ctx))
+    ok(code_err is None
+       and code_data.get("code_check") == {
+           "applicable": True, "correct": True, "note": "边界完整"},
+       "代码题附加检查按闭集结构返回，不混进五维")
 
 
 # ============================================================
@@ -1557,7 +1848,7 @@ def kg_rag_pure():
     ok(cov.rounds_of("a") == [1], "rounds_of 记得是哪一轮考的")
     ok(cov.rounds_of("nope") == [], "rounds_of 查不到就返回空列表")
 
-    # ---- deepen_directions 的四重过滤 ----
+    # ---- deepen_directions 的种子过滤 + 输出过滤 ----
     fake = _FakeKG(
         cooc={"s": [("n1", 0.9), ("covered", 0.8), ("s", 0.7), ("noName", 0.6),
                     ("q", 0.5), ("long", 0.4), ("n2", 0.35), ("n3", 0.30)]},
@@ -1580,6 +1871,11 @@ def kg_rag_pure():
     ok(deepen_directions({"s": 1.0}, set(), None) == [],
        "图谱不可用（idx=None）→ 空列表，不抛异常")
     ok(deepen_directions({}, set(), fake) == [], "本题没有知识点 → 空列表")
+    bad_seed = _FakeKG(
+        cooc={"bad": [("n1", 0.9)]},
+        names={"bad": "Kelan ka gagamit ng", "n1": "看起来正常的方向"})
+    ok(deepen_directions({"bad": 1.0}, set(), bad_seed) == [],
+       "噪声种子在扩展邻居之前就被过滤（外语问句/文件名不能带出方向）")
 
     # ---- 出题避重的四级阶梯 ----
     _sample_ladder()
@@ -1816,7 +2112,7 @@ def _blindspots():
     ok(all("per_round" in e for e in by.values()), "每个知识点带 per_round 明细")
     ok(all(0.0 <= v <= 5.0 for v in (d["domains"][0]["five_dim_avg"].values()
                                      if d["domains"][0]["five_dim_avg"] else [])),
-       "领域五维均分在 1~5 之间")
+       "领域五维均分在 0~5 之间")
     # 五维均分不能被按 kp 个数加权：同领域两个 kp 命中同一轮时，那一轮只算一次
     ok(all("未归类" in dd["domain"] for dd in d["domains"]),
        "kg=None 时所有领域都归「未归类」（不假装知道）", str([x["domain"] for x in d["domains"]]))
@@ -1847,6 +2143,43 @@ def _blindspots():
        "整题全是软标签 → 一个知识点都不产生", str(d3["summary"]))
     ok(d3["summary"]["domain_known"] == 0.0,
        "分母为 0 时 domain_known 给 0.0（不是 ZeroDivisionError）", str(d3["summary"]))
+
+    # ---- 两个信号取「或」（2026-09-27 改口径，**推翻了旧口径**） ----
+    # 动机是一场真跑（sid 49f6e471）：第 3 题三次作答 reranker 给 56/12/22，末次 22 < 30
+    # ⇒ 该题挂的 3 个考点全判「没答到」，而 LLM 判档三次都是 L2。旧口径只看**末次**。
+    def _jatt(no, score, ok_=True, jband=None, jok=False):
+        a = _attempt(no, score, ok_=ok_)
+        a.judge_ok, a.judge_band = jok, jband
+        return a
+
+    ra = _bare_round(round_no=7, question_id="T-7", knowledge_points=[kp("k7", "庚")])
+    ra.attempts.append(_jatt(1, 80.0))
+    ra.attempts.append(_jatt(2, 50.0, ok_=False))        # 第二路也挂了 ⇒ 兜底 50.0（假分）
+    rb = _bare_round(round_no=8, question_id="T-8", knowledge_points=[kp("k8", "辛")])
+    rb.attempts.append(_jatt(1, 50.0, ok_=False, jband="L2", jok=True))
+    rc = _bare_round(round_no=9, question_id="T-9", knowledge_points=[kp("k9", "壬")])
+    rc.attempts.append(_jatt(1, 5.0, jband="degrade", jok=True))
+    rd = _bare_round(round_no=10, question_id="T-10", knowledge_points=[kp("k10", "癸")])
+    rd.attempts.append(_jatt(1, 50.0, ok_=False, jband="swap", jok=True))
+    d4 = BS.diagnose([ra, rb, rc, rd], None)
+    b4 = {e["kp_id"]: e for e in d4["knowledge_points"]}
+    ok(b4["k7"]["hit"] is True and b4["k7"]["hit_src"] == "reranker_hit",
+       "末次 reranker 挂了，同轮早先那次 80 不再被作废（旧口径这里判不了）",
+       str(b4["k7"]["hit_src"]))
+    ok(b4["k7"]["best_score"] == 80.0,
+       "兜底 50.0 没混进 best_score —— 原口径要防的假分仍然防住了")
+    ok(b4["k8"]["hit"] is True and b4["k8"]["hit_src"] == "judge_hit",
+       "判档单独说 L2 也算「答到了」（第二路证据）", str(b4["k8"]["hit_src"]))
+    ok(b4["k9"]["hit"] is False and b4["k9"]["hit_src"] == "both_miss",
+       "两路都有读数且都说没答到 → hit=false", str(b4["k9"]["hit_src"]))
+    ok(b4["k10"]["hit"] is False and b4["k10"]["hit_src"] == "judge_only_miss",
+       "判档单独判负也算「没答到」，覆盖率那一路没读数也算", str(b4["k10"]["hit_src"]))
+    ok(b4["k10"]["best_score"] is None,
+       "上一条正是 review.actions 要过滤掉的那种（否则 /practice 一律 409）")
+    ok(b4["k7"]["per_round"][0]["judge_hit"] is None
+       and b4["k9"]["per_round"][0]["judge_hit"] is False,
+       "per_round 带三态 judge_hit —— 没判出来是 null，不是 false",
+       str([e["per_round"][0]["judge_hit"] for e in b4.values()]))
 
 
 # ============================================================
@@ -1907,7 +2240,7 @@ def scorer_singleton():
 # 「只多了一块」不是我说了算：重铸时把改动前的旧串存了一份
 # （D:\A11-Data\_tmp_old_frozen.txt，从本文件里取出来的），与新渲染做逐行 diff，
 # delta 必须**恰好**是「【表达客观测量】P + 一个空行」这一处插入。
-_DIM1_SCORING_PARAMS = {'question': 'Q', 'difficulty': 'hard', 'stage': '深度压轴', 'base_points': 'B', 'adv_points': 'A', 'qa_block': 'QA', 'reranker_note': 'N', 'pace_note': 'P'}
+_DIM1_SCORING_PARAMS = {'score_step': '0.05', 'question': 'Q', 'difficulty': 'hard', 'stage': '深度压轴', 'base_points': 'B', 'adv_points': 'A', 'qa_block': 'QA', 'reranker_note': 'N', 'pace_note': 'P'}
 _FROZEN_ROUND_SCORING = """你是严格的技术面试官，现在要为一个「hard / 深度压轴」难度的题目打分。
 
 【题目】Q
@@ -1921,22 +2254,22 @@ A
 【实际问答过程】
 QA
 
-【客观匹配参考】N
+【覆盖率信号参考】N
 
-每次回答后面那行「客观匹配」是 reranker 逐条比对得分点的结果（字面语义相似度），使用规则：
-- 它**只**反映得分点覆盖情况，**不**反映表达质量、逻辑条理、临场应变 —— 与后四维**无关**，不要拿它去推后四维。
+每次回答后面那行「覆盖率信号」是 reranker 逐条比对得分点的结果（把整段回答与相关句窗分别比较后取最高值），使用规则：
+- 它**只**反映得分点覆盖情况，**不是**技术正确性结论；也**不**反映表达质量、逻辑条理、临场应变 —— 与后四维**无关**。
 - 它**会出错**：判为命中的可能只是提到了关键词而没真理解；判为未命中的可能用别的话把意思讲对了。
 - 请对照上面的实际问答**复核**这些判断，**以你的判断为准**；若你对「技术水平」的判断与它相差超过 1 分，在 errors 里写明原因。
 
 【表达客观测量】P
 
-请按五个维度打分（1-5 分，允许 0.5 步进），并给一句简短评语：
+请按五个维度打分（0-5 分，允许 0.05 步进；分数要能反映证据强弱），并给一句简短评语：
 
-【技术水平】1=概念模糊或答错；2=少量基础点且有明显错误；3=大部分基础点、无原则错误；4=全部基础点+部分进阶点；5=全部基础+进阶，能从源码/工程层面讲。
-【逻辑思维】1=逻辑混乱跑偏；2=零散想法串不起来；3=思路基本清晰；4=层次分明、能自圆其说；5=结构化强，抓住本质层层递进。
-【沟通表达】1=表述混乱；2=零散抓不住重点；3=基本能说清；4=流畅、重点突出、术语准确；5=严谨生动，能引导沟通节奏。
-【应变能力】1=一追问就慌；2=简单追问能答、深追就卡；3=大部分追问能应对；4=压力追问下从容；5=高压下冷静，能主动化解难题。
-【岗位匹配度】1=完全脱节；2=只懂概念不知道怎么用；3=知道基本应用场景；4=能结合开发场景讲应用；5=能结合真实项目讲落地和踩坑。
+【技术水平】0=未作答、无有效技术内容或完全跑题；1=概念模糊或原则性错误；2=少量基础点且有明显错误；3=大部分基础点、无原则错误；4=全部基础点+部分进阶点；5=全部基础+进阶，能从源码/工程层面讲。
+【逻辑思维】0=无有效内容；1=逻辑混乱跑偏；2=零散想法串不起来；3=思路基本清晰；4=层次分明、能自圆其说；5=结构化强，抓住本质层层递进。
+【沟通表达】0=无可评估内容；1=表述混乱；2=零散抓不住重点；3=基本能说清；4=流畅、重点突出、术语准确；5=严谨生动，能引导沟通节奏。
+【应变能力】0=无追问表现；1=一追问就慌；2=简单追问能答、深追就卡；3=大部分追问能应对；4=压力追问下从容；5=高压下冷静，能主动化解难题。
+【岗位匹配度】0=无可判断内容；1=完全脱节；2=只懂概念不知道怎么用；3=知道基本应用场景；4=能结合开发场景讲应用；5=能结合真实项目讲落地和踩坑。
 
 【难度平移规则（重要）】
 - 开场热身(easy)：答全基础得分点且概念准确，技术水平即可给 4 分。
@@ -1944,12 +2277,74 @@ QA
 - 深度压轴(hard)：要答全并且给出源码/工程/架构层面的见解，技术水平才给 5 分。
 - 跨难度的分数不要直接比较。
 
+【跨岗位校准规则（必须执行）】
+- 回答事实正确且覆盖主要基础得分点时，即使表述简短，技术水平 不得低于 4.0；
+  逻辑思维和沟通表达也不得仅因篇幅短而低于 3.5。
+- 明确回答“不知道”、基本没有有效技术内容，或核心结论错误时，技术水平 不得高于 1.5，
+  岗位匹配度不得高于 1.5；不能因为礼貌、流畅或承认不会而给高分。
+- 表达流畅但存在明确事实错误的回答，技术水平 不得高于 2.5，并必须在 errors 和
+  misconceptions 中列出错误结论。
+- 缺少项目案例只影响岗位匹配度，不得因此降低 技术水平 或逻辑思维。
+- 进阶得分点缺失体现深度不足，不等同于基础事实错误；基础正确时应保留基础分。
+
 【评分要求】
 - 评分必须能引用考生原话或命中的得分点作为依据，禁止凭印象打分。
-- 「应变能力」重点看他被追问之后的表现，不是只看第一次回答。
+- 「应变能力」必须依据下文的 `followup_eval`，不能凭整体印象：重点看追问后是否补上目标、
+  是否新增信息、是否纠正上一轮错误。没有追问时才按首答表现判断。
+- 每一维都要说明给分依据；找不到足够证据时，confidence 填 low，不要编造依据。
+- `missing_points` 只列本题得分点里确实没覆盖的；`misconceptions` 只列考生明确讲错的事实。
+- 允许 0.05 步进时，**不要只从 0.5、1.0、1.5 这些粗档里选**：
+  先用维度的 0-5 锚点确定分数带，再按事实准确度、得分点覆盖、证据完整度在该带内微调。
+  例如某维刚过 3 分基准、但进阶覆盖仍不足，可给 3.05、3.25 或 3.40，而不是一律给 3.5。
+
+【代码题附加检查】
+如果题目属于算法/编程题，或考生回答里包含代码块，请额外检查：
+- 算法思路是否成立；
+- 主要边界条件是否处理；
+- 代码与口头解释是否一致。
+这只是附加证据，不新增第六个维度、不改五维权重。题目和回答都不涉及代码时，
+把 `"applicable"` 填 false，其余字段留空。
+
+【追问评估要求】
+每次回答前如果标有「本轮追问规划」，下一条回答就是对该规划的回应。逐次判断：
+- `target_hit`：下一条回答是否真正命中了那个目标；只复述上一轮内容算 false。
+- `new_information`：是否包含上一轮没有的新机制、新边界、新例子或工程信息。
+- `corrected_error`：是否明确修正了上一轮讲错的事实。
+- `depth_gain`：0=没有推进；1=补了一层但仍不完整；2=目标已解决并能自圆其说。
+- `evidence`：只引用考生原话，最多 2 条。
+没有追问轮次时返回空数组，不要为了凑数编造评估。
 
 只输出 JSON，不要任何多余文字：
-{"技术水平": <1-5>, "逻辑思维": <1-5>, "沟通表达": <1-5>, "应变能力": <1-5>, "岗位匹配度": <1-5>, "comment": "<30字以内评语>", "errors": ["<考生讲错的技术点，没有就空数组>"]}"""
+{
+  "技术水平": <0-5>, "逻辑思维": <0-5>, "沟通表达": <0-5>,
+  "应变能力": <0-5>, "岗位匹配度": <0-5>,
+  "comment": "<30字以内评语>",
+  "errors": ["<考生讲错的技术点，没有就空数组>"],
+  "code_check": {"applicable": <true|false>, "correct": <true|false|null>,
+                 "note": "<20字以内；不适用时空串>"},
+  "score_detail": {
+    "dimensions": {
+      "技术水平": {"reason": "<40字以内>", "evidence": ["<考生原话或得分点，最多2条>"],
+                      "confidence": "<high|medium|low>"},
+      "逻辑思维": {"reason": "<40字以内>", "evidence": ["<依据>"], "confidence": "<high|medium|low>"},
+      "沟通表达": {"reason": "<40字以内>", "evidence": ["<依据>"], "confidence": "<high|medium|low>"},
+      "应变能力": {"reason": "<40字以内>", "evidence": ["<依据>"], "confidence": "<high|medium|low>"},
+      "岗位匹配度": {"reason": "<40字以内>", "evidence": ["<依据>"], "confidence": "<high|medium|low>"}
+    },
+    "missing_points": ["<最多3条；没有就空数组>"],
+    "misconceptions": ["<最多3条；没有就空数组>"],
+    "confidence": "<high|medium|low>",
+    "followup_eval": [
+      {"attempt_no": 2, "probe_level": "L1|L2|L3|degrade",
+       "target": "<上一轮追问目标>",
+       "target_hit": <true|false>,
+       "new_information": <true|false>,
+       "corrected_error": <true|false>,
+       "depth_gain": <0|1|2>,
+       "evidence": ["<考生原话，最多2条>"]}
+    ]
+  }
+}"""
 
 
 _FROZEN_ROUND_CONTEXT = """
@@ -2450,8 +2845,12 @@ def speech_and_asr(client):
                                    {"session_id": "smoke", "round_index": "1"})
         ok(code == 200 and r.get("ok") is True, "/asr 200 且 ok=true", str(r)[:200])
         for k in ("text", "duration_ms", "audio_ms", "segments", "asr_model",
-                  "elapsed_ms", "pauses", "pause_total_ms"):
+                  "elapsed_ms", "pauses", "pause_total_ms",
+                  "emotion_reliability", "emotion_usage"):
             ok(k in r, f"/asr 返回体有 {k}")
+        ok(r.get("emotion_reliability") == ASR.EMOTION_RELIABILITY
+           and r.get("emotion_usage") == ASR.EMOTION_USAGE,
+           "情感输出明确标为中文低可信、只作韵律信号，不冒充情绪结论")
         # ⚠️ 下面两条断的是**桩的固定输出**（pauses==1 / 2200ms）。远端模式下
         #    服务端跑的是真 whisper（或它自己的桩），值与这里无关 —— 跳过而不是
         #    假失败（2026-09-24 趟 2 实测这两条也是 22 条假失败里的两条）。
@@ -3404,9 +3803,9 @@ def kb_interview(client):
                "「有没有材料」这个无关变量，位置那次已经拒绝过一次同样做法")
             ok(KB.interview_query("回答" * 10, [_A], []) == (_A, "miss"), "实验档：有漏点 → 用漏点")
             ok(KB.interview_query("回答" * 10, ["短"], []) == ("回答" * 10, "answer_fallback"),
-               "实验档：只有一条短得离谱的漏点 → 同样回退（`split_points` 丢掉 <15 字的行 ⇒ "
-               f"真漏点必然过得了 MIN_CHARS={config.RAG_KB_MIN_CHARS} 这道闸，"
-               "这条路**只有列表为空时**才走得到）")
+               "实验档：只有一条短得离谱的漏点 → 同样回退（新解析器会保留短编号考点，"
+               f"所以短于 MIN_CHARS={config.RAG_KB_MIN_CHARS} 的漏点是现实输入，"
+               "回退不再等价于「全答到了」）")
             config.RAG_KB_QUERY_SRC = "MISS"
             ok(KB.interview_query("回答" * 10, [_A], [])[1] == "answer",
                "⚠️ 开关写错大小写（`MISS`）→ **静默退回默认档**：只有小写 `miss` 算实验档。"
@@ -3419,6 +3818,15 @@ def kb_interview(client):
            and _h.get("rag_kb_query_src") == config.RAG_KB_QUERY_SRC,
            "/health 有 rag_kb_query_src 且**回显原值**（不是布尔化的「开没开」）",
            f"{_h.get('rag_kb_query_src')!r}")
+        ok(all(k in _h for k in ("kb_interview_enabled", "kb_interview_ready",
+                                 "kb_interview_error")),
+           "/health 暴露面试期知识库通路的三态，不把「没借到编码器」藏起来",
+           str({k: _h.get(k) for k in ("kb_interview_enabled",
+                                       "kb_interview_ready",
+                                       "kb_interview_error")}))
+        if config.A11_RAG_KB and not config.A11_RAG:
+            ok(_h.get("kb_interview_error"),
+               "A11_RAG_KB=1 且 A11_RAG=0 → 健康检查明确报出降级原因")
 
         # ---------- 1. 借不到就不检索，而且**不置闩** ----------
         config.A11_RAG, RAG._rag = False, None
@@ -3867,6 +4275,11 @@ def _drive_session(client, sid: str, text: str, label: str) -> list:
     return asked
 
 
+# 有效但明显错误的回答：过“无有效回答”守卫，同时把覆盖率压到阈值以下，
+# 用来稳定制造 hit=false 的薄弱考点。不要换成“不会。”——那已按无效场次处理。
+_WEAK_ANSWER = "缓存就是数据库。"
+
+
 def _kp_title_of(kp_id: str, questions: list) -> str:
     """从题目列表里反查这个考点的名字（题库的关联知识点字段，不猜）。"""
     for q in questions:
@@ -3977,12 +4390,12 @@ def practice(client):
         ok(e.http_status == 409, "题库里一道题都找不到 → 409 no_practice_questions")
 
     # ---------- 4. 开一场「答砸了」的正式面试（桩分数随回答长度上升）----------
-    # before 要有得可比，就必须先有一份**货真价实**的成绩单：用极短的答案
+    # before 要有得可比，就必须先有一份**货真价实**的成绩单：用有效但错误的答案
     # 把覆盖率压到阈值以下，稳定地造出 hit=false 的薄弱考点。
     code, s0 = client.post("/start", {"job": config.JOBS[4]})
     ok(code == 200 and s0.get("session_id"), "建源场次（系统设计）", str(s0)[:120])
     sid0 = s0.get("session_id")
-    _drive_session(client, sid0, "不会。", "源场次")
+    _drive_session(client, sid0, _WEAK_ANSWER, "源场次")
     code, fin0 = client.post("/finish", {"session_id": sid0, "message": ""})
     ok(code == 200, "源场次能交卷", str(fin0)[:200])
     snap0 = json.dumps(fin0.get("raw"), sort_keys=True, ensure_ascii=False)
@@ -4123,7 +4536,7 @@ def practice(client):
         asked_p.append(nx.get("question_id"))
         totals.add(nx.get("total"))
         stages.add(nx.get("stage"))
-        d = _answer_round(client, psid, "不会。", "练习")
+        d = _answer_round(client, psid, _WEAK_ANSWER, "练习")
         if d:
             swaps.append((d.get("swapped"), d.get("swaps_left")))
     ok(done_p is not None, "练习场次能正常收尾",
@@ -4667,14 +5080,14 @@ def growth_e2e(client):
         skipped("A11_GROWTH=0 时 /growth 返 503（growth_disabled）",
                 "远端模式改不了服务端的开关")
 
-    # ---- 真跑一场。JOBS[4]（系统设计）+「不会。」是 practice() 那节已经证明过的
-    #      组合：稳定造出 hit=false 的薄弱考点，错题本也就必然非空。----
+    # ---- 真跑一场。JOBS[4]（系统设计）+ 有效错误答案稳定造出 hit=false 的
+    #      薄弱考点，错题本也就必然非空。----
     code, st = client.post("/start", {"job": config.JOBS[4]})
     if code != 200:
         ok(False, "成长档案：/start 返回 200", f"got {code} {str(st)[:160]}")
         return
     sid = st["session_id"]
-    asked = _drive_session(client, sid, "不会。", "[成长档案]")
+    asked = _drive_session(client, sid, _WEAK_ANSWER, "[成长档案]")
     code, fin = client.post("/finish", {"session_id": sid, "message": ""})
     ok(code == 200, "成长档案：这一场能交卷", str(fin)[:200])
     d1 = fin.get("digest")
@@ -4871,10 +5284,11 @@ def growth_e2e(client):
 # ⚠️ 2026-09-25 加 `kind` / `note`（8 键 → 10 键）；`question_id` 那条路出参**同形**
 #    （多出来的四个上下文键给空串，不是少键）—— 所以只有一份键表，两路共用。
 _MATERIAL_PICK_KEYS = ["kp_id", "title", "domain", "subclass", "src", "talk",
-                       "model_answer", "from_question_id", "kind", "note"]
+                       "model_answer", "common_pitfalls", "from_question_id",
+                       "kind", "note"]
 _MATERIAL_HTTP_KEYS = ["ok", "session_id", "kp_id", "title", "domain", "subclass",
-                       "talk", "model_answer", "from_question_id", "kind", "note",
-                       "src"]
+                       "talk", "model_answer", "common_pitfalls",
+                       "from_question_id", "kind", "note", "src"]
 
 
 class _AnswerSess:
@@ -4910,7 +5324,7 @@ def _material_checks(a, expect_keys, rec, where, why_note=""):
     ok(sorted(a) == sorted(expect_keys),
        f"{_tag} 响应键正好这 {len(expect_keys)} 个（**多一个键就多一次泄漏机会**）",
        str(sorted(a)))
-    ok(all(k not in blob for k in ("拉开差距", "常见卡点", "missed_points")),
+    ok(all(k not in blob for k in ("拉开差距", "missed_points")),
        f"{_tag} 两个禁键连**键名**都不出现")
     if not isinstance(rec, dict):
         for _n in range(4):
@@ -4927,11 +5341,16 @@ def _material_checks(a, expect_keys, rec, where, why_note=""):
        f"got ({str(a.get('from_question_id'))[:20]!r}, "
        f"{len(a.get('model_answer') or '')} 字) / 该条目 {len(_pairs)} 条范例")
     _q = ""
+    _sample = None
     for s in (rec.get("样例") or []):
         if isinstance(s, dict) and str(s.get("题目ID", "") or "") \
                 == a.get("from_question_id"):
+            _sample = s
             _q = str(s.get("题目") or "")
             break
+    ok(a.get("common_pitfalls") ==
+       str((_sample or {}).get(RM._KEY_TRAP) or "").strip(),
+       f"{_tag} common_pitfalls 逐字来自代表题的常见陷阱材料")
     ok(not _q or _q not in blob,
        f"{_tag} **代表题的题面一个字都不出门**（只给 from_question_id）",
        f"题面 {len(_q)} 字")
@@ -4999,7 +5418,7 @@ def answer_pure():
        "范文一支 `note` 为空串，空串本来就在任何串里 ⇒ 空的时候不判这条",
        f"kind={res.get('kind')!r} note={len(_note)} 字")
     blob = json.dumps(res, ensure_ascii=False)
-    ok(all(k not in blob for k in ("拉开差距", "常见卡点", "missed_points")),
+    ok(all(k not in blob for k in ("拉开差距", "missed_points")),
        "两个禁键连**键名**都不出现")
     ok(res["talk"] == (rec.get(RM._KEY_TALK) or ""),
        "talk 逐字等于真资源里的「考点讲解」（不是拼的、没夹带别的）")
@@ -5007,9 +5426,17 @@ def answer_pure():
               for s in (rec.get("样例") or []) if isinstance(s, dict)}
     ok((res["from_question_id"], res["model_answer"]) in _pairs,
        "model_answer + from_question_id 逐字等于**真资源**某一条代表题的范例"
-       "（⇒ 不是拉开差距/常见卡点、不是别的考点的）",
+       "（⇒ 不是拉开差距、不是别的考点的；常见陷阱走独立白名单字段）",
        f"got ({res['from_question_id'][:20]!r}, {len(res['model_answer'])} 字) / "
        f"该条目 {len(_pairs)} 条范例")
+    _src_sample = next(
+        (s for s in (rec.get("样例") or [])
+         if isinstance(s, dict)
+         and str(s.get("题目ID", "") or "") == res["from_question_id"]),
+        {})
+    ok(res.get("common_pitfalls") ==
+       str(_src_sample.get(RM._KEY_TRAP) or "").strip(),
+       "common_pitfalls 逐字来自代表题的常见陷阱材料")
     _qs = [str(s.get("题目") or "") for s in (rec.get("样例") or []) if isinstance(s, dict)]
     ok(not any(q and q in blob for q in _qs),
        "**代表题的题面一个字都不出门**（只给 from_question_id）"
@@ -5163,8 +5590,9 @@ def answer_pure():
         ok(not _leak,
            f"`plan` 里正文一个字都没有（拿**真资源**的讲解/范例/拉开差距/常见卡点共 "
            f"{len(_needles)} 条当针扫 —— 它有牙）", str(_leak[:1])[:140])
-        ok(set(_it[0]["material"]) == {"status", "src", "has_talk", "has_model", "note"},
-           "`material` 的键恰好这五个（**结构上就带不了正文** —— 比字面量针硬）",
+        ok(set(_it[0]["material"]) ==
+           {"status", "src", "has_talk", "has_model", "has_pitfalls", "note"},
+           "`material` 的键恰好这六个（**结构上就带不了正文** —— 比字面量针硬）",
            str(sorted(_it[0]["material"])))
         ok(_it[0]["material"]["has_talk"] is True and _it[0]["material"]["has_model"] is True,
            "`material` 只说「有没有」（两个 bool），**不夹带正文**")
@@ -5192,7 +5620,7 @@ def answer_e2e(client):
       5. 三种 503 分得开（开关关 / 资源没开 / 资源坏了）；
       6. 它**不在 `/growth` 里**（`/growth` 无状态、没有会话门，正文不许从那里出）。
     """
-    section("▸ 学习材料端到端（/model_answer：两道门 / 只出两键 / 金丝雀）")
+    section("▸ 学习材料端到端（/model_answer：两道门 / 三类白名单 / 金丝雀）")
     from app.core import resources as RM
 
     code, h = client.get("/health")
@@ -5209,8 +5637,8 @@ def answer_e2e(client):
     try:
         from app.api.interview import router as _r
         _paths = sorted({getattr(r, "path", "") for r in _r.routes})
-        ok(len(_paths) == 10 and "/model_answer" in _paths,
-           f"路由表正好 10 条且含 /model_answer（实得 {len(_paths)} 条）", str(_paths))
+        ok(len(_paths) == 11 and "/model_answer" in _paths and "/tts" in _paths,
+           f"路由表正好 11 条且含 /model_answer + /tts（实得 {len(_paths)} 条）", str(_paths))
     except Exception as _e:                                  # noqa: BLE001
         skipped("端点数机器自检", f"拿不到 router.routes：{_e}")
 
@@ -5262,7 +5690,7 @@ def answer_e2e(client):
         if _c != 200:
             return None
         _sid = _st["session_id"]
-        _drive_session(client, _sid, "不会。", "[学习材料]")
+        _drive_session(client, _sid, _WEAK_ANSWER, "[学习材料]")
         _c, _fin = client.post("/finish", {"session_id": _sid, "message": ""})
         if _c != 200:
             return None
@@ -5287,7 +5715,7 @@ def answer_e2e(client):
                                            + list(_p.get("adv_miss") or [])) if t]
             for _rc in ((_raw2.get("blindspots") or {}).get("recommendations") or []):
                 _blk = _rc.get("resource") or {}
-                for _key in ("拉开差距", "常见卡点"):
+                for _key in ("拉开差距",):
                     if _blk.get(_key):
                         _forbid.append(_blk[_key][:40])
         finally:
@@ -5565,8 +5993,24 @@ def review_pure():
                f"输入 {tag} → 照样出一份结构完整的清单", str(r)[:140])
         except Exception as e:                                # noqa: BLE001
             ok(False, f"输入 {tag} → 不该抛", f"{type(e).__name__}: {e}")
-    ok(RV.REVIEW_VERSION == 1 and config.REVIEW_MAX_ACTIONS > 0,
+    ok(RV.REVIEW_VERSION == 4 and config.REVIEW_MAX_ACTIONS > 0,
        f"清单结构版本 = {RV.REVIEW_VERSION}；下一步上限 = {config.REVIEW_MAX_ACTIONS}")
+
+    # ---------- B2. 判档单独判负（覆盖率那一路没读数）的漏点：进 gaps，但不开动作 ----------
+    # 2026-09-27 新口径带出来的洞：`hit=False` 现在也可能**只由判档**给出，而这种考点的
+    # 覆盖率那一路根本没读数（`best_score is None`）。`/practice` 的 `_weak_of` 要求数值
+    # `best_score` ⇒ 给它开「一键开练」等于给考生一个点不动的按钮（409 `no_weak_point`）。
+    rev2 = RV.build_review(env([
+        kp("k-noscore", "分布式事务", False, rounds=(4,), bs=None),
+        kp("k-score", "索引优化", False, rounds=(3,), bs=45.0)]))
+    ok([k["kp_id"] for k in rev2["gaps"]] == ["k-score", "k-noscore"],
+       "两个漏点都进 gaps（清单不藏没分数的那种）",
+       str([k["kp_id"] for k in rev2["gaps"]]))
+    ok([a["kp_id"] for a in rev2["actions"]] == ["k-score"],
+       "只有带数值 best_score 的漏点才开动作（否则 /practice 会 409）",
+       str(rev2["actions"]))
+    ok(any("没有可量化的覆盖率" in c for c in rev2["caveats"]),
+       "那条漏点要在 caveats 里交代一句", str(rev2["caveats"]))
 
     # ---------- B. 三态分流：只认 hit is False ----------
     rev = RV.build_review(env([
@@ -5653,6 +6097,10 @@ def review_pure():
     a = rev["gaps"][0]["advice"]
     ok("第 4、7 题" in a and "专项练习" in a,
        "advice 指回具体题号 + 指向真有的「专项练习」", a)
+    ok(isinstance(rev["gaps"][0].get("next_steps"), list)
+       and len(rev["gaps"][0]["next_steps"]) >= 2,
+       "每个漏点带可执行 next_steps，不只给一句泛泛建议",
+       str(rev["gaps"][0].get("next_steps")))
     ok(all(w not in a for w in ("考点讲解", "优秀回答范例", "去看")),
        "advice 不承诺「本场无法保证有」的讲解（资源开没开、这个考点有没有材料，"
        "这份响应里根本不知道 —— 不是「功能没做」）", a)
@@ -5756,14 +6204,14 @@ def review_e2e(client):
         skipped("复盘清单端到端", "服务端 A11_REVIEW=0（远端模式下改不了它）")
         return
 
-    # ---- 真跑一场。JOBS[4] + 「不会。」是 growth/practice 两节都证明过的组合：
-    #      稳定造出 hit=false 的漏点，清单里也就必然有东西可点。----
+    # ---- 真跑一场。JOBS[4] + 有效错误答案稳定造出 hit=false 的漏点，
+    #      清单里也就必然有东西可点。----
     code, st = client.post("/start", {"job": config.JOBS[4]})
     ok(code == 200, "复盘：/start 返回 200", f"got {code} {str(st)[:160]}")
     if code != 200:
         return
     sid = st["session_id"]
-    _drive_session(client, sid, "不会。", "[复盘]")
+    _drive_session(client, sid, _WEAK_ANSWER, "[复盘]")
     code, fin = client.post("/finish", {"session_id": sid, "message": ""})
     ok(code == 200, "复盘：这一场能交卷", str(fin)[:200])
     rv = fin.get("review")
@@ -5786,7 +6234,7 @@ def review_e2e(client):
     ok(not any("*" in c for c in rv["caveats"]),
        "清单文案里没有 markdown 星号（前端按纯文本画）",
        str([c for c in rv["caveats"] if "*" in c][:1])[:140])
-    ok(isinstance(fin.get("raw"), dict) and "review" not in json.dumps(fin["raw"]),
+    ok(isinstance(fin.get("raw"), dict) and "review" not in fin["raw"],
        "清单是**顶层键**、不在 raw 里 ⇒ 脱敏档下也拿得到（这正是它存在的理由）")
     _c, res = client.get(f"/result/{sid}")
     ok(_c == 200 and res.get("review") == rv,
@@ -5835,7 +6283,7 @@ def review_e2e(client):
 
     # ---- 练习场次的清单：真数据下的「不可比」那句（归档里测不到这一档）----
     if psid:
-        _drive_session(client, psid, "不会。", "[复盘·练习]")
+        _drive_session(client, psid, _WEAK_ANSWER, "[复盘·练习]")
         _c, finp = client.post("/finish", {"session_id": psid, "message": ""})
         rvp = (finp or {}).get("review")
         ok(_c == 200 and isinstance(rvp, dict) and rvp.get("mode") == "practice",
@@ -5899,6 +6347,7 @@ def persona_intro_pure():
     """
     section("▸ 面试官风格三档 + 考生自述：默认档逐字节不变 / 注入面四条准入")
     from app.core import prompts as P
+    from app.core import session as SS
     from app.core.session import (InterviewSession, intro_snippet,
                                   sanitize_intro)
 
@@ -5948,6 +6397,20 @@ def persona_intro_pure():
     ok("标准不降" in s_relaxed,
        "轻松档明写「标准不降」（否则「轻松」会被读成「放水」）",
        s_relaxed[s_relaxed.find("今天的风格"):][:120])
+    ok(P.persona_style_directive("standard") == ""
+       and "保持严肃风格" in P.persona_style_directive("strict")
+       and "保持温和风格" in P.persona_style_directive("relaxed"),
+       "风格末尾旁白：standard 空串，strict/relaxed 各有明确行为约束")
+    _style_rec = _bare_round()
+    ok("具体反馈" in P.ACTION_DESC["L1"]
+       and "先确认" in P.ACTION_DESC["L2"]
+       and "先确认" in P.ACTION_DESC["L3"],
+       "L1/L2/L3 都要求先回应考生内容，再追问，不是纯问答机器人")
+    _relaxed_no = SS._guided_no_info_reply(_style_rec, 1, "relaxed")
+    _strict_no = SS._guided_no_info_reply(_style_rec, 1, "strict")
+    ok("没关系" in _relaxed_no and "有效信息" in _strict_no
+       and _relaxed_no != _strict_no,
+       "“不知道”的确定性回复也按风格分化", _relaxed_no + " / " + _strict_no)
     ok(P.PERSONA_STYLE_LABELS == {"strict": "严厉", "standard": "标准",
                                  "relaxed": "轻松"},
        "三个档名与中文标签就是这三对（/health 与 /start 都照它回显）")
@@ -6004,8 +6467,25 @@ def persona_intro_pure():
        "FINAL_SUMMARY / JUDGE_DEPTH 也没有（三份评分模板一个字节都不放它）")
 
     # ---------- E. 开场白：程序给、不调模型；摘不到就退回通用那条 ----------
-    ok(mk().opening_message() == P.OPENING_LINE.safe_substitute(job=JOB),
-       "没传自述 ⇒ 开场白与加 E 之前逐字节相同")
+    _name = SS.persona_name(load_persona(JOB))
+    _std_open = P.OPENING_LINE.safe_substitute(
+        job=JOB, name=_name, tone=P.OPENING_LINE_TONE["standard"])
+    ok(_name == "林工" and mk().opening_message() == _std_open,
+       "没传自述 ⇒ 使用标准开场白，并报出岗位人设姓名")
+    ok("林工" in mk(style="strict").opening_message()
+       and P.OPENING_LINE_TONE["strict"] in mk(style="strict").opening_message(),
+       "严肃型开场直接进入考察，同时保留面试官人格")
+    ok(P.OPENING_LINE_TONE["relaxed"] in mk(style="relaxed").opening_message(),
+       "温和型开场使用轻松语气，但不改岗位人格")
+    _mem_session = mk()
+    _mem_prev = _bare_round(round_no=1, question="上一题")
+    _mem_prev.attempts = [_attempt(1, 90)]
+    _mem_now = _bare_round(round_no=2, question="当前题")
+    _mem_session.rounds = [_mem_prev, _mem_now]
+    _mem_session.current_round = _mem_now
+    _mem = _mem_session._session_memory()
+    ok("第 1 次回答" in _mem and "第 2 题" not in _mem,
+       "跨题记忆只注入前几轮真实回答，不把当前题重复塞进去")
     o = mk(intro="我做过三年订单系统，熟悉 JVM 调优。另外我平时喜欢写博客。"
            ).opening_message()
     ok("我做过三年订单系统，熟悉 JVM 调优" in o and "一会儿我们会聊到" in o,
@@ -6025,7 +6505,7 @@ def persona_intro_pure():
     ok(intro_snippet("甲" * 200) == "甲" * P.INTRO_SNIPPET_MAX,
        f"没有句读的超长自述 ⇒ 截到 INTRO_SNIPPET_MAX={P.INTRO_SNIPPET_MAX}"
        "（开场白不能变成一段独白）")
-    ok(len(mk(intro=hostile).opening_message()) < 120,
+    ok(len(mk(intro=hostile).opening_message()) < 180,
        "带注入话术的自述**不会**把开场白撑成一大段（只取第一句）",
        str(len(mk(intro=hostile).opening_message())))
 
@@ -6050,8 +6530,7 @@ def persona_intro_pure():
            json.dumps(r2, ensure_ascii=False))
         ok(mk(intro=hostile)._system == base,
            "开关关掉时自述**不进 system**（逐字节回到基线）")
-        ok(mk(intro=hostile).opening_message()
-           == P.OPENING_LINE.safe_substitute(job=JOB),
+        ok(mk(intro=hostile).opening_message() == _std_open,
            "开关关掉时开场白也退回通用那条（不留半句「我看了你的自我介绍」）")
     finally:
         config.A11_INTRO = _old_intro
@@ -6312,10 +6791,75 @@ def raw_detail(client):
                    f"{done.get('judge_why')!r}")
                 need = ("session_id", "job", "five_dim_avg", "total_score",
                         "weights", "summary", "rounds", "partial", "notes",
-                        "raw", "cached")
+                        "raw", "cached", "pace_note", "dimension_info",
+                        "difficulty_mix", "score_by_difficulty",
+                        "difficulty_adjusted_score", "content_analysis",
+                        "code_review", "score_semantics")
                 ok(all(k in fin for k in need),
                    f"{tag}：FinishResp 顶层键一个不少（前端零改动）",
                    str([k for k in need if k not in fin]))
+                _di = fin.get("dimension_info") or []
+                ok(len(_di) == len(config.DIMENSIONS)
+                   and {x.get("key") for x in _di} == set(config.DIMENSIONS),
+                   f"{tag}：dimension_info 覆盖五维并保留稳定键",
+                   str(_di)[:220])
+                _d0info = next((x for x in _di
+                                if x.get("key") == config.DIMENSIONS[0]), {})
+                ok(_d0info.get("alternate_label") == config.DIM1_LABEL_BEHAVIORAL
+                   and _d0info.get("alternate_when") == config.CATEGORY_BEHAVIORAL,
+                   f"{tag}：行为题第一维的显示标签可以正确解释",
+                   str(_d0info))
+                ok(isinstance(fin.get("difficulty_mix"), dict)
+                   and sum((fin.get("difficulty_mix") or {}).values()) == fin.get("rounds"),
+                   f"{tag}：difficulty_mix 与参与评分轮数对得上",
+                   f"{fin.get('difficulty_mix')} / rounds={fin.get('rounds')}")
+                ok(set(fin.get("score_by_difficulty") or {}) == {"easy", "medium", "hard"},
+                   f"{tag}：score_by_difficulty 固定三档，缺失难度也会给空结构",
+                   str(fin.get("score_by_difficulty")))
+                ok(fin.get("difficulty_adjusted_score") is None
+                   or isinstance(fin.get("difficulty_adjusted_score"), (int, float)),
+                   f"{tag}：difficulty_adjusted_score 是数值或 null",
+                   str(fin.get("difficulty_adjusted_score")))
+                ok(set(fin.get("content_analysis") or {}) ==
+                   {"technical_correctness", "knowledge_depth",
+                    "logical_rigor", "job_fit"},
+                   f"{tag}：content_analysis 覆盖赛题四项内容能力",
+                   str(fin.get("content_analysis")))
+                ok(isinstance(fin.get("code_review"), list),
+                   f"{tag}：code_review 是列表，算法题附加检查不会撑坏五维",
+                   str(fin.get("code_review"))[:180])
+                ok("覆盖率信号" in str((fin.get("score_semantics") or {}).get("reranker_score")),
+                   f"{tag}：score_semantics 明确 reranker 只是覆盖率信号",
+                   str(fin.get("score_semantics")))
+                ok((fin.get("score_semantics") or {}).get("scoring_version")
+                   == config.SCORING_VERSION,
+                   f"{tag}：score_semantics 带评分栈版本，历史报告不会混口径")
+
+                # ---- 表达客观测量：**给考生**的那个顶层键（2026-09-27 加法）----
+                # 语音链（whisper/VAD/停顿/填充词/音量/SER/confidence_band）此前
+                # **只**以 `$pace_note` 进评分 prompt，考生的报告上一个字都没有。
+                # 这一组守四件事，其中前两件是**默认脱敏档**下必须成立的：
+                #   ① 它在（不受 A11_RAW_DETAIL 影响 —— 它在 raw **外面**的顶层）；
+                #   ② 它**不含模型指令**（同名那个 `RoundRecord.pace_note()` 是写给
+                #      评分模型的，含「禁止…」，原文展示给考生就出事）；
+                #   ③ 两种已知形态之一（文字场明说「全部为文字作答」）；
+                #   ④ /finish 与 /result 同值（两者共用 session._result）。
+                _pn = fin.get("pace_note")
+                ok(isinstance(_pn, str) and bool(_pn),
+                   f"{tag}：顶层 pace_note 是非空字符串（脱敏档也在）",
+                   f"{type(_pn).__name__}={str(_pn)[:120]}")
+                ok(all(w not in (_pn or "")
+                       for w in ("禁止", "不要拿它推", "使用规则", "得分点")),
+                   f"{tag}：顶层 pace_note 里没有评分模型的指令（它与同名的 "
+                   "RoundRecord.pace_note() 不是同一样东西）",
+                   str(_pn)[:220])
+                ok("全部为文字作答" in (_pn or "")
+                   or ("轮用语音作答" in (_pn or "")),
+                   f"{tag}：pace_note 是两种已知形态之一（文字场/语音场）",
+                   str(_pn)[:220])
+                ok((_pn or "") == (res.get("pace_note") or ""),
+                   f"{tag}：/finish 与 /result 的 pace_note 同值",
+                   f"fin={str(_pn)[:70]!r} res={str(res.get('pace_note'))[:70]!r}")
 
                 # ---- 守门断言一：脱敏只改**响应**,不改会话里那份 raw（直证）----
                 # 同一场次、同一个 sid,把档位翻回全量再读一次 /result:
@@ -6383,6 +6927,263 @@ def raw_detail(client):
 # ============================================================
 # main
 # ============================================================
+def summary_guard_pure():
+    """
+    总评护栏（2026-09-27）：只做减法 —— 让"点名一个本场没考过的考点"变得不可能。
+
+    守三件事：
+      ① **标注约定**：`[[考点名]]` 是网 B 能工作的前提，剥不出来就等于没护栏；
+      ② **外来标题扫描**：正文里出现场外考点 ⇒ 拦住（这是真正的执行网）；
+      ③ **确定性兜底**：宁可平淡也不许编 —— 它只能引用报告里已有的读数。
+    """
+    section("▸ 总评护栏（标注约定 / 外来标题扫描 / 确定性兜底）：纯函数")
+    from app.core import summary_guard as SG
+
+    ok(config.A11_SUMMARY_GUARD is True and config.SUMMARY_ALIEN_KP_MIN_CHARS >= 2,
+       "总评护栏默认开着（关掉的那一档在端到端那一节单独断言）")
+
+    job = config.JOBS[0]
+    alien = SG.make_alien_index(job)
+    ok(bool(alien), f"外来标题索引能从 {job} 的题库建起来（{len(alien)} 条）")
+    ok(all(len(n) >= 1 for n, _t in alien), "索引里的归一化标题都不为空")
+
+    # 拿一条**真的场外考点标题**当探针：长度够、且与我们构造的真值集互不包含。
+    TRUTH = {"甲", "乙"}
+    probe = next((p for p in alien
+                  if len(p[0]) >= config.SUMMARY_ALIEN_KP_MIN_CHARS
+                  and p[0] not in TRUTH), None)
+    ok(probe is not None, "题库里能找到一条够长的标题当探针")
+    if probe is None:
+        return
+    pn, pt = probe
+
+    # ---- ① 干净且带标注 ⇒ 过 ----
+    r1 = SG.audit("强项是 [[甲]]，薄弱点是 [[乙]]。", TRUTH, alien,
+                  config.SUMMARY_ALIEN_KP_MIN_CHARS)
+    ok(r1["ok"] and r1["tags"] == ["甲", "乙"],
+       "合法标注 + 只提到本场考点 ⇒ 护栏放行", str(r1))
+
+    # ---- ② 标注了一个**不在清单里**的名字 ⇒ 拦住并点名 ----
+    r2 = SG.audit(f"强项是 [[{pt}]]。", TRUTH, alien,
+                  config.SUMMARY_ALIEN_KP_MIN_CHARS)
+    ok(not r2["ok"] and r2["unknown_tags"] == [pt],
+       "标了一个本场没考过的考点 ⇒ 拦住（网 A 明文要求只能用清单里的名字）",
+       str(r2))
+
+    # ---- ③ 正文里出现场外考点（**没标注**）⇒ 拦住 ----
+    r3 = SG.audit(f"强项是 [[甲]]，另外他在{pt}上也不错。", TRUTH, alien,
+                  config.SUMMARY_ALIEN_KP_MIN_CHARS)
+    ok(not r3["ok"] and pt in r3["aliens"],
+       "没标注也照样抓：这才是真跑里「Spring 循环依赖」那条的拦截点", str(r3))
+
+    # ---- ④ 与本场真值标题互不包含的不算外来（两个方向都要放过）----
+    r4 = SG.audit("强项是 [[甲乙]]，这一点讲到了甲乙丙。", {"甲乙", "甲乙丙"}, alien,
+                  config.SUMMARY_ALIEN_KP_MIN_CHARS)
+    ok(r4["ok"], "本场考点名的更长/更短说法不算外来考点（否则正常总评被误杀）", str(r4))
+
+    # ---- ⑤ 太短的标题不参与扫描（「并发」「索引」这种通用词不算幻觉）----
+    ok(not SG.audit("这次聊到了并发。", set(), [("并发", "并发")], 4)["aliens"],
+       f"短于 {config.SUMMARY_ALIEN_KP_MIN_CHARS} 字的标题不参与扫描")
+    ok(SG.audit("这次聊到了并发。", set(), [("并发", "并发")], 2)["aliens"] == ["并发"],
+       "但门槛调低之后同一个词就该被抓住（门槛真的是个旋钮，不是写死的）")
+
+    # ---- ⑥ clean：去掉方括号、压平空白。**不给考生看任何标注痕迹** ----
+    ok(SG.clean("强项是 [[甲]]，薄弱点是 [[乙]]。") == "强项是 [[甲]]，薄弱点是 [[乙]]。"
+       .replace("[[", "").replace("]]", ""),
+       "clean() 把标注方括号剥掉，考生看不到 [[ ]] 这种内部约定")
+    ok(SG.clean("  强项　是  甲。 ") == "强项 是 甲。",
+       "clean() 把连续空白（含全角空格）压平")
+    ok("[[" not in SG.clean(SG.audit("强项是 [[甲]]。", TRUTH, alien, 4)["stripped"]),
+       "audit 的 stripped 已经剥掉**合法**标注")
+
+    # ---- ⑦ ground_truth：只认本场真出现过的名字 ----
+    ra = _bare_round(round_no=1, knowledge_points=[{"id": "k1", "title": "甲考点", "description": ""}])
+    rb = _bare_round(round_no=2, knowledge_points=[{"id": "k2", "title": "乙 考点", "description": ""}])
+    tn, tr = SG.ground_truth([ra, rb])
+    ok(tn == {qb.norm_kp_title("甲考点"), qb.norm_kp_title("乙 考点")} and len(tr) == 2,
+       "ground_truth 取的是逐轮「关联知识点」里的名字（归一 + 原文两份）", f"{tn} {tr}")
+    ok(SG.ground_truth([]) == (set(), set()) and SG.ground_truth([_bare_round()]) == (set(), set()),
+       "没有考点的轮次不产生任何真值（空场不报错）")
+
+    # ---- ⑧ 兜底：宁可平淡也不许编 ----
+    ra.five_dim = {d: 3.0 for d in config.DIMENSIONS}
+    rb.five_dim = {d: 4.0 for d in config.DIMENSIONS}
+    ra.comment, rb.comment = "讲得较浅", "讲得不错"
+    fb = SG.fallback_summary([ra, rb], {"技术水平": 3.5})
+    ok(bool(fb.strip()), "兜底文案非空")
+    ok(pt not in fb, "兜底文案里不会出现场外考点名（它只引用报告里已有的读数）")
+    ok("甲考点" in fb and "乙 考点" in fb,
+       "兜底文案点名的是**本场真考过的**考点（来自 rec.knowledge_points，"
+       "用**原文**而不是归一化后的名字）", fb[:160])
+    ok(SG.audit(fb, tn, alien, config.SUMMARY_ALIEN_KP_MIN_CHARS)["ok"],
+       "兜底文案自己能过护栏（否则「兜底」这件事本身就是个循环）")
+    ok(bool(SG.fallback_summary([], {}).strip()),
+       "没有任何可评分轮次时兜底也不返回空串")
+    ok("3.5" in fb,
+       "兜底把五维里的相对高低如实报出来（不换算成任何'档次'措辞）")
+
+
+def wrapup_guard_pure():
+    """收尾污染守卫的**纯函数**那一半：`needs_question()` 判据。"""
+    section("▸ 收尾污染守卫：needs_question() 判据（措辞 / 问号 / 两个方向的代价）")
+    from app.core import session as S
+
+    ok(config.A11_WRAPUP_GUARD is True and config.A11_WRAPUP_REPAIR is True,
+       "两个开关默认都开（认得出 + 补得上）")
+
+    # 真跑里逐字观测到的那一句 —— 它是这条守卫存在的全部理由
+    ok(S.needs_question("行，这题你答得住。换一个方向。") is True,
+       "真跑原句「换一个方向。」被判为没有提问")
+    ok(S.needs_question("嗯，这个点你把握住了主干。这道题先聊到这，我们换个话题。") is True,
+       "桩的收尾话（close 轮）也会命中 —— 所以守卫**只查 degrade 轮**")
+    ok(S.needs_question("好的，我们看下一题吧。") is True, "「下一题」命中")
+    ok(S.needs_question("你先回去补一下 JVM 的内存结构。") is True,
+       "辅导腔「回去补」命中（ACTION_DESC['degrade'] 明文禁止的那类）")
+    ok(S.needs_question("嗯，你提到的这几点抓住了主干。那这个机制在高并发下会有什么代价？") is False,
+       "带问句的正常追问放行")
+    ok(S.needs_question("说说你的思路。") is True,
+       "**没有问号就算没提问** —— 取宽：多补一句邀请他说话，代价远小于漏判")
+    ok(S.needs_question("") is True, "空回复也算没提问（不抛异常）")
+    ok(S.needs_question(None) is True, "None 不抛异常")
+    ok(S.needs_question("这句是半角问句? " + "x" * 3) is False, "半角问号也认")
+
+
+def wrapup_guard_e2e(client):
+    """
+    收尾污染守卫的**接线**那一半 —— 桩里真跑一场，让 degrade 轮的回复不带问句。
+
+    ⚠️ 为什么要用桩的 `force_wrapup` 开关：默认桩在追问轮**永远**返回带问句的
+      `_MOCK_REPLY`（那是刻意的），于是这条生产代码在冒烟里永不触发 = 没覆盖。
+      这个开关正是为这条测试加的，只影响桩、默认关。
+    """
+    section("▸ 收尾污染守卫端到端（force_wrapup 桩：真触发 → 补问 → 进 notes/raw）")
+    from app.core.llm import get_llm
+    from app.core import session as S
+
+    llm = get_llm()
+    if not hasattr(llm, "force_wrapup"):
+        ok(False, "桩上有 force_wrapup 开关（否则这条 e2e 跑不了）")
+        return
+
+    # ⚠️ 答案**长短交替**：全用短答的话整场都是 degrade 轮，下面那条
+    #    「L1/L2 轮一个字节都没动」就成了空转（0 次比较，恒真）。
+    #    长短交替让两个桶都非空 —— 这条测试的中心正是"**只有** degrade 被动过"。
+    LONG = "这道题我的理解是这样的：" + "详细说明。" * 60
+    q_i = 0
+    llm.force_wrapup = True
+    try:
+        code, st = client.post("/start", {"job": config.JOBS[4]})
+        ok(code == 200, "守卫 e2e：/start 返回 200", str(st)[:160])
+        sid = st.get("session_id")
+        for _ in range(config.TOTAL_QUESTIONS * (config.MAX_ATTEMPTS_PER_QUESTION + 2)):
+            c2, nx = client.post("/next", {"session_id": sid, "message": ""})
+            if c2 != 200 or nx.get("finished"):
+                break
+            q_i += 1
+            ans = LONG if q_i % 2 else _WEAK_ANSWER
+            for _ in range(config.MAX_ATTEMPTS_PER_QUESTION):
+                c3, events, err = client.stream_post(
+                    "/chat", {"session_id": sid, "message": ans})
+                if c3 != 200 or any(e.get("type") == "error" for e in events):
+                    ok(False, "守卫 e2e：/chat 无错", f"{c3} {err[:160]}")
+                    break
+                dones = [e for e in events if e.get("type") == "done"]
+                if not dones or not dones[-1].get("follow_up"):
+                    break
+        code, fin = client.post("/finish", {"session_id": sid})
+        ok(code == 200, "守卫 e2e：/finish 返回 200", str(fin)[:160])
+    finally:
+        llm.force_wrapup = False
+
+    if code != 200:
+        return
+    raw = fin.get("raw") or {}
+    ex = [a for r in (raw.get("rounds") or []) for a in (r.get("exchanges") or [])]
+    deg = [a for a in ex if a.get("follow_up_level") == "degrade"]
+    ok(bool(deg), f"这一场真的走到了 degrade 轮（{len(deg)} 次）—— 不然下面是空转")
+    ok(all((a.get("interviewer_reply") or "").endswith(WRAPUP_NUDGE) for a in deg),
+       "**每个** degrade 轮的回复都以兜底补问收尾（raw 里看得见，不是只在流里）",
+       str([(a.get("interviewer_reply") or "")[-40:] for a in deg[:2]]))
+    ok(all("？" in (a.get("interviewer_reply") or "") for a in deg),
+       "补过之后每一轮**确实**带上了问句（这条是那件事的意义所在）")
+    # L1/L2 轮一个字节都不许被动（守卫只查 degrade）
+    other = [a for a in ex if a.get("follow_up_level") in ("L1", "L2")]
+    ok(bool(other), f"这一场也走到了 L1/L2 轮（{len(other)} 次）—— 不然下面那条是空转")
+    ok(all(WRAPUP_NUDGE not in (a.get("interviewer_reply") or "") for a in other),
+       f"L1/L2 轮（{len(other)} 次）一个字节都没动")
+
+    joined = "；".join(fin.get("notes") or [])
+    m = re.search(r"(\d+) 轮面试官的引导里没带提问（已用兜底补问 (\d+) 轮）", joined)
+    ok(m is not None, f"notes 里如实交代了这件事（两个数都在）：{joined[:200]}")
+    if m:
+        ok(int(m.group(1)) == len(deg) and int(m.group(2)) == len(deg),
+           f"notes 的计数与 raw 里数出来的完全一致（{m.group(1)}/{m.group(2)} vs {len(deg)}）")
+    ok(raw.get("notes") == fin.get("notes"),
+       "raw.notes 与顶层 notes 是同一份（3 号不用两处对）")
+
+
+def summary_guard_e2e(client):
+    """
+    总评护栏端到端：开/关两个档**都被断言**，而不是只测开着的那一档。
+
+    ⚠️ 为什么这条值得单独跑一场：桩版总评**照真模型契约带 `[[考点名]]` 标注**
+      （见 `llm.MockLLM._summary_text`）。所以「开着 ⇒ 括号被剥掉」
+      与「关掉 ⇒ 括号还在、原样透传」是两条**互斥且可观测**的断言 ——
+      护栏的"关掉 = 逐字回到旧样"因此不是口头保证。
+    """
+    section("▸ 总评护栏端到端（/finish 的 summary：开着过护栏 / 关掉逐字透传）")
+
+    def _finish_once(job, answers):
+        code, st = client.post("/start", {"job": job})
+        if code != 200:
+            return code, None
+        sid = st.get("session_id")
+        for _ in range(config.TOTAL_QUESTIONS * (config.MAX_ATTEMPTS_PER_QUESTION + 2)):
+            c2, nx = client.post("/next", {"session_id": sid, "message": ""})
+            if c2 != 200 or nx.get("finished"):
+                break
+            for _ in range(config.MAX_ATTEMPTS_PER_QUESTION):
+                c3, events, _e = client.stream_post(
+                    "/chat", {"session_id": sid, "message": answers})
+                if c3 != 200:
+                    return c3, None
+                dones = [e for e in events if e.get("type") == "done"]
+                if not dones or not dones[-1].get("follow_up"):
+                    break
+        return client.post("/finish", {"session_id": sid})
+
+    code, fin = _finish_once(config.JOBS[3], "大概是这样，" * 6)
+    ok(code == 200 and isinstance(fin, dict), "护栏 e2e：/finish 返回 200", str(fin)[:160])
+    if code != 200 or not isinstance(fin, dict):
+        return
+    sm = fin.get("summary") or ""
+    ok("[[" not in sm and "［［" not in sm,
+       "开着护栏：summary 里没有残留的 [[考点名]] 标注（过了之后 clean() 会剥掉）", sm[:200])
+    if (fin.get("raw") or {}).get("effective_rounds") == 0:
+        ok("没有提供有效技术内容" in sm,
+           "无效场次的 summary 走确定性说明，不进入总评护栏重写", sm[:200])
+    else:
+        ok("[MOCK]" in sm,
+           "summary 走的是**模型那一版**、不是确定性兜底（桩照契约带标注 ⇒ 就该过护栏）",
+           sm[:200])
+    # 兜底文案的特征句，用来把"悄悄走了兜底"这件事钉死
+    ok("未做额外发挥" not in sm,
+       "确实没走兜底（兜底那句话只该在护栏连拦两次时出现）", sm[:200])
+
+    # ---- 关掉：逐字回到旧样（桩的总评原样透传，连同它的标注）----
+    saved = config.A11_SUMMARY_GUARD
+    try:
+        config.A11_SUMMARY_GUARD = False
+        code2, fin2 = _finish_once(config.JOBS[3], "大概是这样，" * 6)
+        ok(code2 == 200 and isinstance(fin2, dict), "护栏关掉后 /finish 仍返回 200")
+        if code2 == 200 and isinstance(fin2, dict):
+            ok("[[" in (fin2.get("summary") or ""),
+               "**关掉护栏 = 逐字回到旧样**：桩那份带标注的总评原样透传、没人剥它",
+               (fin2.get("summary") or "")[:200])
+    finally:
+        config.A11_SUMMARY_GUARD = saved
+
+
 def main():
     base = None
     if "--base-url" in sys.argv:
@@ -6469,6 +7270,10 @@ def main():
         review_e2e(client)
         persona_intro_pure()
         persona_intro_e2e(client)
+        summary_guard_pure()
+        wrapup_guard_pure()
+        wrapup_guard_e2e(client)
+        summary_guard_e2e(client)
         raw_detail(client)
         scorer_singleton()
         prompts_frozen()
