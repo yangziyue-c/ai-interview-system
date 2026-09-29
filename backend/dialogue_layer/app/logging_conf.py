@@ -14,6 +14,23 @@ from app import config
 _configured = False
 
 
+class SafeRotatingFileHandler(RotatingFileHandler):
+    """Rotating file handler that tolerates Windows sharing conflicts.
+
+    When the service and a separate test process write simultaneously, Windows
+    may reject the rename during rollover. Losing one rotation is harmless;
+    flooding the console with logging tracebacks is not.
+    """
+
+    def doRollover(self):  # type: ignore[override]
+        try:
+            super().doRollover()
+        except PermissionError:
+            # Keep writing to the current file. The next rollover attempt can
+            # retry after the competing process exits.
+            pass
+
+
 def setup_logging(level: str | None = None) -> None:
     """初始化根 logger。重复调用是安全的（只生效一次）。"""
     global _configured
@@ -37,7 +54,7 @@ def setup_logging(level: str | None = None) -> None:
 
     try:
         os.makedirs(config.LOG_DIR, exist_ok=True)
-        fileh = RotatingFileHandler(
+        fileh = SafeRotatingFileHandler(
             os.path.join(config.LOG_DIR, "app.log"),
             maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
         fileh.setFormatter(fmt)

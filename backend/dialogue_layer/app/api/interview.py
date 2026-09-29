@@ -215,6 +215,8 @@ def health():
                       "kb_interview_enabled": config.A11_RAG_KB,
                       "kb_interview_ready": False,
                       "kb_interview_error": f"{type(e).__name__}: {e}"})
+    extra["kb_probe_enabled"] = config.A11_KB_PROBE
+    extra["rag_angle_enabled"] = config.A11_RAG_ANGLE
 
     # 专项强化练习（4b）：只有一个开关，没有「就绪」一说 —— 它不依赖任何外部
     # 数据（题库在 /start 时就加载了），所以**一键**而不是四键。运维看这里
@@ -480,6 +482,14 @@ def asr_transcribe(file: UploadFile = File(..., description="音频文件，≤1
                 return _asr_err(503, "asr_unavailable", detail)
             r = engine.transcribe(path)
             provider_used = engine.tag
+        corrected_text, term_corrections = asrmod.correct_asr_terms(r["text"])
+        if term_corrections:
+            r["text"] = corrected_text
+            for segment in r.get("segments") or []:
+                if isinstance(segment, dict):
+                    segment["text"], _ = asrmod.correct_asr_terms(
+                        segment.get("text") or "")
+        r["term_corrections"] = term_corrections
     except asrmod.AudioTooLong as e:
         return _asr_err(413, "audio_too_long", str(e))
     except Exception as e:
@@ -511,7 +521,8 @@ def asr_transcribe(file: UploadFile = File(..., description="音频文件，≤1
                    emotion_reliability=r.get(
                        "emotion_reliability", asrmod.EMOTION_RELIABILITY),
                    emotion_usage=r.get(
-                       "emotion_usage", asrmod.EMOTION_USAGE))
+                       "emotion_usage", asrmod.EMOTION_USAGE),
+                   term_corrections=r.get("term_corrections") or [])
 
 
 # ============================================================
@@ -946,6 +957,10 @@ def chat(req: ChatReq):
                 "degrade_used": st["degrade_used"],
                 "assist_used": st["assist_used"],
                 "hint_used": st["hint_used"],
+                "asr_retry_used": st["asr_retry_used"],
+                "retry_required": st["retry_required"],
+                "retry_reason": st["retry_reason"],
+                "counted": st["counted"],
                 "attempts": st["attempts"],
                 # False = 本轮回答没有提供可判分信息（“不知道”、乱码等）。
                 "effective": st["effective"],

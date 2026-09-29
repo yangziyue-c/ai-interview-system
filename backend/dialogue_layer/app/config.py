@@ -218,6 +218,17 @@ SCORE_MAX_WINDOWS = int(os.environ.get("A11_SCORE_MAX_WINDOWS", "12"))
 # 6 = L3 工程追问 + 置信度加权合成分。
 # 真跑对照、人工标注和历史报告都靠它区分口径。
 SCORING_VERSION = int(os.environ.get("A11_SCORING_VERSION", "6"))
+# 结束面试时并行评分的工作线程数。每轮主观线与客观线是独立任务；
+# 从 4 提到 8 只改变等待结构，不改变任何评分公式或阈值。
+A11_SCORE_WORKERS = int(os.environ.get("A11_SCORE_WORKERS", "10"))
+# 逐轮后台预评分：正式运行时每道题收尾后提前评分，交卷只聚合。
+# 桩模式和单元测试必须关闭，避免后台任务污染假评分器。
+A11_PRESCORE = os.environ.get("A11_PRESCORE", "1") == "1"
+# Scoring cache stores successful subjective/objective results by a hash of
+# question, answer, model, prompt version and score version.
+A11_SCORE_CACHE = os.environ.get("A11_SCORE_CACHE", "1") == "1"
+SCORE_CACHE_DB = os.environ.get(
+    "A11_SCORE_CACHE_DB", r"D:\A11-Data\score_cache.sqlite3")
 # 五维分允许的最小步进。默认 0.05，让单轮和少量轮次也能得到非 20 分整倍数；
 # 旧实验可用 A11_SCORE_STEP=0.1/0.5 回到旧口径。评论文档要求“允许 0.5 步进”，
 # 0.05 是该要求的更细实现，不是改五维或权重。
@@ -456,8 +467,15 @@ OBJECTIVE_API_KEY = os.environ.get(
     "A11_OBJECTIVE_API_KEY", os.environ.get("DASHSCOPE_API_KEY", "")).strip()
 OBJECTIVE_MODEL = os.environ.get(
     "A11_OBJECTIVE_MODEL",
-    os.environ.get("QWEN_OBJECTIVE_MODEL", "qwen-plus")).strip()
-OBJECTIVE_TIMEOUT = float(os.environ.get("A11_OBJECTIVE_TIMEOUT", "120"))
+    os.environ.get("QWEN_OBJECTIVE_MODEL", "qwen-turbo")).strip()
+OBJECTIVE_MODEL_FAST = os.environ.get(
+    "A11_OBJECTIVE_FAST_MODEL",
+    os.environ.get("QWEN_OBJECTIVE_FAST_MODEL", "qwen-turbo")).strip()
+OBJECTIVE_MODEL_STRONG = os.environ.get(
+    "A11_OBJECTIVE_STRONG_MODEL",
+    os.environ.get("QWEN_OBJECTIVE_STRONG_MODEL", "qwen-plus")).strip()
+OBJECTIVE_ROUTING = os.environ.get("A11_OBJECTIVE_ROUTING", "1") == "1"
+OBJECTIVE_TIMEOUT = float(os.environ.get("A11_OBJECTIVE_TIMEOUT", "30"))
 
 # ---- 面试官朗读（阿里云 CosyVoice v2）----
 TTS_ENABLED = os.environ.get("A11_TTS", "1") == "1"
@@ -625,6 +643,10 @@ A11_ASR_MIN_FREE_MB = int(os.environ.get("A11_ASR_MIN_FREE_MB", "1200"))
 # 第一次 /asr 触发的加载最多等多久（秒），超时就回 503 asr_loading + Retry-After。
 # 给 12 秒：small(int8) 首次加载（含从磁盘读权重）实测在 3~10 秒区间。
 A11_ASR_WAIT_SEC = float(os.environ.get("A11_ASR_WAIT_SEC", "12"))
+# 语音输入被判定为疑似转写失败时，先要求重录，不进入评分，也不消耗追问次数。
+# 只重试一次；第二次仍无有效转写就收题，避免同一道题连续出两遍无效引导。
+A11_ASR_RETRY = os.environ.get("A11_ASR_RETRY", "1") == "1"
+MAX_ASR_RETRY = int(os.environ.get("A11_ASR_MAX_RETRY", "1"))
 # 上传上限：单条音频 ≤ 10MB、净时长 ≤ 60 秒（超了给 413，不静默截断）
 A11_ASR_MAX_MB = int(os.environ.get("A11_ASR_MAX_MB", "10"))
 A11_ASR_MAX_SEC = int(os.environ.get("A11_ASR_MAX_SEC", "60"))
@@ -659,6 +681,8 @@ A11_ASR_ONLINE_API_KEY = os.environ.get(
 ).strip()
 A11_ASR_ONLINE_MODEL = os.environ.get(
     "A11_ASR_ONLINE_MODEL", "qwen-audio-3.1-asr-flash").strip()
+A11_ASR_TERM_GLOSSARY = os.environ.get(
+    "A11_ASR_TERM_GLOSSARY", r"D:\A11-Data\asr_glossary.json").strip()
 A11_ASR_ONLINE_TIMEOUT = float(
     os.environ.get("A11_ASR_ONLINE_TIMEOUT", "90"))
 
@@ -794,6 +818,17 @@ KB_MAX_TOKENS = 512
 #    交卷后 4a 照旧会自己加载那份编码器。两条时机互不污染，靠的是 `kb.py` 里
 #    「面试期不置 `_ready_ev` 闩」这一条，改那个函数前先读它的 docstring。
 A11_RAG_KB = os.environ.get("A11_RAG_KB", "1") == "1"
+
+# Structured KB probe planning. When enabled, KB passages are converted into
+# hidden evidence cards and safe interviewer seeds instead of being dumped into
+# the interviewer prompt as raw background prose.
+A11_KB_PROBE = os.environ.get("A11_KB_PROBE", "1") == "1"
+KB_PROBE_MIN_SCORE = float(os.environ.get("A11_KB_PROBE_MIN_SCORE", "0.18"))
+KB_PROBE_TOP_N = int(os.environ.get("A11_KB_PROBE_TOP_N", "3"))
+
+# RAG question-angle hint. The retrieved text is already head-only, but this
+# switch controls whether the angle is attached to the probe plan.
+A11_RAG_ANGLE = os.environ.get("A11_RAG_ANGLE", "1") == "1"
 # Experimental scoring evidence channel. It is intentionally off by default:
 # the first calibration showed that raw KB snippets made the objective prompt
 # slower and slightly less accurate. Keep the channel available for the next

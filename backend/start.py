@@ -263,6 +263,24 @@ def build_dialogue_env() -> dict:
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
     })
+    # ---- r2 增量包（2026-09-29）的能力开关：预评分并发 + 评分结果缓存 +
+    # 客观题模型分流（常规题走 fast、复杂题走 strong）。原包用 docs/ENV_DELTA.ps1
+    # 设进程环境变量；集成形态下统一在这里注入（同上面那批的处置）。
+    env.update({
+        "A11_PRESCORE": "1",
+        "A11_SCORE_WORKERS": "10",
+        "A11_SCORE_CACHE": "1",
+        # 原包指向交付方本机的 D:\A11-Data\（本机不存在），落项目内；引擎自动建目录
+        "A11_SCORE_CACHE_DB": str(DIALOGUE_DIR / "数据" / "score_cache.sqlite3"),
+        "A11_OBJECTIVE_ROUTING": "1",
+        "A11_OBJECTIVE_FAST_MODEL": "qwen-turbo",
+        "A11_OBJECTIVE_STRONG_MODEL": "qwen-plus",
+    })
+    # ASR 术语表（r2 新增的扩展点）：文件在才注入——引擎侧文件缺失时静默返回
+    # 空表（asr_terms._load_glossary），显式指路只是让扩展点生效。
+    glossary = DIALOGUE_DIR / "数据" / "asr_glossary.json"
+    if glossary.is_file():
+        env["A11_ASR_TERM_GLOSSARY"] = str(glossary)
     if DIALOGUE_KB_DIR.is_dir():
         env["A11_KB_DIR"] = str(DIALOGUE_KB_DIR)
     env["HF_HOME"] = os.environ.get("HF_HOME") or str(DIALOGUE_HF_HOME)

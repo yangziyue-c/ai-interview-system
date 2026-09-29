@@ -22,6 +22,7 @@ from typing import Optional
 
 from app import config
 from app.core import question_bank as qb
+from app.core import score_cache
 from app.logging_conf import get_logger
 
 logger = get_logger(__name__)
@@ -550,6 +551,13 @@ class LLMScorer:
         # config.DIMENSIONS[0] —— 见 config.py 里 dim1_label 的注释。
         # category 缺省时 dim1_label 回落到「技术水平」，与今天的行为一致。
         label = config.dim1_label(ctx.get("category", ""))
+        model = getattr(self.llm, "model", "") or config.DEEPSEEK_MODEL
+        cache_key = score_cache.make_key("subjective", ctx, model)
+        cached = score_cache.get("subjective", cache_key)
+        if cached:
+            logger.info("主观评分命中缓存 model=%s key=%s",
+                        model, cache_key[:12])
+            return cached, None
         user = ROUND_SCORING.safe_substitute(
             score_step=f"{config.SCORE_STEP:g}",
             dim1_label=label,
@@ -617,13 +625,15 @@ class LLMScorer:
             code_check["note"] = str(raw_cc.get("note") or "")[:200]
         score_detail = _clean_score_detail(
             data.get("score_detail"), config.dim1_labels())
-        return {
+        result = {
             "five_dim": dims,
             "comment": str(data.get("comment", "") or "")[:200],
             "errors": errors[:20],
             "code_check": code_check,
             "score_detail": score_detail,
-        }, None
+        }
+        score_cache.put("subjective", cache_key, model, result)
+        return result, None
 
 
 # ============================================================

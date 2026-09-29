@@ -78,6 +78,9 @@ class HealthResp(Loose):
     embedding_error: str = ""
     objective_provider: str = ""
     objective_model: str = ""
+    objective_model_fast: str = ""
+    objective_model_strong: str = ""
+    objective_routing: bool = False
     objective_ready: bool = False
     objective_error: str = ""
     tts_enabled: bool = False
@@ -115,6 +118,8 @@ class HealthResp(Loose):
     kb_interview_enabled: bool = False
     kb_interview_ready: bool = False
     kb_interview_error: str = ""
+    kb_probe_enabled: bool = True
+    rag_angle_enabled: bool = True
     # ---- 语音输入 / ASR（同款四键）----
     # ⚠️ 这里的三种组合含义不同，别混：
     #   asr_enabled=False                 → 没开（配置，A11_ASR=0）
@@ -542,6 +547,9 @@ class AsrResp(Loose):
     emotion_usage: str = Field(
         "", description="情感输出用途；默认 prosody_signal_only，"
                         "只作语音起伏参考，不参与语气自信度档位")
+    term_corrections: list[dict] = Field(
+        default_factory=list,
+        description="ASR 技术术语后处理记录：[{from,to,count}]；只规范术语写法")
     error: str = Field("", description="错误码：asr_unavailable | asr_loading | "
                                        "file_too_large | audio_too_long | "
                                        "unsupported_format | asr_failed")

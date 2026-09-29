@@ -389,6 +389,10 @@ class KbIndex:
                 "章节标题": meta.get("章节标题", ""),
                 "片段": txt,
                 "score": round(score, 4),
+                # Internal only. `kb_refs` is excluded from raw; this full
+                # passage lets the hidden probe extractor inspect context that
+                # may be cut from the short display snippet.
+                "_document": self._records[i].get("document") or "",
             })
             if len(out) >= n:
                 break
@@ -665,6 +669,12 @@ def kb_status() -> dict:
     """
     k = _kb
     interview_error = ""
+    interview_usable = bool(
+        k is not None
+        and not k.error
+        and k.encoder is not None
+        and k._emb is not None
+    )
     if config.A11_RAG_KB and not config.A11_RAG:
         interview_error = ("A11_RAG=0：面试期知识库检索只借不载，"
                            "当前没有可借用的编码器，本轮不会注入背景材料")
@@ -678,6 +688,6 @@ def kb_status() -> dict:
         "kb_dir": config.KB_DIR,
         "kb_interview_enabled": config.A11_RAG_KB,
         "kb_interview_ready": bool(config.A11_RAG_KB and config.A11_RAG
-                                   and k is not None and k.usable),
+                                   and interview_usable),
         "kb_interview_error": interview_error,
     }

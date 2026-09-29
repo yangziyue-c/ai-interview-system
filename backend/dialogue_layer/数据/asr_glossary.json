@@ -1,0 +1,7 @@
+{
+  "aliases": {
+    "思瑞dis": "Redis",
+    "卖sql": "MySQL",
+    "线程池执行器": "ThreadPoolExecutor"
+  }
+}

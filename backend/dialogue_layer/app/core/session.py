@@ -22,9 +22,10 @@ import difflib
 import os
 import random
 import re
+import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Generator, Optional
 
@@ -33,6 +34,7 @@ from app.core import blindspot, question_bank as qb
 from app.core import asr as asrmod
 from app.core import body_language as bodymod
 from app.core import kb as kbmod
+from app.core import kb_probe as kbprobemod
 from app.core import kg as kgmod
 from app.core import objective as objectivemod
 from app.core import rag as ragmod
@@ -47,6 +49,7 @@ from app.core.prompts import (
     INTERVIEWER_SYSTEM, INTRO_BLOCK, INTRO_SNIPPET_MAX, KB_ASIDE,
     NO_INFO_CLOSE_REPLIES, NO_INFO_DEGRADE_REPLIES,
     NO_INFO_WITH_HINT_REPLIES,
+    ASR_RETRY_REPLY, ASR_RETRY_CLOSE_REPLY,
     OPENING_LINE, OPENING_LINE_INTRO, OPENING_LINE_TONE, PERSONA_STYLE_LABELS,
     PROBE_BLOCK, RAG_BLOCK,
     RAG_BLOCK_EMPTY,
@@ -59,6 +62,13 @@ from app.core.scoring import get_scorer, weighted_llm_score
 from app.logging_conf import get_logger
 
 logger = get_logger(__name__)
+
+# Shared background scorer. It only carries per-round final scoring while the
+# interview is still running; /finish waits for any outstanding futures.
+_PRESCORE_EXECUTOR = ThreadPoolExecutor(
+    max_workers=max(2, int(config.A11_SCORE_WORKERS)),
+    thread_name_prefix="a11-prescore",
+)
 
 # 两块素材的**新/旧契约文本**由 `A11_RAG_TASK` 选：默认（"1"）用新文本（给了「被允许的用法」），
 # "0" 逐字回到改动前的「只作背景参考：不要照念、不要向考生透露、不要拿来出新题」。
@@ -134,6 +144,9 @@ class AttemptRecord:
     probe_level: str = ""
     probe_target: str = ""
     probe_kind: str = ""
+    probe_source: str = ""
+    probe_kb_id: str = ""
+    probe_kb_score: Optional[float] = None
     # 判为**未**命中的得分点。给评分模型复核用 —— reranker 的假阴性
     # （考生用自己的话讲对了）只有把未命中的点也摆出来，模型才有机会翻案。
     base_misses: list[str] = field(default_factory=list)
@@ -171,6 +184,9 @@ class AttemptRecord:
     # Camera pose summary for this answer. Numeric/closed fields only; no video,
     # image, raw landmarks or free-form model output is retained here.
     body_language: dict = field(default_factory=lambda: dict(bodymod.BODY_EMPTY))
+    # Hidden KB passages used to derive evidence/probes. Excluded from raw;
+    # only IDs/counts are exposed through kb_meta and probe metadata.
+    kb_refs: list[dict] = field(default_factory=list, repr=False)
     # 覆盖率怎样算出来的。`reranker_score` 是覆盖率信号，不是技术正确性结论；
     # 这两个键让报告能区分旧版整段匹配与新版「整段 + 句窗取最大」。
     coverage_method: str = ""
@@ -207,6 +223,9 @@ class AttemptRecord:
             "probe_level": self.probe_level,
             "probe_target": self.probe_target,
             "probe_kind": self.probe_kind,
+            "probe_source": self.probe_source,
+            "probe_kb_id": self.probe_kb_id,
+            "probe_kb_score": self.probe_kb_score,
             "interviewer_reply": self.interviewer_reply,
             "llm_ok": self.llm_ok,
             "effective": self.effective,
@@ -273,6 +292,10 @@ class RoundRecord:
     # 其中已经真正给过几次提示。给过提示后再说“不知道”，现场应直接收题，
     # 不应把同一提示再复述一遍。
     hint_used: int = 0
+    # 语音转写失败的重录次数。它与 follow_ups_used/degrade_used 分开记账：
+    # 重录不是一次作答，也不该消耗题目的追问预算。
+    asr_retry_used: int = 0
+    asr_retry_reason: str = ""
     # ---- 知识图谱 / RAG（全部是加法，不参与评分）----
     # 出题避重用了哪一级：r0/r1/r2/r3。事后调 KP_OVERLAP_THRESHOLD 的唯一依据。
     pick_level: str = ""
@@ -390,6 +413,20 @@ class RoundRecord:
         traj = " → ".join(f"{a.reranker_score:g}" for a in self.attempts)
         return (f"各次回答覆盖率（满分 100）：{traj}。"
                 "注意看**首答到追问之后的变化** —— 那才是「应变能力」的主要依据。")
+
+    def scoring_kb_refs(self) -> list[dict]:
+        """Unique KB passages collected across attempts for hidden scoring."""
+        out = []
+        seen = set()
+        for attempt in self.attempts:
+            for ref in attempt.kb_refs:
+                kb_id = str(ref.get("kb_id") or "")
+                key = kb_id or str(ref.get("片段") or "")[:80]
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(ref)
+        return out
 
     # ---------- 表达：客观测量（赛题 3b）----------
     # 这一段是「**不用 ASR 也能算**」的那两条（用时 vs 建议用时、答题长度）+
@@ -678,6 +715,8 @@ class RoundRecord:
             "degrade_used": self.degrade_used,
             "assist_used": self.assist_used,
             "hint_used": self.hint_used,
+            "asr_retry_used": self.asr_retry_used,
+            "asr_retry_reason": self.asr_retry_reason,
             "scored": self.scored,
             "score_error": self.score_error,
         }
@@ -828,6 +867,67 @@ def is_no_effective_answer(answer: str, record: "RoundRecord") -> bool:
     return classify_answer(answer, record) in (
         ANSWER_UNKNOWN_DIRECTION, ANSWER_NO_INFO, ANSWER_NONSENSE,
     )
+
+
+_ASR_RETRY_STOP_CHARS = set(
+    "的了呢吧啊我你他她它们是在有和与这那什么怎么可以就还都也很个之其及"
+    "对把被给让到会要能然后因为所以一个"
+)
+
+
+def is_asr_retry_candidate(answer: str, kind: str,
+                           record: "RoundRecord",
+                           speech_used: bool) -> bool:
+    """Whether a voice answer should be retried instead of being scored.
+
+    Only high-confidence gibberish/nonsense from a speech-originated turn is
+    classified here. Explicit "不知道" remains a real no-information answer.
+    """
+    if not (config.A11_ASR_RETRY and speech_used):
+        return False
+    if kind == ANSWER_NONSENSE:
+        return True
+    if kind != ANSWER_EFFECTIVE:
+        return False
+
+    raw = _norm_answer(answer).lower()
+    cjk = _cjk_chars(raw)
+    context = _norm_answer(
+        (record.question or "") + (record.base_points or "") + (record.adv_points or "")
+    ).lower()
+    if not cjk:
+        tokens = re.findall(r"[a-z0-9_+#.]{4,}", raw)
+        if not tokens or len(raw) > 12:
+            return False
+        return not any(
+            token in _ASCII_TECH_ALLOW or token in context
+            for token in tokens
+        )
+    # 超短技术词（快排、冒泡、双锁）不在这里拦；只拦 4~8 个中文字符、
+    # 与题面没有任何实义字关联、也没有判断词的疑似语音乱码。
+    if not 4 <= len(cjk) <= 8:
+        return False
+    if any(marker in cjk for marker in _SHORT_SUBSTANTIVE_MARKERS):
+        return False
+    content_chars = set(cjk) - _ASR_RETRY_STOP_CHARS
+    if not content_chars:
+        return False
+    return not any(ch in context for ch in content_chars)
+
+
+def is_post_score_asr_retry_candidate(answer: str, score: dict,
+                                      speech_used: bool) -> bool:
+    """Catch short speech gibberish that slips past the text-only guard."""
+    if not (config.A11_ASR_RETRY and speech_used):
+        return False
+    if not score.get("reranker_ok"):
+        return False
+    if score.get("base_hit") or score.get("adv_hit"):
+        return False
+    if float(score.get("reranker_score") or 0.0) > 8.0:
+        return False
+    raw = _norm_answer(answer).lower()
+    return len(_cjk_chars(raw)) <= 12 or len(raw) <= 16
 
 
 def no_effective_score(record: "RoundRecord") -> dict:
@@ -1217,6 +1317,24 @@ def decide_action(band: str, record: RoundRecord, repeat: bool = False) -> str:
     return "degrade"
 
 
+def persona_adjust_band(band: str, persona_style: str) -> str:
+    """Adjust only interview pressure, never the score or pass criteria.
+
+    strict raises a shallow answer one probe level; relaxed lowers a deep
+    answer one level so it gives a more accessible entry. standard is unchanged.
+    """
+    if persona_style == "strict":
+        if band == BAND_L1:
+            return BAND_L2
+        return band
+    if persona_style == "relaxed":
+        if band == BAND_L3:
+            return BAND_L2
+        if band == BAND_L2:
+            return BAND_L1
+    return band
+
+
 # 追问素材来自主库哪一列
 _FOLLOW_FIELDS = {"L1": qb.F_FOLLOW_L1, "L2": qb.F_FOLLOW_L2, "L3": qb.F_FOLLOW_L3}
 
@@ -1360,11 +1478,49 @@ def build_probe_plan(action: str, record: RoundRecord, score: Optional[dict]) ->
     if action == "close":
         return {}
     score = score or {}
+    kb_candidate_plan = {}
+    if config.A11_KB_PROBE and action in ("L1", "L2", "L3"):
+        for candidate in (score.get("kb_probe_candidates") or []):
+            features = candidate.get("features") or {}
+            try:
+                candidate_score = float(features.get("score") or 0.0)
+                answer_relevance = float(
+                    features.get("answer_relevance") or 0.0)
+                novelty = float(
+                    features.get("novelty_vs_score_points") or 0.0)
+                question_echo = float(features.get("question_echo") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if (candidate_score < config.KB_PROBE_MIN_SCORE
+                    or answer_relevance < 0.03
+                    or novelty < 0.55
+                    or question_echo >= 0.55):
+                continue
+            kb_candidate_plan = kbprobemod.plan_from_candidate(candidate)
+            kb_candidate_plan["kb_score"] = candidate_score
+            break
     preferred_target = str(score.get("judge_probe_target") or "").strip()
     preferred_kind = str(score.get("judge_probe_kind") or "").strip()
-    if preferred_target and preferred_kind in _PROBE_LABELS:
+    score_has_target = bool(
+        (preferred_target and preferred_kind in _PROBE_LABELS)
+        or score.get("base_miss")
+        or score.get("adv_miss")
+        or (action == "L3" and record.deepen)
+    )
+    use_kb_candidate = bool(kb_candidate_plan and not score_has_target)
+    if use_kb_candidate:
+        target = kb_candidate_plan["target"]
+        kind = kb_candidate_plan["kind"]
+        instruction = kb_candidate_plan["instruction"]
+        probe_source = "kb_fallback"
+        probe_kb_id = kb_candidate_plan.get("kb_id", "")
+        probe_kb_score = kb_candidate_plan.get("kb_score")
+    elif preferred_target and preferred_kind in _PROBE_LABELS:
         target = preferred_target
         kind = preferred_kind
+        probe_source = "judge"
+        probe_kb_id = ""
+        probe_kb_score = None
         instruction = {
             "clarify_basic": "只补一个基础缺口，先问定义、区别或一个最短的具体例子。",
             "deepen_reason": "只追一个缺失的进阶点，问它为什么成立、底层怎么实现，或边界/取舍是什么。",
@@ -1374,22 +1530,41 @@ def build_probe_plan(action: str, record: RoundRecord, score: Optional[dict]) ->
     elif action == "degrade":
         target = _guiding_hint(record) or record.question
         kind = "scaffold"
+        probe_source = "repair"
+        probe_kb_id = ""
+        probe_kb_score = None
         instruction = "给一个最小入口，让考生说出一个相关概念、场景或步骤。"
     elif action == "L3":
         target = (record.deepen[0]["title"] if record.deepen
                   else "当前方案的工程落地、失败场景与取舍")
         kind = "extend_engineering"
+        probe_source = "score_point"
+        probe_kb_id = ""
+        probe_kb_score = None
         instruction = "只追一个工程落地问题，问真实项目用法、失败案例、极端场景或替代方案。"
     elif action == "L2":
         misses = (score.get("adv_miss") or score.get("base_miss") or [])
         target = misses[0] if misses else (_guiding_hint(record) or record.question)
         kind = "deepen_reason"
+        probe_source = "score_point"
+        probe_kb_id = ""
+        probe_kb_score = None
         instruction = "只追一个缺失的进阶点，问它为什么成立、底层怎么实现，或边界/取舍是什么。"
     else:
         misses = (score.get("base_miss") or score.get("adv_miss") or [])
         target = misses[0] if misses else (_guiding_hint(record) or record.question)
         kind = "clarify_basic"
+        probe_source = "score_point"
+        probe_kb_id = ""
+        probe_kb_score = None
         instruction = "只补一个基础缺口，先问定义、区别或一个最短的具体例子。"
+    if config.A11_RAG_ANGLE and record.rag_refs and action in ("L1", "L2", "L3"):
+        rag_angle = qb.truncate(
+            str(record.rag_refs[0].get("text") or "").strip(), 70)
+        if rag_angle and rag_angle not in instruction:
+            instruction += (
+                f" 可参考同岗位替代问法「{rag_angle}」组织措辞，"
+                "但不要改变本轮目标概念。")
     target = qb.truncate(str(target or "").strip(), 100)
     if not target:
         return {}
@@ -1398,6 +1573,9 @@ def build_probe_plan(action: str, record: RoundRecord, score: Optional[dict]) ->
         "kind": kind,
         "kind_label": _PROBE_LABELS[kind],
         "instruction": instruction,
+        "source": probe_source,
+        "kb_id": probe_kb_id,
+        "kb_score": probe_kb_score,
     }
 
 
@@ -1811,6 +1989,9 @@ class InterviewSession:
         self.stage_used = 0
 
         self._result: Optional[dict] = None   # /finish 的缓存信封
+        self._prescore_futures: dict[int, dict] = {}
+        self._prescore_done: set[int] = set()
+        self._prescore_lock = threading.Lock()
 
         self.llm = llm or get_llm()
         self.scorer = scorer or get_scorer(self.llm)
@@ -2425,8 +2606,6 @@ class InterviewSession:
                                  self.session_id)
         sp = asrmod.apply_personal_baseline(
             sp, self._speech_baseline_samples)
-        if sp.get("used"):
-            self._speech_baseline_samples.append(dict(sp))
         body = bodymod.normalize_summary(body_language)
 
         kind = classify_answer(answer, rec)
@@ -2449,6 +2628,14 @@ class InterviewSession:
             # 连续确认/反复要提示也有上限；超过后按“这题没说有效内容”处理。
             kind = ANSWER_NO_INFO
 
+        asr_retry_candidate = is_asr_retry_candidate(
+            answer, kind, rec, bool(sp.get("used")))
+        asr_retry_exhausted = False
+        if (asr_retry_candidate
+                and rec.asr_retry_used < config.MAX_ASR_RETRY):
+            yield {"type": "token", "text": self._request_asr_retry(rec)}
+            return
+
         # 1) 覆盖率信号 + LLM 判档 —— **并行**发起。
         #    明显没有可判分信息时走确定性短路，避免 mock reranker 按篇幅
         #    给乱码高覆盖率，也避免 LLM 对空话硬夸。
@@ -2465,6 +2652,17 @@ class InterviewSession:
             judge_ok = True
         else:
             sc, judge_band, judge_why, judge_ok = self._score_and_judge(answer, rec)
+            if is_post_score_asr_retry_candidate(
+                    answer, sc, bool(sp.get("used"))):
+                if rec.asr_retry_used < config.MAX_ASR_RETRY:
+                    yield {"type": "token", "text": self._request_asr_retry(rec)}
+                    return
+                invalid = True
+                asr_retry_exhausted = True
+                sc = no_effective_score(rec)
+                judge_band = BAND_DEGRADE
+                judge_why = "语音转写仍无有效内容"
+                judge_ok = True
 
         # 2) 两个源融合成一个档，再定动作（同时递增计数器）
         r_band = band_of(sc["reranker_score"])
@@ -2514,17 +2712,56 @@ class InterviewSession:
                                         sp, body)
             return
 
+        asr_retry_exhausted = bool(
+            asr_retry_exhausted
+            or (asr_retry_candidate
+                and rec.asr_retry_used >= config.MAX_ASR_RETRY)
+        )
+        if sp.get("used") and not asr_retry_exhausted:
+            self._speech_baseline_samples.append(dict(sp))
         if invalid:
             prior_invalid = any(not a.effective for a in rec.attempts)
-            if prior_invalid or rec.hint_used > 0:
+            if asr_retry_exhausted or prior_invalid or rec.hint_used > 0:
                 action = "close"
             else:
                 rec.follow_ups_used += 1
                 rec.degrade_used += 1
                 action = "degrade"
         else:
-            action = decide_action(band, rec, repeat)
+            interview_band = persona_adjust_band(band, self.persona_style)
+            action = decide_action(interview_band, rec, repeat)
+            if interview_band != band:
+                logger.info(
+                    "sid=%s round=%d attempt=%d 风格=%s 将判档 %s 调整为 %s "
+                    "（只改追问压力，不改评分）",
+                    self.session_id, rec.round_no, attempt_no,
+                    self.persona_style, band, interview_band,
+                )
         hint = hint_for(action, rec)
+
+        # Retrieve KB before planning the probe. This lets a hidden KB evidence
+        # card nominate one safe follow-up seed; raw passages are never exposed
+        # to the interviewer.
+        kb_refs: list[dict] = []
+        kb_query = ""
+        kb_src = ""
+        if action in ("L1", "L2", "L3") and config.A11_RAG_KB:
+            kb_query, kb_src = kbmod.interview_query(
+                answer, sc.get("base_miss"), sc.get("adv_miss"))
+            kb_refs = kbmod.lookup_interview(kb_query, self.job)
+            rec.kb_refs = kb_refs
+            rec.kb_meta = {
+                "used": bool(kb_refs),
+                "hit_ids": [r.get("kb_id") for r in kb_refs],
+                "sources": [r.get("来源仓库") for r in kb_refs],
+                "scores": [r.get("score") for r in kb_refs],
+            }
+            if config.A11_KB_PROBE and kb_refs:
+                misses = (sc.get("base_miss") or []) + (
+                    sc.get("adv_miss") or [])
+                sc["kb_probe_candidates"] = kbprobemod.extract_probe_candidates(
+                    kb_refs, rec.question, answer, misses,
+                    top_n=config.KB_PROBE_TOP_N)
         probe_plan = build_probe_plan(action, rec, sc)
 
         attempt = AttemptRecord(
@@ -2536,6 +2773,9 @@ class InterviewSession:
             probe_level=action if probe_plan else "",
             probe_target=probe_plan.get("target", ""),
             probe_kind=probe_plan.get("kind", ""),
+            probe_source=probe_plan.get("source", ""),
+            probe_kb_id=probe_plan.get("kb_id", ""),
+            probe_kb_score=probe_plan.get("kb_score"),
             reranker_band=r_band, judge_band=judge_band,
             judge_ok=judge_ok, judge_why=judge_why, fuse_rule=fuse_rule,
             band=band,
@@ -2543,6 +2783,7 @@ class InterviewSession:
             effective=not invalid,
             speech=sp,
             body_language=body,
+            kb_refs=kb_refs,
             coverage_method=sc.get("coverage_method", ""),
             coverage_windows=int(sc.get("coverage_windows") or 0),
         )
@@ -2559,8 +2800,9 @@ class InterviewSession:
             # 否则真实模型和桩模型都可能把“不知道/乱码”续写成“你抓到了主干”，
             # 与 effective=false 和评分状态直接矛盾。
             if action == "close":
-                reply = _no_info_close_reply(
-                    self.persona_style, rec, attempt_no)
+                reply = (ASR_RETRY_CLOSE_REPLY if asr_retry_exhausted
+                         else _no_info_close_reply(
+                             self.persona_style, rec, attempt_no))
             else:
                 reply = _guided_no_info_reply(
                     rec, attempt_no, self.persona_style)
@@ -2635,16 +2877,6 @@ class InterviewSession:
             #    共用同一个，别在这边另写一份，否则「重放对上了」只证明复制品一致。
             # ⚠️ `kb_src` 只进下面那行**日志**（是元数据）：`rag_kb` 的四键白名单**不许加键**
             #    （冒烟里有断言），而且脱敏档下 `raw` 只有占位键。
-            kb_query, kb_src = kbmod.interview_query(
-                answer, sc.get("base_miss"), sc.get("adv_miss"))
-            kb_refs = kbmod.lookup_interview(kb_query, self.job)
-            rec.kb_refs = kb_refs
-            rec.kb_meta = {
-                "used": bool(kb_refs),
-                "hit_ids": [r.get("kb_id") for r in kb_refs],
-                "sources": [r.get("来源仓库") for r in kb_refs],
-                "scores": [r.get("score") for r in kb_refs],
-            }
             # ---- 材料**放哪**：system 里的块，还是末尾 user 旁白（2026-09-25）----
             # `A11_RAG_KB_ASIDE=1`（默认）⇒ 材料进旁白、system 里那块留**空串**；
             # =0 ⇒ 留 system = 改动前的位置。**两种情况下材料都只出现一次**。
@@ -2957,6 +3189,111 @@ class InterviewSession:
                     self.swaps_used, config.MAX_SWAP_PER_SESSION, rec.swap_reason,
                     judge_band, r_band, self.stage_idx, self.stage_used)
 
+    def _scoring_context(self, rec: RoundRecord) -> dict:
+        return {
+            "question": rec.question,
+            "difficulty": rec.difficulty,
+            "stage": rec.stage,
+            "category": rec.category,
+            "base_points": qb.truncate(rec.base_points, config.POINT_TRUNCATE),
+            "adv_points": qb.truncate(rec.adv_points, config.POINT_TRUNCATE),
+            "qa_block": rec.qa_block(),
+            "reranker_note": rec.reranker_note(),
+            "kb_evidence": (
+                kbmod.format_block(rec.scoring_kb_refs())
+                if config.A11_KB_SCORE and rec.scoring_kb_refs()
+                else "（无）"
+            ),
+            "pace_note": rec.pace_note(),
+        }
+
+    def _prescore_llm(self, rec: RoundRecord):
+        started = time.time()
+        try:
+            if self.scorer.llm is None:
+                return {}, "评分器未初始化（没有可用的 LLM）"
+            data, err = self.scorer.llm.score_round(self._scoring_context(rec))
+            logger.info("sid=%s round=%d 后台主观评分完成 耗时=%.1fs ok=%s",
+                        self.session_id, rec.round_no,
+                        time.time() - started, bool(data))
+            return data, err or ""
+        except Exception as e:  # noqa: BLE001
+            logger.exception("sid=%s round=%d 后台主观评分异常",
+                             self.session_id, rec.round_no)
+            return {}, f"{type(e).__name__}: {e}"
+
+    def _prescore_objective(self, rec: RoundRecord):
+        started = time.time()
+        try:
+            data, err = self.objective.score_round(self._scoring_context(rec))
+            logger.info("sid=%s round=%d 后台客观评分完成 耗时=%.1fs ok=%s",
+                        self.session_id, rec.round_no,
+                        time.time() - started, bool(data))
+            return data, err or ""
+        except Exception as e:  # noqa: BLE001
+            logger.exception("sid=%s round=%d 后台客观评分异常",
+                             self.session_id, rec.round_no)
+            return {}, f"{type(e).__name__}: {e}"
+
+    def _start_prescore(self, rec: RoundRecord) -> None:
+        if (not config.A11_PRESCORE or config.LLM_MOCK
+                or config.RERANKER_MOCK or config.A11_ASR_MOCK):
+            return
+        if getattr(self.scorer, "llm", None) is None:
+            return
+        if not any(bool(getattr(a, "effective", True)) for a in rec.attempts):
+            return
+        with self._prescore_lock:
+            if rec.round_no in self._prescore_futures or rec.round_no in self._prescore_done:
+                return
+            self._prescore_futures[rec.round_no] = {
+                "llm": _PRESCORE_EXECUTOR.submit(self._prescore_llm, rec),
+                "objective": _PRESCORE_EXECUTOR.submit(
+                    self._prescore_objective, rec),
+            }
+
+    def _consume_prescore(self, rec: RoundRecord) -> bool:
+        with self._prescore_lock:
+            futures = self._prescore_futures.pop(rec.round_no, None)
+            if futures is None:
+                return rec.round_no in self._prescore_done
+        data, err = futures["llm"].result()
+        objective, objective_error = futures["objective"].result()
+        rec.objective_detail = objective or {}
+        rec.objective_detail["error"] = objective_error
+        if err or not data.get("five_dim"):
+            rec.scored = False
+            rec.score_error = err or "模型未返回可解析的五维分"
+        else:
+            adjusted = dict(data["five_dim"])
+            adjustment = (
+                bodymod.score_adjustment(rec.body_language)
+                if config.A11_BODY_SCORE
+                else {
+                    "applied": False,
+                    "reason": "disabled",
+                    "communication_delta": 0.0,
+                    "adaptability_delta": 0.0,
+                }
+            )
+            if adjustment.get("applied"):
+                adjusted = bodymod.apply_to_five_dim(
+                    adjusted, rec.body_language)
+            rec.body_score_adjustment = adjustment
+            rec.five_dim = adjusted
+            rec.code_check = data.get("code_check") or {
+                "applicable": False, "correct": None, "note": "",
+            }
+            rec.score_detail = data.get("score_detail") or {}
+            if adjustment.get("applied"):
+                rec.score_detail["body_language_adjustment"] = adjustment
+            rec.comment = data.get("comment", "")
+            rec.errors = data.get("errors", [])
+            rec.scored = True
+        with self._prescore_lock:
+            self._prescore_done.add(rec.round_no)
+        return True
+
     def _settle_round(self, rec: RoundRecord, action: str, attempt: AttemptRecord) -> None:
         """本轮收尾判定：唯一决定 phase 的地方之一。"""
         if action == "close":
@@ -2972,16 +3309,39 @@ class InterviewSession:
             attempt.reranker_score, attempt.reranker_ok, action,
             rec.follow_ups_used, config.MAX_FOLLOW_UP,
             rec.degrade_used, config.MAX_DEGRADE, self.phase)
+        if action == "close":
+            self._start_prescore(rec)
+
+    def _request_asr_retry(self, rec: RoundRecord) -> str:
+        rec.asr_retry_used += 1
+        rec.asr_retry_reason = "nonsense_transcript"
+        # Do not put the raw gibberish into transcript history.
+        self.transcript.append({
+            "role": "user",
+            "content": "（语音转写无法识别，已请求重录）",
+        })
+        self.transcript.append({
+            "role": "assistant",
+            "content": ASR_RETRY_REPLY,
+        })
+        logger.info(
+            "sid=%s round=%d 语音转写无效，要求重录 %d/%d；不记作答、不计追问",
+            self.session_id, rec.round_no, rec.asr_retry_used,
+            config.MAX_ASR_RETRY,
+        )
+        return ASR_RETRY_REPLY
 
     def round_status(self) -> dict:
         """给 SSE 的 done / round_end 事件用。"""
         rec = self.current_round
         if rec is None or not rec.attempts:
+            retrying = bool(rec is not None and rec.asr_retry_used > 0)
             pending = bool(rec is not None and rec.assist_used)
-            action = "degrade" if pending else "close"
+            action = "retry" if retrying else (
+                "degrade" if pending else "close")
             return {
                 "action": action,
-                "follow_up": pending,
+                "follow_up": pending or retrying,
                 "round_open": bool(rec.open) if rec is not None else False,
                 "attempts": 0,
                 "effective": False,
@@ -2989,6 +3349,10 @@ class InterviewSession:
                 "degrade_used": rec.degrade_used if rec is not None else 0,
                 "assist_used": rec.assist_used if rec is not None else 0,
                 "hint_used": rec.hint_used if rec is not None else 0,
+                "asr_retry_used": rec.asr_retry_used if rec is not None else 0,
+                "retry_required": retrying,
+                "retry_reason": (rec.asr_retry_reason if rec is not None else ""),
+                "counted": False,
                 "reranker_score": None, "reranker_ok": True,
                 "coverage_method": "", "coverage_windows": 0,
                 "reranker_band": None,
@@ -3014,6 +3378,10 @@ class InterviewSession:
             "degrade_used": rec.degrade_used,
             "assist_used": rec.assist_used,
             "hint_used": rec.hint_used,
+            "asr_retry_used": rec.asr_retry_used,
+            "retry_required": False,
+            "retry_reason": "",
+            "counted": True,
             "reranker_score": last.reranker_score,
             "reranker_ok": last.reranker_ok,
             "coverage_method": last.coverage_method,
@@ -3055,54 +3423,83 @@ class InterviewSession:
         ]
         failed_rounds: list[int] = []
 
-        # 每轮一次五维评分；4 路并发（一轮一次 LLM 调用，串行太慢）
-        def _score(rec: RoundRecord
-                   ) -> tuple[RoundRecord, dict, Optional[str], dict, Optional[str]]:
-            # 每一轮的失败都就地捕获成 (data={}, err)，绝不让异常穿出线程池 ——
-            # 一轮评分挂掉不该让整场面试拿不到结果
+        # 主观线与客观线是两次独立模型调用。放进同一个线程池同时发出，
+        # 避免旧的“4 线程 × 每轮两段串行”结构。
+        def _score_ctx(rec: RoundRecord) -> dict:
+            return {
+                "question": rec.question,
+                "difficulty": rec.difficulty,
+                "stage": rec.stage,
+                "category": rec.category,
+                "base_points": qb.truncate(rec.base_points, config.POINT_TRUNCATE),
+                "adv_points": qb.truncate(rec.adv_points, config.POINT_TRUNCATE),
+                "qa_block": rec.qa_block(),
+                "reranker_note": rec.reranker_note(),
+                "kb_evidence": (
+                    kbmod.format_block(rec.scoring_kb_refs())
+                    if config.A11_KB_SCORE and rec.scoring_kb_refs()
+                    else "（无）"
+                ),
+                "pace_note": rec.pace_note(),
+            }
+
+        def _score_llm(rec: RoundRecord):
+            started = time.time()
             try:
                 if self.scorer.llm is None:
-                    return rec, {}, "评分器未初始化（没有可用的 LLM）", {}, ""
-                ctx = {
-                    "question": rec.question,
-                    "difficulty": rec.difficulty,
-                    "stage": rec.stage,
-                    # 题型决定第一维的标签（行为素质题 = 岗位胜任力关联度）。
-                    # 只影响喂进去的 prompt 文字，不影响分的键。
-                    "category": rec.category,
-                    "base_points": qb.truncate(rec.base_points, config.POINT_TRUNCATE),
-                    "adv_points": qb.truncate(rec.adv_points, config.POINT_TRUNCATE),
-                    "qa_block": rec.qa_block(),
-                    # 传摘要而不是裸分：reranker 失败时它会明说「不可用」，
-                    # 而不是把默认分 50 当成真实结果递下去。
-                    "reranker_note": rec.reranker_note(),
-                    "kb_evidence": (
-                        kbmod.format_block(rec.kb_refs)
-                        if config.A11_KB_SCORE and rec.kb_refs else "（无）"
-                    ),
-                    # 表达客观测量（用时 vs 建议用时 / 语音作答时的语速·停顿·
-                    # 填充词）。与 reranker_note 同一个位置、同一套写法：
-                    # 它只是**证据**，不给它单独一维、不改任何权重。
-                    "pace_note": rec.pace_note(),
-                }
-                data, err = self.scorer.llm.score_round(ctx)
-                obj, obj_err = self.objective.score_round(ctx)
-                return rec, data, err, obj, obj_err
-            except Exception as e:
-                logger.exception("sid=%s round=%d 评分线程异常", self.session_id, rec.round_no)
-                return rec, {}, f"{type(e).__name__}: {e}", {}, ""
+                    return "llm", rec, {}, "评分器未初始化（没有可用的 LLM）"
+                data, err = self.scorer.llm.score_round(_score_ctx(rec))
+                logger.info("sid=%s round=%d 主观评分完成 耗时=%.1fs ok=%s",
+                            self.session_id, rec.round_no,
+                            time.time() - started, bool(data))
+                return "llm", rec, data, err or ""
+            except Exception as e:  # noqa: BLE001
+                logger.exception("sid=%s round=%d 主观评分线程异常",
+                                 self.session_id, rec.round_no)
+                return "llm", rec, {}, f"{type(e).__name__}: {e}"
+
+        def _score_objective(rec: RoundRecord):
+            started = time.time()
+            try:
+                obj, err = self.objective.score_round(_score_ctx(rec))
+                logger.info("sid=%s round=%d 客观评分完成 耗时=%.1fs ok=%s",
+                            self.session_id, rec.round_no,
+                            time.time() - started, bool(obj))
+                return "objective", rec, obj, err or ""
+            except Exception as e:  # noqa: BLE001
+                logger.exception("sid=%s round=%d 客观评分线程异常",
+                                 self.session_id, rec.round_no)
+                return "objective", rec, {}, f"{type(e).__name__}: {e}"
 
         if scorable:
-            with ThreadPoolExecutor(max_workers=min(4, len(scorable))) as pool:
-                for rec, data, err, obj, obj_err in pool.map(_score, scorable):
-                    rec.objective_detail = obj or {}
-                    rec.objective_detail["error"] = obj_err or ""
-                    if err or not data.get("five_dim"):
+            for rec in scorable:
+                if self._consume_prescore(rec) and not rec.scored:
+                    failed_rounds.append(rec.round_no)
+        pending_score = [
+            rec for rec in scorable
+            if not rec.scored and rec.round_no not in self._prescore_done
+        ]
+
+        if pending_score:
+            max_workers = max(
+                2, min(config.A11_SCORE_WORKERS, len(pending_score) * 2))
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                futures = []
+                for rec in pending_score:
+                    futures.append(pool.submit(_score_llm, rec))
+                    futures.append(pool.submit(_score_objective, rec))
+                for future in as_completed(futures):
+                    kind, rec, payload, err = future.result()
+                    if kind == "objective":
+                        rec.objective_detail = payload or {}
+                        rec.objective_detail["error"] = err
+                        continue
+                    if err or not payload.get("five_dim"):
                         rec.scored = False
                         rec.score_error = err or "模型未返回可解析的五维分"
                         failed_rounds.append(rec.round_no)
                     else:
-                        adjusted = dict(data["five_dim"])
+                        adjusted = dict(payload["five_dim"])
                         adjustment = (
                             bodymod.score_adjustment(rec.body_language)
                             if config.A11_BODY_SCORE
@@ -3118,14 +3515,14 @@ class InterviewSession:
                                 adjusted, rec.body_language)
                         rec.body_score_adjustment = adjustment
                         rec.five_dim = adjusted
-                        rec.code_check = data.get("code_check") or {
+                        rec.code_check = payload.get("code_check") or {
                             "applicable": False, "correct": None, "note": "",
                         }
-                        rec.score_detail = data.get("score_detail") or {}
+                        rec.score_detail = payload.get("score_detail") or {}
                         if adjustment.get("applied"):
                             rec.score_detail["body_language_adjustment"] = adjustment
-                        rec.comment = data.get("comment", "")
-                        rec.errors = data.get("errors", [])
+                        rec.comment = payload.get("comment", "")
+                        rec.errors = payload.get("errors", [])
                         rec.scored = True
 
         # 汇总（修 #5：失败轮次不进均分，且**不伪装成 0 分**）
@@ -3778,6 +4175,10 @@ class InterviewSession:
         if not any(v is not None for v in avg.values()):
             return "本场面试没有产生可评分的数据，无法给出评价。" + (
                 "（" + "；".join(notes) + "）" if notes else "")
+        if self.questions_asked < self.total_questions:
+            # 提前结束的场次已经不是正式完整成绩。这里直接用本轮真实读数
+            # 拼确定性总评，避免为了一个“不完整评分”再等一次总评模型。
+            return sg.fallback_summary(self.rounds, avg)
 
         # ⚠️ 第一维用**本题型的标签**（行为素质题 = 岗位胜任力关联度）而不是键名。
         #    否则总结模型看到的仍是「行为素质题那一轮：技术水平3.5」—— 正是本次

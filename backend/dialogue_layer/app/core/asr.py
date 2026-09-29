@@ -43,6 +43,7 @@ from typing import Optional
 import httpx
 
 from app import config
+from app.core.asr_terms import correct_asr_terms
 from app.core.rag import free_mb          # 复用，不抄第二份（方案 §四 明确要求）
 from app.logging_conf import get_logger
 

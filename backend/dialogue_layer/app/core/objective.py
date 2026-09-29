@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Optional
 
 import httpx
 
 from app import config
+from app.core import score_cache
 from app.core.llm import _extract_json
 from app.logging_conf import get_logger
 
@@ -182,6 +184,31 @@ def parse_objective_payload(data: dict) -> tuple[dict, Optional[str]]:
     }, None
 
 
+_STRONG_MARKERS = re.compile(
+    r"设计|架构|一致性|并发|分布式|故障|失败|排查|性能|高可用|高并发"
+)
+
+
+def select_objective_model(ctx: dict) -> str:
+    if not config.OBJECTIVE_ROUTING:
+        return config.OBJECTIVE_MODEL
+    question = str(ctx.get("question") or "")
+    qa_block = str(ctx.get("qa_block") or "")
+    points = (
+        str(ctx.get("base_points") or "").count("\n")
+        + str(ctx.get("adv_points") or "").count("\n")
+    )
+    complex_case = (
+        len(qa_block) >= 1400
+        or points >= 10
+        or bool(_STRONG_MARKERS.search(question))
+    )
+    return (
+        config.OBJECTIVE_MODEL_STRONG
+        if complex_case else config.OBJECTIVE_MODEL_FAST
+    )
+
+
 class ObjectiveScorer:
     def __init__(self):
         self.error = ""
@@ -194,6 +221,13 @@ class ObjectiveScorer:
     def score_round(self, ctx: dict) -> tuple[dict, Optional[str]]:
         if not self.ready:
             return {}, "客观线未配置 base_url 或 api_key"
+        model = select_objective_model(ctx)
+        cache_key = score_cache.make_key("objective", ctx, model)
+        cached = score_cache.get("objective", cache_key)
+        if cached:
+            logger.info("客观评分命中缓存 model=%s key=%s",
+                        model, cache_key[:12])
+            return cached, None
         url = config.OBJECTIVE_BASE_URL.rstrip("/")
         if not url.endswith("/chat/completions"):
             url += "/chat/completions"
@@ -209,7 +243,7 @@ class ObjectiveScorer:
                 url,
                 headers={"Authorization": f"Bearer {config.OBJECTIVE_API_KEY}"},
                 json={
-                    "model": config.OBJECTIVE_MODEL,
+                    "model": model,
                     "messages": [
                         {"role": "system", "content": SYSTEM},
                         {"role": "user", "content": user},
@@ -229,7 +263,11 @@ class ObjectiveScorer:
             return {}, f"{type(e).__name__}: {e}"
 
         data = _extract_json(self.last_raw)
-        return parse_objective_payload(data)
+        result, error = parse_objective_payload(data)
+        if result:
+            result["model"] = model
+            score_cache.put("objective", cache_key, model, result)
+        return result, error
 
 
 _objective: Optional[ObjectiveScorer] = None
@@ -247,6 +285,9 @@ def objective_status() -> dict:
     return {
         "objective_provider": config.OBJECTIVE_PROVIDER,
         "objective_model": config.OBJECTIVE_MODEL,
+        "objective_model_fast": config.OBJECTIVE_MODEL_FAST,
+        "objective_model_strong": config.OBJECTIVE_MODEL_STRONG,
+        "objective_routing": config.OBJECTIVE_ROUTING,
         "objective_ready": scorer.ready,
         "objective_error": scorer.error,
     }
