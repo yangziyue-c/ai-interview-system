@@ -29,6 +29,18 @@ class EngineUnavailableError(EngineError):
     """连不上、超时——换一次重试可能有用"""
 
 
+class EngineSessionLostError(EngineError):
+    """引擎侧的会话不存在了（它返 404 / `session_not_found`）
+
+    与「连不上引擎」是两回事：引擎好好地在跑，是**这一场**没了。
+    引擎的会话存在内存里（这是它的设计），**它一重启，所有进行中的会话就全丢**——
+    2026-09-29 实测撞上过：考生建完会话 2 分 43 秒后提交答案，引擎已重启过一次。
+
+    单独成类是为了让调用方能区分处理：继续提交只会一直 404，而「同一用户同时
+    只能有一场进行中」又挡住新开一场——不收尾的话那场面试会卡成孤儿。
+    """
+
+
 # 引擎的岗位取值 = 题库全名（A11 的 config.JOBS），与 RAG 过滤用的是同一套。
 # 复用 _RAG_JOB_LABELS 而不另抄一份：两处各写一份、改一处忘一处，就会静默出空题集
 # （RAG 那条链上踩过这个坑，原始警告在 ai_interviewer.py）。
@@ -320,7 +332,8 @@ class DialogueEngineAdapter:
             code = body.get("code") if isinstance(body, dict) else None
             err = body.get("err") if isinstance(body, dict) else str(body)[:120]
             if code == "session_not_found" or resp.status_code == 404:
-                raise EngineError(f"引擎会话不存在或已过期：{err}")
+                # 单独成类：调用方要据此**收尾本场**并给可操作的提示，而不是笼统报不可用
+                raise EngineSessionLostError(f"引擎会话不存在或已过期：{err}")
             raise EngineError(f"对话层 {path} 失败（HTTP {resp.status_code}）：{err}")
         if not isinstance(body, dict):
             raise EngineError(f"对话层 {path} 返回的不是对象")

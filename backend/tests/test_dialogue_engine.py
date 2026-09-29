@@ -580,6 +580,72 @@ async def test_transcribe_reports_engine_failure(client: AsyncClient, monkeypatc
 
 
 # ============================================================
+# 引擎会话失效（引擎重启过）——两处出口都要收尾，不能把考生卡死
+# ============================================================
+async def test_lost_engine_session_abandons_interview(client: AsyncClient, monkeypatch):
+    """答题时会话已丢：本场被收尾 + 409，考生能立刻重开
+
+    引擎的会话存在内存里，它一重启进行中的会话就全没。不收尾的话本场会同时撞上
+    两堵墙：继续答是 404、主动结束也是 404，而「同一用户只能有一场进行中」又挡着
+    新开一场——考生就此被困住（2026-09-29 实测撞上过）。
+    """
+    from app.adapters.ai_dialogue import EngineSessionLostError
+    from app.api import interviews as interviews_api
+
+    fake = _FakeEngine()
+    monkeypatch.setattr(settings, "DIALOGUE_ENGINE", "a11")
+    monkeypatch.setattr(interviews_api, "get_dialogue_adapter", lambda: fake)
+    headers = await _auth_headers(client, "lost")
+
+    r = await client.post(f"{BASE}/interviews", json={"position": "backend"}, headers=headers)
+    assert r.status_code == 200
+    interview_id = r.json()["data"]["interview"]["id"]
+
+    async def _lost(*_a, **_kw):
+        raise EngineSessionLostError("引擎会话不存在或已过期：deadbeef")
+
+    monkeypatch.setattr(fake, "answer", _lost)
+    r = await client.post(
+        f"{BASE}/interviews/{interview_id}/answers",
+        json={"answer": "我的回答"}, headers=headers,
+    )
+    assert r.status_code == 409
+    assert "已失效" in r.json()["message"]
+
+    # 本场已收尾 → 能立刻开新的一场（没这一步就会撞 409「你有一场进行中的面试」）
+    r = await client.post(f"{BASE}/interviews", json={"position": "backend"}, headers=headers)
+    assert r.status_code == 200
+
+
+async def test_lost_engine_session_on_finish(client: AsyncClient, monkeypatch):
+    """主动结束时会话已丢：同样收尾 + 409——报告出不来，但路要让开"""
+    from app.adapters.ai_dialogue import EngineSessionLostError
+    from app.api import interviews as interviews_api
+
+    fake = _FakeEngine()
+    monkeypatch.setattr(settings, "DIALOGUE_ENGINE", "a11")
+    monkeypatch.setattr(interviews_api, "get_dialogue_adapter", lambda: fake)
+    headers = await _auth_headers(client, "lostfin")
+
+    r = await client.post(f"{BASE}/interviews", json={"position": "backend"}, headers=headers)
+    interview_id = r.json()["data"]["interview"]["id"]
+    # 先有一次有效回答（否则会先撞「没有任何有效回答」那条 400）
+    r = await client.post(
+        f"{BASE}/interviews/{interview_id}/answers",
+        json={"answer": "先答一次"}, headers=headers,
+    )
+    assert r.status_code == 200
+
+    async def _lost(*_a, **_kw):
+        raise EngineSessionLostError("引擎会话不存在或已过期：deadbeef")
+
+    monkeypatch.setattr(fake, "finish", _lost)
+    r = await client.post(f"{BASE}/interviews/{interview_id}/finish", headers=headers)
+    assert r.status_code == 409
+    assert "已失效" in r.json()["message"]
+
+
+# ============================================================
 # 简历模式 / 面试官朗读 / 体态分析（2026-09-29 版引擎新增）
 # ============================================================
 async def test_resume_mode_forwards_resume_text(client: AsyncClient, engine_mode):

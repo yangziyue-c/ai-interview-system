@@ -18,7 +18,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import select
 
 from app.adapters import get_dialogue_adapter, get_evaluator_adapter, get_interviewer_adapter
-from app.adapters.ai_dialogue import EngineError
+from app.adapters.ai_dialogue import EngineError, EngineSessionLostError
 from app.api.deps import CurrentUser, DbSession, get_owned_interview, validate_position
 from app.config import settings
 from app.core.engine_report import build_engine_meta, build_engine_report
@@ -66,6 +66,31 @@ async def _require_engine_ready() -> None:
     )
 
 
+# 引擎会话失效时的对外提示。写死成一个常量，三处出口（答题 / 主动结束 / 自动结束）
+# 用同一句话——考生不该因为从哪条路撞上而看到不同的说法。
+ENGINE_SESSION_LOST_MESSAGE = (
+    "本场面试在 AI 对话层已失效：该服务的会话存在内存里，它重启之后进行中的会话就全没了。"
+    "本场已为你结束，请重新开始一场。"
+)
+
+
+async def _abandon_lost_engine_session(db: DbSession, interview: Interview) -> None:
+    """引擎侧会话丢了：把本场收尾，不让它卡成孤儿
+
+    会话一丢，本场在本项目侧会同时撞上两堵墙：继续答题是 404、主动结束也是 404
+    （两条路都要先找到会话），而「同一用户同时只能有一场进行中」又挡着新开一场
+    ——考生就此被困住，除非有人手工改库。
+
+    所以这里主动把状态收到 finished。**报告是生成不出来的**：评分得由引擎做，
+    会话没了就做不了，本项目也不会拿 P3 的评估结果去顶（那等于半场换一套口径，
+    正是这个项目一贯要避免的事）。收尾只是把路让开。
+    """
+    if interview.status == InterviewStatus.IN_PROGRESS.value:
+        StateMachine.transition(interview, InterviewStatus.FINISHED)
+        interview.finished_at = datetime.now()
+        await db.commit()
+
+
 async def _start_engine_interview(interview: Interview, resume_text: str = "") -> str:
     """引擎链路开场：建会话 + 取第一题，返回题面。
 
@@ -98,6 +123,10 @@ async def _evaluate_via_engine(
     """
     try:
         payload = await get_dialogue_adapter().finish(interview.engine_session_id or "")
+    except EngineSessionLostError:
+        # 会话失效不在这里处理：它要的是「收尾本场」而非「报一句不可用」，
+        # 交给 _finish_interview（那边能拿到 db）。这里放行，不做转换。
+        raise
     except EngineError as exc:
         raise _engine_http_error(exc) from exc
     # digest / review 为 null 表示引擎侧关掉了对应功能（A11_GROWTH=0 / A11_REVIEW=0），
@@ -122,6 +151,10 @@ async def _advance_engine(db: DbSession, interview: Interview, current_qa: QARec
     adapter = get_dialogue_adapter()
     try:
         result = await adapter.answer(interview.engine_session_id or "", current_qa.answer or "")
+    except EngineSessionLostError as exc:
+        # 引擎重启过，会话没了：本场答不下去，收尾并明确告知（先于 EngineError 捕获）
+        await _abandon_lost_engine_session(db, interview)
+        raise ConflictError(ENGINE_SESSION_LOST_MESSAGE) from exc
     except EngineError as exc:
         raise _engine_http_error(exc) from exc
 
@@ -221,7 +254,13 @@ async def _finish_interview(db: DbSession, interview: Interview) -> Report:
     digest: dict | None = None
     review: dict | None = None
     if interview.engine == ENGINE_A11:
-        data, engine_meta, digest, review = await _evaluate_via_engine(interview, qa_list)
+        try:
+            data, engine_meta, digest, review = await _evaluate_via_engine(interview, qa_list)
+        except EngineSessionLostError as exc:
+            # 会话没了 → 报告出不来。但这一场必须收尾：状态转换已经在上面做过，
+            # 这里 commit 一下把它落定，否则请求回滚会让本场又卡回 in_progress。
+            await db.commit()
+            raise ConflictError(ENGINE_SESSION_LOST_MESSAGE) from exc
     else:
         # 5 维契约由评估适配器归一化（缺失字段在适配器层补齐），这里直接消费
         data = await get_evaluator_adapter().evaluate(interview.position, qa_list)
