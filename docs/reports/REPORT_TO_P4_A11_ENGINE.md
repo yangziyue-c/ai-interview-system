@@ -169,32 +169,10 @@ POST /interviews    { "position": "backend", "resume_text": "三年 Java 后端�
 带上 `resume_text`（≤6000 字）后，AI 对话层会按简历出题，考官 prompt 与开场白都会用到它。
 **仅在引擎模式下生效**；原链路传了会被忽略（那一条的出题只看岗位与轮次）。
 
-## 七、两套接口的对照：**别照抄 5 号的页面**
+## 七、两套接口的对照
 
-P5 给的 `web/test_chat.html` 等三个页面是**直连 8005** 的调试页，调的是对话层自己的接口——与本项目的对外接口是两套。照它们实现会走偏，这里做一张对照：
+**单独成文了**：`REPORT_TO_P4_ENGINE_API_MAPPING.md`（对话层接口 × 本项目接口 · 对照表）。
 
-| 对话层（8005） | 本项目（8001） | 说明 |
-| :--- | :--- | :--- |
-| `POST /start` | `POST /interviews` | 建会话；对话层那一跳由主后端替你调 |
-| `POST /next` | —（无直接对应） | 下一题由 `POST /interviews/{id}/answers` 响应里的 `next_question` 带回 |
-| `POST /chat`（**SSE**） | `POST /interviews/{id}/answers` | 主后端内部消费 SSE，**对外是普通 JSON**，前端不需要 EventSource |
-| `POST /finish` | `POST /interviews/{id}/finish`（或答满自动结束） | |
-| `GET /result/{session_id}` | `GET /reports/{interview_id}` | **口径不同**：引擎 0-5，本项目 0~100 |
-| `POST /asr` | `POST /uploads/audio/asr` | 见 5.1 |
-| `POST /tts` | `POST /uploads/audio/tts` | 见 6.1 |
-| `POST /body-language/analyze` | `POST /body-language/analyze` | 见 6.2（请求/响应同形） |
-| `POST /growth` | `GET /reports/archive` | 见 5.2 |
-| `POST /practice` | —（未接） | 要做「专项练习」界面时再一起接 |
-| `POST /model_answer` | —（未接） | 同上（接入时记得渲染 `note`，见 5.4 第 2 条） |
-| `GET /health` | `GET /health` | 本项目自己的健康检查，与对话层无关 |
-
-**四处理念差异**，这是为什么不能照抄：
-
-| 维度 | 对话层 | 本项目 |
-| :--- | :--- | :--- |
-| 鉴权 | 无 | 全部要 `Authorization: Bearer`（只有注册/登录/岗位列表/分享免登录） |
-| 会话 | `session_id`，**存在内存里**，服务一重启就全丢 | `interview_id`，落数据库；历史、成长曲线、分享都靠它 |
-| 刷新恢复 | 页面刷新即丢（会话 ID 只在 JS 变量里，也没调 `/result` 恢复） | 用 `interview_id` 可以恢复（`GET /interviews/{id}`） |
-| 五维分数 | 0-5（步进 0.05） | **0~100** |
-
-另外，`resume_setup.html` 把简历存进浏览器 `localStorage`——那是调试页的做法。正式前端若要「记住简历」，存储位置与隐私口径得自己定；本项目另有 `/resumes` 一套接口，简历是落服务端的。
+那三个调试页为什么不能照抄、12 个接口逐条怎么对应、四处理念差异（鉴权 / 会话持久化 /
+刷新恢复 / 分数口径）、以及它们各自容易踩的坑，都在那一份里。这份引擎说明保持只讲
+「引擎模式带来了什么变化」，两份各司其职。
