@@ -231,6 +231,17 @@ class TestPositions:
         for key in ("code", "name", "description", "tech_stack", "focus"):
             assert key in data[0]
 
+    async def test_positions_list_needs_no_token(self, client: AsyncClient):
+        """岗位列表**不需要登录**：注册页要先拿到清单才能选目标岗位
+
+        这是刻意的约定（与 /share 并列，是仅有的两个免登录业务接口），在此钉住——
+        哪天有人顺手给它加回 CurrentUser 依赖，这条会红。
+        """
+        resp = await client.get(f"{BASE}/positions")      # 刻意不带 Authorization
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 0
+        assert len(resp.json()["data"]) >= 3
+
     async def test_invalid_position(self, client: AsyncClient):
         """无效岗位：注册与开始面试均返回 40000"""
         resp = await client.post(
