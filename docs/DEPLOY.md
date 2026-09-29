@@ -161,8 +161,25 @@ curl http://<引擎地址>:8005/health            # 期望 status=ok、scorer_re
 放行防火墙（**管理员** PowerShell，在后端/引擎那台上执行）：
 
 ```powershell
-netsh advfirewall firewall add rule name="AI面试-8001" dir=in action=allow protocol=TCP localport=8001
+netsh advfirewall firewall add rule name="AI-Interview-8001" dir=in action=allow `
+  protocol=TCP localport=8001 remoteip=100.64.0.0/10
 ```
+
+⚠️ **为什么必须单独放行**：Windows 把 Tailscale 网卡归为「**专用网络**」(Private)，
+而 Python 首次监听时自动创建的放行规则挂在「**公用**」(Public) 上，两者互不通用——
+所以 tailnet 里的机器默认连不进来。**本机自测发现不了这件事**：本机访问自己的 Tailscale
+地址走的是回环，不经过入站检查，看起来一切正常，等到队友来连才暴露。
+
+查自己机器上的归类（`Tailscale` 那行的 `NetworkCategory`）：
+
+```powershell
+Get-NetConnectionProfile | Select-Object InterfaceAlias, NetworkCategory
+```
+
+⚠️ **`remoteip=100.64.0.0/10` 不能省**——那是 Tailscale 的地址段，只放 tailnet 内的机器进来；
+省掉它就成了「对所有网络（含公网）放开 8001 入站」，不要为了省事那么写。
+撤销规则：`netsh advfirewall firewall delete rule name="AI-Interview-8001"`。
+引擎自己跑在本机时，8005 同理（把端口换掉即可）。
 
 ## 局域网演示（同一 WiFi，无需穿透）
 
