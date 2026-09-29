@@ -157,6 +157,18 @@ POST /interviews           { "position": "backend" }    // 岗位 code（见 2.1
 > 同一用户同时只能有一场进行中的面试，否则返回 409。
 > position 不存在或未开放时返回 400（`code: 40000`）。
 
+**简历模式**（可选）：
+
+```
+POST /interviews           { "position": "backend", "resume_text": "三年 Java 后端，做过订单系统…" }
+```
+
+带上 `resume_text`（≤6000 字）后，AI 对话层会切到简历档：考官 prompt 与开场白都会用它，
+追问也会顺着简历里的项目走。
+
+> 该字段**仅 `DIALOGUE_ENGINE=a11` 时生效**。原链路的出题只看岗位与轮次、不看简历，
+> 传了会被忽略（不报错）。
+
 ### 3.2 我的面试列表
 
 ```
@@ -588,7 +600,7 @@ POST /rag/search
 
 ---
 
-## 6. 上传与简历导入
+## 6. 上传、简历、音频与体态
 
 ### 6.1 上传面试录音
 
@@ -621,18 +633,19 @@ POST /uploads/audio/asr    Content-Type: multipart/form-data
   "duration_ms": 16878, "audio_ms": 16878,
   "segments": [ { "start": 0.0, "end": 6.0, "text": "…" } ],
   "pauses": 0, "pause_total_ms": 0,
-  "asr_model": "faster-whisper-…(int8)", "elapsed_ms": 3804,
-  "loudness": 0.0622, "loudness_cv": 0.331, "tail_ratio": 1.05,
-  "emotion": "hap", "emotion_score": 0.545,
-  "emotion_dist": { "neu": 0.445, "hap": 0.545, "ang": 0.010, "sad": 0.00001 }
+  "asr_model": "sensevoice-small-int8", "elapsed_ms": 1697,
+  "loudness": 0.1374, "loudness_cv": 0.2644, "tail_ratio": 1.05,
+  "emotion": "neu", "emotion_score": null,
+  "emotion_dist": null
 } }
 ```
 
 - `url` 可直接填入提交答案的 `audio_url`，用法与 6.1 的返回值相同。
 - 转写有错字是正常形态：前端把文本填进输入框、**由考生自行修改**后再发送。
-- `emotion*` 三项来自本地情感模型。⚠️ 该模型是**英语表演情绪**数据训的，**中文上标签不可信**（实测中文 3/3 判 `hap`）：只用它看分布起伏，别把标签当结论展示。
+- `asr_model` 为 `sensevoice-small-int8`（本地 SenseVoice）。首次调用要等它懒加载（实测约 3 秒），期间返回「还在加载」是正常形态，隔几秒重试即可。
+- `emotion*` 三项的标签由 SenseVoice 自己给（闭集 `neu`/`hap`/`ang`/`sad`），**`emotion_score` 与 `emotion_dist` 可能为 `null`**——那个模型只给标签、不给概率。⚠️ 引擎对它的定位是「韵律信号」而非情绪结论，中文上标签尤其不可信：只说「有情感分布、中文看波动」，**别把标签当结论展示给考生**。
 - `loudness*` 与 `tail_ratio` 是音量三指标，与情感无关，中文上一样有效。
-- 对话层未就绪时返回 **503（50300）**，不返回空文本——空文本会被当成「考生没说话」。
+- 对话层未就绪或内存不足时返回 **503（50300）**，不返回空文本——空文本会被当成「考生没说话」。
 
 ### 6.3 上传头像
 
@@ -748,6 +761,56 @@ Content-Disposition: attachment; filename*=utf-8''%E5%BC%A0%E4%B8%89%E7%9A%84%E7
 > **前端必须带 token 请求**：`<iframe src>` 与 `window.open()` 发出的是不带
 > `Authorization` 头的普通 GET，拿不到文件。要用 fetch/axios 带 token 请求，
 > `responseType: 'blob'`，再 `URL.createObjectURL(blob)` 预览或触发下载。
+
+### 6.7 面试官朗读（文字进，音频地址出）
+
+```
+POST /uploads/audio/tts    { "text": "请讲讲你对 JVM 内存模型的理解。", "voice": "" }
+```
+
+把一段文本（通常是面试官的提问）合成语音，返回站内地址：
+
+```json
+{ "code": 0, "message": "朗读音频已生成", "data": {
+  "url": "/uploads/tts/12_ab3f9c2d.wav",
+  "content_type": "audio/wav", "bytes": 84320, "chars": 18
+} }
+```
+
+- `text` 上限 800 字；`voice` 留空用引擎默认音色。
+- 返回的是**本站地址**，前端可直接 `<audio src>` 播放。音频落在 `uploads/tts/`，
+  与录音（`uploads/` 根目录）**分开**：朗读音频随时可重新合成、属临时产物，
+  将来要清理时删这一个目录即可，不会碰到要留档的录音。
+- 只有引擎链路可用（原链路不经过对话层，没有可朗读的面试官话语）。
+- 引擎未就绪或合成失败返回 **503（50300）**，**不返空音频**——空音频在前端
+  表现为「播放了但没有声音」，比一次报错难查得多。
+
+### 6.8 体态分析（本地关键点进，沟通姿态信号出）
+
+```
+POST /body-language/analyze
+{
+  "frames": [
+    { "timestamp_ms": 0,
+      "landmarks": [ { "x": 0.51, "y": 0.32, "z": 0.0, "visibility": 0.99 } ] }
+  ]
+}
+```
+
+摄像头画面**不出浏览器**：前端用 MediaPipe 在本地提取姿态关键点、画面即丢，
+上传的只有这里的数字（一次 1~600 帧，x/y/z 是 [0,1] 的归一化坐标）。
+本接口**只收数字关键点**，不接受图片、视频或音频。
+
+返回引擎的沟通姿态信号：
+
+```json
+{ "code": 0, "message": "分析完成", "data": { "score": 82.0, "notes": ["肩线平稳"] } }
+```
+
+- `score` **可能不存在**：证据不足（帧太少、镜头里看不到肩线）时引擎**不给分**，
+  而不是给低分。前端别补 0——摄像头坏了不该等于考生体态差。
+- 引擎未就绪时返回 **503（50300）**。
+- ⚠️ 该结果目前**未接入评分链路**：只作为独立信号返回，是否进报告待定。
 
 ---
 

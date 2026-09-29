@@ -37,11 +37,13 @@ backend/dialogue_layer/
 │   ├── kb_index/                     知识库检索索引（约 150MB，不入库）
 │   └── models/sensevoice-small/      语音转写模型（约 239MB，不入库）
 ├── smoke_test.py            冒烟测试（桩模式，不需要 key，判据「失败 0 项」）
-├── check_env.py             换机器自检（本机跑会有若干 FAIL，见下文）
-├── build_kb_index.py        生成知识库检索索引（4a 用，索引本身不入库）
 ├── requirements-handoff.txt 轻量在线模式所需依赖（本版新增 sherpa-onnx）
+├── check_env.py             ⚠️ 上一版的自检工具：检的是旧依赖（faster-whisper 等），
+│                               本机跑会报一堆 FAIL，那些 FAIL 不代表环境有问题
+├── build_kb_index.py        ⚠️ 上一版的建库脚本：本版索引随数据包提供，不需要重建
+├── dump_prompt.py           上一版的 prompt 调试工具，留档
 ├── requirements.txt         上一版的依赖清单，留档备查
-└── run.ps1                  单机调试入口（本项目正常流程用 backend/start.bat）
+└── run.ps1                  上一版的单机调试入口（本项目正常流程用 backend/start.bat）
 ```
 
 题库不在此目录，见下一节。交付方另发的 `API_CONTRACT.md`、`DEPLOYMENT.md`、`START_HERE.md`、`RESUME_INTEGRATION.md` 一并放在本目录，作为其原始说明留档。
