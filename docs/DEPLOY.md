@@ -1,4 +1,9 @@
-# 内网穿透部署说明（演示用）
+# 部署与联调说明
+
+> 本文覆盖两类场景，按需要看：
+> **异地组员联调**（前端 ↔ 后端 ↔ 对话层引擎，走 Tailscale 虚拟内网）见「Tailscale 虚拟组网」；
+> **对外公网演示**（评委/观众用手机流量访问）见「Sakura Frp」与「NatApp」。
+> 同一 WiFi 下的演示见最后一节。
 
 目标：让评委/观众在任何网络（手机流量、校园网外）通过公网地址访问你笔记本上运行的后端。
 
@@ -91,6 +96,73 @@
 | 提示 CORS 错误 | 本项目已配置 `*` 通配，若仍报错检查是否访问了旧地址 |
 | 免费隧道限速/限流量 | 演示前清空浏览器缓存，语音文件控制在 5MB 内；可切换 Sakura Frp 备用节点 |
 | 校园网封隧道端口 | 换 Sakura Frp 的 Web 类型隧道（走 80/443 端口，一般可通） |
+
+## Tailscale 虚拟组网（异地联调，当前在用）
+
+组员不在同一个 WiFi 时，用 Tailscale 把各自的机器拉进一张虚拟内网（免费、私有、不暴露公网）。
+前端连后端、后端连对话层引擎都走它，不需要公网穿透。
+
+### 每台机器要做的
+
+1. 装 Tailscale（官网下载，Windows 版一路下一步），用**同一个账号**登录、加入同一个 tailnet。
+2. 查地址：
+
+   ```powershell
+   tailscale ip -4        # 只取 IPv4，形如 100.x.y.z
+   tailscale status       # 完整节点列表：谁在线、各自的地址
+   ```
+
+3. 后端这台照常启动 `start.bat`——指引里会自动打印 Tailscale 地址（在线时才打这一行）。
+
+### ⚠️ 校园网会拦 Tailscale
+
+2026-09-29 实测：校园网出口对 Tailscale 的控制服务器连接做了阻断——**TCP 能连上，一进 TLS 就被重置**
+（`An existing connection was forcibly closed by the remote host`），客户端一直停在 `NeedsLogin`。
+**用手机热点登录一次**即可绕过；登录成功后切回校园网，节点之间往往还能靠缓存状态与 DERP 中继维持
+（DERP 是另一组地址，未必也在被拦范围内）。
+
+排查时已排除本机原因：DNS 解析正常（`192.200.0.x` 确实是 Tailscale 自有地址段）、系统无代理、
+1472 字节不分片能通（非 MTU 问题）、未见安全管控软件。
+
+### 联调地址
+
+| 用途 | 地址 |
+| :--- | :--- |
+| 后端接口（前端联调用这个） | `http://<后端那台的Tailscale地址>:8001` |
+| 演示前端（若 backend/start.bat 也开着） | `http://<后端那台的Tailscale地址>:5273` |
+| 对话层引擎（引擎跑在别人机器上时） | `http://<引擎那台的Tailscale地址>:8005` |
+
+后端把引擎指到别人机器时，在 `backend/.env` 里写：
+
+```
+DIALOGUE_ENGINE=a11
+DIALOGUE_ENGINE_URL=http://<引擎那台的Tailscale地址>:8005
+```
+
+`start.py` 看到引擎地址是远端，就**不会再拉起本地那一份**——本地引擎没人用，
+却会占住 8005、吃一份内存，全功能档下还要预热评分器。
+
+### 验证
+
+```powershell
+curl http://<后端地址>:8001/api/v1/health     # 期望 code=0 且 status=healthy
+curl http://<引擎地址>:8005/health            # 期望 status=ok、scorer_ready=true、llm_configured=true
+```
+
+### 连不上时按顺序查
+
+| 现象 | 检查 |
+| :--- | :--- |
+| 对方 Tailscale 地址 ping 不通 | 两台是否登录了**同一个** tailnet（`tailscale status` 里要能看到对方）；对方是否在线 |
+| ping 通但 8001 连不上 | 对端 `start.bat` 是否在跑；**Windows 防火墙**是否放行（见下） |
+| 8005 连不上 | 引擎那台的 `FRAMEWORK_HOST` 若被设成 `127.0.0.1`，就只有它本机可达（代码默认是 `0.0.0.0`）；防火墙同理 |
+| 面试接口返 503 | 引擎那台不在线或没就绪——`curl <引擎地址>/health` 看 `scorer_ready` 与 `llm_configured` |
+
+放行防火墙（**管理员** PowerShell，在后端/引擎那台上执行）：
+
+```powershell
+netsh advfirewall firewall add rule name="AI面试-8001" dir=in action=allow protocol=TCP localport=8001
+```
 
 ## 局域网演示（同一 WiFi，无需穿透）
 

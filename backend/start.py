@@ -16,6 +16,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 # start.bat 已执行 chcp 65001，控制台为 UTF-8；此处统一 stdout 编码与行缓冲，
 # 保证中文/emoji 正常显示且重定向日志时 print 及时落盘
@@ -109,6 +110,33 @@ def get_lan_ip() -> str:
         s.close()
 
 
+def get_tailscale_ip() -> str:
+    """获取本机在 Tailscale 网络里的地址；没接入 tailnet 时返回空串
+
+    技巧与 get_lan_ip 同款：UDP connect 不真正发包，只是让系统按路由表挑一个
+    出口地址。探测目标是 Tailscale 的 MagicDNS 固定地址（100.100.100.100），
+    所以**只有本机确实在 tailnet 里**才会选到 100.64.0.0/10 那段 CGNAT 地址；
+    没装 Tailscale 的同事跑起来只会拿到局域网地址，下面的校验会判成空串，
+    启动指引里就少打一行——不会报错，也不会打出一个假的地址。
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("100.100.100.100", 1))
+        ip = s.getsockname()[0]
+    except Exception:
+        return ""
+    finally:
+        s.close()
+    parts = ip.split(".")
+    if len(parts) == 4 and parts[0] == "100":
+        try:
+            if 64 <= int(parts[1]) <= 127:      # 100.64.0.0/10 = Tailscale 的地址段
+                return ip
+        except ValueError:
+            return ""
+    return ""
+
+
 def wait_until_ready(
     url: str,
     seconds: int,
@@ -166,6 +194,27 @@ def read_env_value(name: str) -> str:
     except OSError:
         return ""
     return ""
+
+
+def dialogue_engine_url() -> str:
+    """当前生效的对话层引擎地址（.env 没配则回退本机默认端口）"""
+    return read_env_value("DIALOGUE_ENGINE_URL").strip() or f"http://localhost:{DIALOGUE_PORT}"
+
+
+def dialogue_engine_is_remote() -> bool:
+    """DIALOGUE_ENGINE_URL 是否指向**别的机器**（如经 Tailscale 连队友的 8005）
+
+    指向远端时不该再拉起本地那一份：本地引擎没人用，却会占住 8005 端口、
+    吃一份内存，全功能档下还要去预热评分器——纯属白烧。
+    """
+    url = read_env_value("DIALOGUE_ENGINE_URL").strip()
+    if not url:
+        return False
+    host = urlparse(url).hostname or ""
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return False
+    # 自己的局域网地址 / Tailscale 地址也算本机（那种配法等价于 localhost）
+    return host not in (get_lan_ip(), get_tailscale_ip())
 
 
 def dialogue_model_cached() -> bool:
@@ -280,9 +329,11 @@ def print_guide(
     frontend_ready: bool,
     rag_started: bool = False,
     dialogue_started: bool = False,
+    dialogue_url: str = "",
 ) -> None:
     """启动完成后的访问指引：明确每个网址可以做什么"""
     lan_ip = get_lan_ip()
+    ts_ip = get_tailscale_ip()      # 没接入 tailnet 时是空串，这一行就不打
     print()
     print("=" * 64)
     print("  AI 模拟面试系统 —— 启动完成，访问指引")
@@ -293,12 +344,16 @@ def print_guide(
     if frontend_ready:
         print(f"      本机访问:  http://localhost:{FRONTEND_PORT}")
         print(f"      局域网:    http://{lan_ip}:{FRONTEND_PORT}  （同一 WiFi 设备可访问）")
+        if ts_ip:
+            print(f"      Tailscale: http://{ts_ip}:{FRONTEND_PORT}  （异地队友经虚拟网可访问）")
         print("      操作路径:  注册账号 → 岗位大厅选岗位 → 完成一场面试 → 查看 AI 评估报告")
     else:
         print(f"      （前端暂不可用：目录缺失或端口 {FRONTEND_PORT} 被非前端进程占用，请检查后重启）")
     print("  📚  [后端接口] Swagger 在线调试（API 文档）")
     print(f"      本机访问:  http://localhost:{PORT}/docs")
     print(f"      局域网:    http://{lan_ip}:{PORT}/docs")
+    if ts_ip:
+        print(f"      Tailscale: http://{ts_ip}:{PORT}  （前端联调就用这个地址）")
     print("  🔍  [评估服务] P3 AI 评估健康检查")
     print(f"      本机访问:  http://localhost:{EVALUATOR_PORT}/health")
     print("  🧠  [RAG 语义检索] V5 知识库检索（题库未命中时的语义兜底）")
@@ -310,11 +365,18 @@ def print_guide(
     else:
         print("      （未启用：依赖缺失或 backend/rag 不存在，主流程不受影响）")
     print("  🤖  [AI 对话层引擎] 整场委托出题 / 追问 / 五维评分（可选引擎模式）")
-    if dialogue_started:
-        print(f"      健康检查:  http://localhost:{DIALOGUE_PORT}/health")
-        print(f"      接口文档:  http://localhost:{DIALOGUE_PORT}/docs")
-        print("      注：评分模型在后台预热（约需数十秒），/health 的 scorer_ready 变 true 即就绪。")
-        print("      启用方式:  在 backend/.env 里设 DIALOGUE_ENGINE=a11（不设则走原链路）")
+    if dialogue_url:
+        print(f"      地址:      {dialogue_url}")
+        print(f"      健康检查:  {dialogue_url}/health")
+        if dialogue_started:
+            print("      注：评分模型在后台预热（约需数十秒），/health 的 scorer_ready 变 true 即就绪。")
+        if dialogue_url != f"http://localhost:{DIALOGUE_PORT}":
+            # 远端引擎：面试能不能跑取决于**别人的机器**在不在线，这一条要说清楚
+            print("      注：引擎跑在远端——它不在线时面试接口返 503（不回落原链路），演示前先探 /health。")
+        if read_env_value("DIALOGUE_ENGINE").strip().lower() == "a11":
+            print("      状态:      已在 .env 里启用（DIALOGUE_ENGINE=a11）")
+        else:
+            print("      启用方式:  在 backend/.env 里设 DIALOGUE_ENGINE=a11（不设则走原链路）")
     else:
         print("      （未启用：目录缺失或依赖未就绪，主流程不受影响）")
     print("=" * 64)
@@ -485,11 +547,18 @@ def main() -> None:
         # 后台线程里预热（数十秒），干等会把「一键启动」变成「一键启动加等待」；
         # 就绪与否由 /health 的 scorer_ready 表达，引擎模式下面试会据此明确报错。
         dialogue_started = False
-        if not DIALOGUE_ENTRY.exists():
+        dialogue_url = ""
+        if dialogue_engine_is_remote():
+            # 引擎跑在队友机器上（经 Tailscale 连 P5 的 8005 就是这种）：**不拉起本地那一份**。
+            # 本地引擎没人用，却会占住 8005 端口、吃一份内存，全功能档还要预热评分器。
+            dialogue_url = dialogue_engine_url()
+            print(f"AI 对话层指向远端 {dialogue_url}，跳过拉起本地引擎")
+        elif not DIALOGUE_ENTRY.exists():
             print("未找到 AI 对话层（backend/dialogue_layer/），跳过")
         elif port_in_use(DIALOGUE_PORT):
             print(f"AI 对话层端口 {DIALOGUE_PORT} 已被占用，跳过拉起（沿用已在跑的服务）")
             dialogue_started = True
+            dialogue_url = f"http://localhost:{DIALOGUE_PORT}"
         else:
             dialogue_deps_ok = sh(f'"{python}" -c "{DIALOGUE_IMPORT_CHECK}"').returncode == 0
             if not dialogue_deps_ok:
@@ -501,9 +570,10 @@ def main() -> None:
             if not dialogue_deps_ok:
                 print("[警告] AI 对话层依赖未就绪，跳过（主流程不受影响）")
             else:
-                if not dialogue_model_cached():
-                    print("[提示] 未发现 reranker 模型缓存，对话层要等模型就位才可用；")
-                    print("       下载命令见 backend/dialogue_layer/README-集成说明.md")
+                # 评分器默认走**在线**（硅基流动）；只有既没配密钥、本地也没有缓存时才提示
+                if not read_env_value("SILICONFLOW_API_KEY") and not dialogue_model_cached():
+                    print("[提示] 未配硅基流动密钥、也没有本地 reranker 缓存，评分器起不来；")
+                    print("       两条路任选其一，见 backend/dialogue_layer/README-集成说明.md")
                 print(f"拉起 AI 对话层引擎 → http://localhost:{DIALOGUE_PORT}"
                       "（评分模型后台预热，稍后看 /health 的 scorer_ready）")
                 dialogue_proc = subprocess.Popen(
@@ -512,12 +582,14 @@ def main() -> None:
                     env=build_dialogue_env(),
                 )
                 dialogue_started = True
+                dialogue_url = f"http://localhost:{DIALOGUE_PORT}"
 
         print_guide(
             server_ready,
             frontend_ready,
             rag_started=rag_proc is not None,
             dialogue_started=dialogue_started,
+            dialogue_url=dialogue_url,
         )
         exit_code = server.wait()
     finally:
