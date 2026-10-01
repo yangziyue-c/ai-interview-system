@@ -5,28 +5,19 @@
 - 后端 API 文档（Swagger）：http://localhost:8001/docs
 - 接口唯一权威：[../docs/API.md](../docs/API.md)
 - **页面需求 + 接口补充说明（合并版）**：[../docs/reports/REPORT_TO_P4.md](../docs/reports/REPORT_TO_P4.md)
+- **引擎功能对接注意事项（2026-10-01）**：[../docs/reports/REPORT_TO_P4_ENGINE_P1_HANDOFF.md](../docs/reports/REPORT_TO_P4_ENGINE_P1_HANDOFF.md)
+  ——朗读 / 体态 / 语音转写 / 简历模式怎么接、有哪些坑，都在这份
 - 统一响应格式：`{ "code": 0, "message": "ok", "data": ... }`，`code != 0` 即失败
   （40100 = 登录失效，清 token 跳登录页；40900 = 已有进行中的面试）
 
 ## 开发方式（二选一）
 
-### A. 开发模式（Vite dev server）
+**联调**：`npm install && npm run dev`，前端跑在 5173，直连 `http://localhost:8001/api/v1`
+（后端 CORS 已开放 `*`，无需代理）。
+**部署**：`npm run build`，把 `dist/` 下的全部内容拷进 `backend/static/`，访问 `http://localhost:8001`。
 
-```bash
-npm install
-npm run dev
-```
-
-开发时前端运行在 5173 端口，请求 `http://localhost:8001`（后端 CORS 已开放 `*`，无需代理）。
-
-### B. 联调/演示模式（构建产物由后端挂载，统一端口）
-
-```bash
-npm run build
-# 把 dist/ 下的全部内容复制到 backend/static/（覆盖占位页 index.html）
-```
-
-然后访问 `http://localhost:8001` 即可（与 API 同端口，无跨域问题）。
+连接方式、端口清单、Base URL 怎么配、路由模式要求与常见问题排查，见
+[../docs/FRONTEND_CONNECT.md](../docs/FRONTEND_CONNECT.md)。连不上时先看那一份。
 
 ## 页面需求（详见 REPORT_TO_P4.md 第 1 节）
 
@@ -34,9 +25,10 @@ npm run build
 2. **岗位大厅 + 岗位详情**：岗位卡片/详情读 `GET /positions`（code→name 由接口 `name` 字段提供）
 3. **面试对话室**：
    - 聊天式界面（AI 气泡靠左、自己靠右），顶部显示「第 N 题」（`interview.current_round`）
-   - 文本输入 + 按住说话录音：转写用浏览器 Web Speech API（后端无 ASR 接口），
-     录音文件（MediaRecorder 录 webm）先 `POST /api/v1/uploads/audio` 上传拿 `url`，
-     随答案一起提交到 `POST /api/v1/interviews/{id}/answers` 的 `audio_url` 字段
+   - 文本输入 + 按住说话录音：转写可以前端自己做，也可以用后端
+     `POST /api/v1/uploads/audio/asr` 一次拿到文本与 `url`（见
+     [../docs/FRONTEND_CONNECT.md](../docs/FRONTEND_CONNECT.md) 第七节），
+     随后随答案提交到 `POST /api/v1/interviews/{id}/answers` 的 `audio_url` 字段
    - 「结束面试」按钮（`POST /api/v1/interviews/{id}/finish`）
 4. **报告页**：`GET /api/v1/reports/{interview_id}`，
    总分 + 五个维度（技术/逻辑/表达/应变/岗位匹配度）雷达图 + 评语/优缺点/建议；
