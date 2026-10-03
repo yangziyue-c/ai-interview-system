@@ -197,8 +197,9 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
 
 **每次 git commit 后必须同时推送到两个远程**（提交前先 `git pull origin main` 同步）：
 
-远程地址见 `git remote -v`：`origin` 走 **SSH**（P1 本机 `~/.ssh/config` 里配了 `ssh.github.com:443` 端口回退，
-22 端口不通时靠它，**勿删该配置**）；`gitee` 走 HTTPS。
+远程地址见 `git remote -v`：**两个远程都走 SSH**（`origin`=GitHub、`gitee`=Gitee）。
+`origin` 在本机 `~/.ssh/config` 里配了 `ssh.github.com:443` 端口回退，
+22 端口不通时靠它，**勿删该配置**。
 
 ```bash
 git push origin main && git push gitee main

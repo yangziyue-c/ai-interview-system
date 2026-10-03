@@ -7,6 +7,8 @@
 - **页面需求 + 接口补充说明（合并版）**：[../docs/reports/REPORT_TO_P4.md](../docs/reports/REPORT_TO_P4.md)
 - **引擎功能对接注意事项（2026-10-01）**：[../docs/reports/REPORT_TO_P4_ENGINE_P1_HANDOFF.md](../docs/reports/REPORT_TO_P4_ENGINE_P1_HANDOFF.md)
   ——朗读 / 体态 / 语音转写 / 简历模式怎么接、有哪些坑，都在这份
+- **TTS / 体态接口代理情况答复（2026-10-03）**：[../docs/reports/REPORT_TO_P4_ENGINE_PROXY_QA.md](../docs/reports/REPORT_TO_P4_ENGINE_PROXY_QA.md)
+  ——两种 TTS 模式的取舍、体态响应字段随分支变化的分支表
 - 统一响应格式：`{ "code": 0, "message": "ok", "data": ... }`，`code != 0` 即失败
   （40100 = 登录失效，清 token 跳登录页；40900 = 已有进行中的面试）
 
