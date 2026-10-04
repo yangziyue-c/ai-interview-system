@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="590" viewBox="0 0 1000 590">
+<rect width="1000" height="590" fill="#ffffff"/>
+<rect x="190" y="40" width="620" height="78" rx="12" fill="#ffffff" stroke="#4f6ef7" stroke-width="2"/>
+<text x="500" y="74" font-size="18" font-weight="700" fill="#3a54d6" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">DIALOGUE_ENGINE　部署级开关</text>
+<text x="500" y="100" font-size="12.5" font-weight="400" fill="#7a8296" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">在 backend/.env 配置，改一处影响所有新开场的面试；已开场的场次不受影响</text>
+<path d="M 500 118 V 152 H 280" fill="none" stroke="#4f6ef7" stroke-width="2.4" stroke-linejoin="round"/>
+<line x1="280" y1="152" x2="280" y2="177" stroke="#4f6ef7" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M 274.42 177 L 280 186 L 285.58 177 Z" fill="#4f6ef7"/>
+<path d="M 500 118 V 152 H 720" fill="none" stroke="#4f6ef7" stroke-width="2.4" stroke-linejoin="round"/>
+<line x1="720" y1="152" x2="720" y2="177" stroke="#4f6ef7" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M 714.42 177 L 720 186 L 725.58 177 Z" fill="#4f6ef7"/>
+<text x="390" y="144" font-size="14" font-weight="700" fill="#3a54d6" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">留空（默认）</text>
+<text x="610" y="144" font-size="14" font-weight="700" fill="#3a54d6" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">= a11</text>
+<rect x="100" y="196" width="360" height="220" rx="12" fill="#ffffff" stroke="#e4e8f2" stroke-width="1.5"/>
+<text x="280" y="234" font-size="17" font-weight="700" fill="#1f2430" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">本项目自有链路</text>
+<text x="280" y="260" font-size="14" font-weight="700" fill="#4f6ef7" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">7 轮制</text>
+<line x1="128" y1="280" x2="432" y2="280" stroke="#e4e8f2" stroke-width="1"/>
+<circle cx="130" cy="304" r="3.2" fill="#4f6ef7"/>
+<text x="142" y="308" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">1 道开场题 + 6 轮追问</text>
+<circle cx="130" cy="348" r="3.2" fill="#4f6ef7"/>
+<text x="142" y="352" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">出题：题库策略与五级降级链</text>
+<circle cx="130" cy="392" r="3.2" fill="#4f6ef7"/>
+<text x="142" y="396" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">评估：独立评估服务（8002）</text>
+<rect x="540" y="196" width="360" height="220" rx="12" fill="#ffffff" stroke="#e4e8f2" stroke-width="1.5"/>
+<text x="720" y="234" font-size="17" font-weight="700" fill="#1f2430" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">AI 对话层链路</text>
+<text x="720" y="260" font-size="14" font-weight="700" fill="#4f6ef7" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">10 题制</text>
+<line x1="568" y1="280" x2="872" y2="280" stroke="#e4e8f2" stroke-width="1"/>
+<circle cx="570" cy="304" r="3.2" fill="#4f6ef7"/>
+<text x="582" y="308" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">3 / 5 / 2 三阶段共 10 题</text>
+<circle cx="570" cy="348" r="3.2" fill="#4f6ef7"/>
+<text x="582" y="352" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">出题、追问、五维评分都在对话层内完成</text>
+<circle cx="570" cy="392" r="3.2" fill="#4f6ef7"/>
+<text x="582" y="396" font-size="12.5" font-weight="400" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">依赖未就绪返回 503，不回落自有链路</text>
+<path d="M 280 416 V 444 H 500" fill="none" stroke="#4f6ef7" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M 720 416 V 444 H 500" fill="none" stroke="#4f6ef7" stroke-width="2.4" stroke-linejoin="round"/>
+<line x1="500" y1="444" x2="500" y2="459" stroke="#4f6ef7" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M 494.42 459 L 500 468 L 505.58 459 Z" fill="#4f6ef7"/>
+<rect x="150" y="476" width="700" height="74" rx="12" fill="#eef1ff"/>
+<text x="500" y="508" font-size="15" font-weight="700" fill="#3a54d6" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">两条链路并存，但不混用</text>
+<text x="500" y="532" font-size="12.5" font-weight="400" fill="#7a8296" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">链路在开场时定死并写入面试记录，整场只读，中途不切换</text>
+</svg>

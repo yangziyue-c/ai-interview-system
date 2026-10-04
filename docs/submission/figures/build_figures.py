@@ -79,6 +79,40 @@ FIGURES = [
         ],
         "note": "每个岗位的五维权重之和均为 100，由模块加载期断言与测试用例双重校验",
     },
+    {   # 详细方案 6.2.4 两条链路的并存与隔离
+        "file": "fig-6-2-2-两条链路并存与隔离",
+        "type": "branch",
+        "switch": {
+            "title": "DIALOGUE_ENGINE　部署级开关",
+            "sub": "在 backend/.env 配置，改一处影响所有新开场的面试；已开场的场次不受影响",
+        },
+        "branches": [
+            {
+                "label": "留空（默认）",
+                "title": "本项目自有链路",
+                "sub": "7 轮制",
+                "items": [
+                    "1 道开场题 + 6 轮追问",
+                    "出题：题库策略与五级降级链",
+                    "评估：独立评估服务（8002）",
+                ],
+            },
+            {
+                "label": "= a11",
+                "title": "AI 对话层链路",
+                "sub": "10 题制",
+                "items": [
+                    "3 / 5 / 2 三阶段共 10 题",
+                    "出题、追问、五维评分都在对话层内完成",
+                    "依赖未就绪返回 503，不回落自有链路",
+                ],
+            },
+        ],
+        "footer": {
+            "title": "两条链路并存，但不混用",
+            "sub": "链路在开场时定死并写入面试记录，整场只读，中途不切换",
+        },
+    },
     {   # 详细方案 9.4 数据安全与隐私保护
         "file": "fig-9-4-1-数据安全防护点",
         "type": "columns",
@@ -172,6 +206,24 @@ def arrow(x1, x2, y, *, color=C_ACCENT, width=2.4, head=9) -> str:
         f'stroke="{color}" stroke-width="{width:g}" stroke-linecap="round"/>\n'
         f'<path d="M {x2 - head:g} {y - head * 0.62:g} L {x2:g} {y:g} '
         f'L {x2 - head:g} {y + head * 0.62:g} Z" fill="{color}"/>'
+    )
+
+
+def v_arrow(x, y1, y2, *, color=C_ACCENT, width=2.4, head=9) -> str:
+    """竖直箭头，从 y1 指向 y2。"""
+    return (
+        f'<line x1="{x:g}" y1="{y1:g}" x2="{x:g}" y2="{y2 - head:g}" '
+        f'stroke="{color}" stroke-width="{width:g}" stroke-linecap="round"/>\n'
+        f'<path d="M {x - head * 0.62:g} {y2 - head:g} L {x:g} {y2:g} '
+        f'L {x + head * 0.62:g} {y2 - head:g} Z" fill="{color}"/>'
+    )
+
+
+def rail(x1, x2, y, *, color=C_ACCENT, width=2.4) -> str:
+    """直角折线：先竖后横（用于从一点分出两支）。"""
+    return (
+        f'<path d="M {x1:g} {y[0]:g} V {y[1]:g} H {x2:g}" fill="none" '
+        f'stroke="{color}" stroke-width="{width:g}" stroke-linejoin="round"/>'
     )
 
 
@@ -417,6 +469,78 @@ def render_columns(fig: dict) -> tuple[str, int, int]:
 
 
 # ============================================================
+# 渲染器：开关分叉（一个配置项分出两条并列路径，再汇入共同约定）
+# ============================================================
+
+BR_SWITCH = (620, 78, 40)     # 宽、高、顶
+BR_CARD = (360, 220, 196)     # 宽、高、顶
+BR_FOOT = (700, 74, 476)      # 宽、高、顶
+BR_RAIL_Y = 152               # 分叉横线
+BR_MERGE_Y = 444              # 汇聚横线
+
+
+def render_branch(fig: dict) -> tuple[str, int, int]:
+    h = 590
+    cx = W / 2
+    cs = [W / 4 + 30, W * 3 / 4 - 30]      # 两条链路的中心线
+    sw, sh, sy = BR_SWITCH
+    cw, ch, cy0 = BR_CARD
+    fw, fh, fy = BR_FOOT
+    parts = [f'<rect width="{W}" height="{h}" fill="{WHITE}"/>']
+
+    # 配置项
+    parts.append(
+        f'<rect x="{(W - sw) / 2:g}" y="{sy}" width="{sw}" height="{sh}" rx="12" '
+        f'fill="{WHITE}" stroke="{C_ACCENT}" stroke-width="2"/>'
+    )
+    parts.append(text(cx, sy + 34, fig["switch"]["title"], size=18, fill=C_DEEP, weight=700, anchor="middle"))
+    parts.append(text(cx, sy + 60, fig["switch"]["sub"], size=12.5, fill=C_SUB, anchor="middle"))
+
+    # 分叉：先共用一段竖线，再各自转横、落下箭头
+    for c in cs:
+        parts.append(rail(cx, c, (sy + sh, BR_RAIL_Y)))
+        parts.append(v_arrow(c, BR_RAIL_Y, cy0 - 10))
+    for c, br in zip(cs, fig["branches"]):
+        parts.append(
+            text((cx + c) / 2, BR_RAIL_Y - 8, br["label"], size=14, fill=C_DEEP, weight=700, anchor="middle")
+        )
+
+    # 两条链路
+    for c, br in zip(cs, fig["branches"]):
+        x = c - cw / 2
+        parts.append(
+            f'<rect x="{x:g}" y="{cy0}" width="{cw}" height="{ch}" rx="12" '
+            f'fill="{WHITE}" stroke="{C_LINE}" stroke-width="1.5"/>'
+        )
+        parts.append(text(c, cy0 + 38, br["title"], size=17, fill=C_TEXT, weight=700, anchor="middle"))
+        parts.append(text(c, cy0 + 64, br["sub"], size=14, fill=C_ACCENT, weight=700, anchor="middle"))
+        parts.append(
+            f'<line x1="{x + 28:g}" y1="{cy0 + 84}" x2="{x + cw - 28:g}" y2="{cy0 + 84}" '
+            f'stroke="{C_LINE}" stroke-width="1"/>'
+        )
+        for j, item in enumerate(br["items"]):
+            iy = cy0 + 112 + j * 44
+            parts.append(f'<circle cx="{x + 30:g}" cy="{iy - 4:g}" r="3.2" fill="{C_ACCENT}"/>')
+            parts.append(text(x + 42, iy, item, size=12.5, fill=C_TEXT))
+
+    # 汇聚到共同约定
+    for c in cs:
+        parts.append(
+            f'<path d="M {c:g} {cy0 + ch} V {BR_MERGE_Y} H {cx:g}" fill="none" '
+            f'stroke="{C_ACCENT}" stroke-width="2.4" stroke-linejoin="round"/>'
+        )
+    parts.append(v_arrow(cx, BR_MERGE_Y, fy - 8))
+
+    parts.append(
+        f'<rect x="{(W - fw) / 2:g}" y="{fy}" width="{fw}" height="{fh}" rx="12" fill="{C_SOFT}"/>'
+    )
+    parts.append(text(cx, fy + 32, fig["footer"]["title"], size=15, fill=C_DEEP, weight=700, anchor="middle"))
+    parts.append(text(cx, fy + 56, fig["footer"]["sub"], size=12.5, fill=C_SUB, anchor="middle"))
+
+    return wrap(parts, W, h), W, h
+
+
+# ============================================================
 # 渲染分派与导出
 # ============================================================
 
@@ -425,6 +549,7 @@ RENDERERS = {
     "flow": render_flow,
     "stacked": render_stacked,
     "columns": render_columns,
+    "branch": render_branch,
 }
 
 
