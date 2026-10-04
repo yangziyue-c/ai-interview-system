@@ -101,9 +101,10 @@ window.App = {
     };
     const view = table[route.name] || Views.hall;
 
-    // 离开对话室时停止录音、释放麦克风，并丢弃未发送的录音（防止错配到下一条答案）
+    // 离开对话室时停止录音、释放麦克风，并丢弃本轮语音状态（录音与转写结果都作废，
+    // 防止错配到下一场面试的作答——只在按住话筒时清的 start() 兜不住这条路径）
     if (route.name !== "interview" && Voice._recording) Voice.stop();
-    if (route.name !== "interview") Voice.pending = null;
+    if (route.name !== "interview") Voice.reset();
 
     // 渲染视图（render 可能异步拉数据；返回空串表示已在内部跳转，跳过 mount）
     const viewEl = document.getElementById("view");

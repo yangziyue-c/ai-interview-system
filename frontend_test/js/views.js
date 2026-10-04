@@ -309,7 +309,21 @@ Views.interview = {
         .sort((a, b) => a.round - b.round)
         .forEach((qa) => {
           state.messages.push({ role: "ai", text: qa.question, round: qa.round });
-          if (qa.answer) state.messages.push({ role: "user", text: qa.answer, round: qa.round, audio_url: qa.audio_url });
+          const turns = qa.engine_turns || [];
+          if (turns.length) {
+            // 引擎链路：追问与考生每轮回答都只在这里（question 恒为题库原题面），
+            // 按序放回才能还原整段对话；最后一条是追问时，考生接着答它就是
+            turns.forEach((t) => {
+              if (t.answer) state.messages.push({ role: "user", text: t.answer, round: qa.round, audio_url: t.audio_url });
+              if (t.reply) state.messages.push({ role: "ai", text: t.reply, round: qa.round });
+            });
+            // 旧场次（当时的条目还没存 answer）：兜底放回最后一次回答
+            if (qa.answer && !turns.some((t) => t.answer)) {
+              state.messages.push({ role: "user", text: qa.answer, round: qa.round, audio_url: qa.audio_url });
+            }
+          } else if (qa.answer) {
+            state.messages.push({ role: "user", text: qa.answer, round: qa.round, audio_url: qa.audio_url });
+          }
         });
     } catch (err) {
       App.toast(err.message, "err");
@@ -422,9 +436,12 @@ Views.interview = {
       }
 
       try {
-        const data = await Api.submitAnswer(id, answer, audioUrl);
+        // 语音读数随答案提交（引擎据此在报告里算语速/停顿/填充词）；未转写为 null
+        const data = await Api.submitAnswer(id, answer, audioUrl, Voice.speech());
         // 慢响应期间用户可能已离开本场面试：本视图 DOM 已被替换（list 脱离文档）即丢弃迟到响应
         if (!document.contains(list)) return;
+        // 本轮语音状态随答案送达后作废：留着会被下一轮纯文字作答错配（录音与读数一起串轮）
+        Voice.reset();
         removeThinking();
         appendMsg({ role: "user", text: answer, round: submitRound, audio_url: audioUrl });
         input.value = "";

@@ -141,16 +141,25 @@ async def _evaluate_via_engine(
     )
 
 
-async def _advance_engine(db: DbSession, interview: Interview, current_qa: QARecord) -> dict:
+async def _advance_engine(
+    db: DbSession, interview: Interview, current_qa: QARecord, speech: dict | None = None
+) -> dict:
     """引擎链路：把这次作答交给 /chat，再按它的指令决定下一步。
 
     引擎的「一次作答」与「一道题」不是一回事：一次作答可能触发追问（题号不推进），
     也可能收尾（去取下一题）。追问原文只记进 engine_turns，qa_records.question
     始终保持题库原题面——学习计划与评分素材注入都靠按题干反查题库。
+
+    engine_turns 每条同时记下考生这次说的（answer/audio_url）：answer 列会被后续
+    追问覆盖、只留最后一次，而断点续答要按序重建整段对话，两头都得在。
+
+    speech（可选）：语音作答的表达读数，原样转给引擎（报告里算语速/停顿/填充词）。
     """
     adapter = get_dialogue_adapter()
     try:
-        result = await adapter.answer(interview.engine_session_id or "", current_qa.answer or "")
+        result = await adapter.answer(
+            interview.engine_session_id or "", current_qa.answer or "", speech=speech
+        )
     except EngineSessionLostError as exc:
         # 引擎重启过，会话没了：本场答不下去，收尾并明确告知（先于 EngineError 捕获）
         await _abandon_lost_engine_session(db, interview)
@@ -160,6 +169,8 @@ async def _advance_engine(db: DbSession, interview: Interview, current_qa: QARec
 
     current_qa.engine_turns = list(current_qa.engine_turns or []) + [
         {
+            "answer": current_qa.answer,
+            "audio_url": current_qa.audio_url,
             "reply": result["reply"],
             "action": result.get("action"),
             "follow_up": result["follow_up"],
@@ -388,7 +399,7 @@ async def submit_answer(interview_id: int, req: AnswerRequest, user: CurrentUser
 
     if interview.engine == ENGINE_A11:
         # 引擎链路：下一步由对话层的 done 决定（追问 / 下一题 / 收尾）
-        return await _advance_engine(db, interview, current_qa)
+        return await _advance_engine(db, interview, current_qa, speech=req.speech)
 
     # ---- 以下为原链路（题库策略 + P3），逻辑未变 ----
 

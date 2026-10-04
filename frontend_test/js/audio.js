@@ -134,6 +134,30 @@ const Voice = {
     return data.url;
   },
 
+  /** 提交答案时取语音读数：/asr 响应去掉 text/url，**其余整条**给引擎
+   *
+   *  引擎据此在报告里算语速/停顿/填充词——**别挑字段**，少带一个键报告里就少
+   *  一项读数（引擎侧对「挑字段」有实测记录）。没转写过（纯文字输入、或只上传
+   *  没转写）返回 null，提交时不带这个字段。 */
+  speech() {
+    if (!this.result) return null;
+    const out = {};
+    for (const key of Object.keys(this.result)) {
+      if (key !== "text" && key !== "url") out[key] = this.result[key];
+    }
+    return Object.keys(out).length ? out : null;
+  },
+
+  /** 本轮语音状态（转写结果 + 待发录音）整体作废
+   *
+   *  调用时机：提交成功后（数据已送达）、离开对话室时（防跨场）。
+   *  **不清会让下一轮/下一场的纯文字作答错配**：audio_url 与 speech 会
+   *  把上一轮那段录音与读数一起串进来（start() 只在按住话筒时才清）。 */
+  reset() {
+    this.result = null;
+    this.pending = null;
+  },
+
   _releaseStream() {
     if (this._stream) {
       this._stream.getTracks().forEach((t) => t.stop());

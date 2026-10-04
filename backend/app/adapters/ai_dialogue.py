@@ -163,14 +163,21 @@ class DialogueEngineAdapter:
             "/next", {"session_id": session_id}, settings.DIALOGUE_START_TIMEOUT_SECONDS
         )
 
-    async def answer(self, session_id: str, text: str) -> dict:
+    async def answer(self, session_id: str, text: str, speech: dict | None = None) -> dict:
         """提交一次作答，返回面试官回应与下一步指令
 
         follow_up=true 表示面试官在追问同一题（继续答）；
         false 表示本题结束，调用方接着调 next_question。
+
+        speech（可选）：语音作答的表达读数，由 `/asr` 的响应剥掉非读数键后**整条**
+        转来。引擎用它算语速/停顿/填充词进报告；**不传则一个字段都不多送** ——
+        引擎侧「文字作答」与「没给读数」是逐字节相同的一条路径。
         """
+        payload: dict = {"session_id": session_id, "message": text}
+        if speech:
+            payload["speech"] = speech
         data = await self._consume_sse(
-            "/chat", {"session_id": session_id, "message": text}, settings.DIALOGUE_CHAT_TIMEOUT_SECONDS
+            "/chat", payload, settings.DIALOGUE_CHAT_TIMEOUT_SECONDS
         )
         done = data["done"]
         return {

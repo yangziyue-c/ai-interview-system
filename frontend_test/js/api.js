@@ -114,9 +114,10 @@ const Api = {
   startInterview: (position) => request("/interviews", { body: { position } }),
   listInterviews: () => request("/interviews"),
   interviewDetail: (id) => request("/interviews/" + id),
-  submitAnswer: (id, answer, audioUrl) =>
+  // speech：语音表达读数（可选，转写接口返回的那组数；引擎据此写报告的语音部分）
+  submitAnswer: (id, answer, audioUrl, speech) =>
     request("/interviews/" + id + "/answers", {
-      body: { answer, audio_url: audioUrl || null },
+      body: { answer, audio_url: audioUrl || null, speech: speech || null },
     }),
   finishInterview: (id) => request("/interviews/" + id + "/finish", { method: "POST" }),
 

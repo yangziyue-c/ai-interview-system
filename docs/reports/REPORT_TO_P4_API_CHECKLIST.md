@@ -28,7 +28,7 @@
 | 5.1 开始面试 | `POST /interviews` | ✅ 会话三字段 + `question` |
 | 5.2 提交答案 | `POST /interviews/{id}/answers` | ✅ `finished` + 会话字段 + `next_question` + `report` |
 | 5.3 主动结束 | `POST /interviews/{id}/finish` | ✅ `interview.status` + `report` |
-| 5.4 恢复会话 | `GET /interviews/{id}` | ✅ `qa_records` 含 `created_at` 时间戳 |
+| 5.4 恢复会话 | `GET /interviews/{id}` | ✅ `qa_records` 含 `created_at`；引擎链路另含 `engine_turns`（追问与每轮回答，重建规则见 `REPORT_TO_P4_RESUME_AND_VOICE.md`） |
 | 5.5 运行参数 | `GET /config` | ✅ `total_rounds` |
 | 6.1 报告详情 | `GET /reports/{id}` | ✅ 你列的 11 个字段全有（含报告日期 `created_at`） |
 | 6.2 成长曲线 | `GET /reports/growth?position=` | ✅ 每项含 `finished_at` / `total_score` |

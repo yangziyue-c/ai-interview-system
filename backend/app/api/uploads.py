@@ -64,6 +64,10 @@ async def transcribe_audio(user: CurrentUser, file: UploadFile) -> dict:
     录音最终要作为 `audio_url` 随答案提交，所以文案与地址一起返回，
     前端一个文件只传一次。
 
+    响应里除 text/url 外的那些数（duration_ms/pauses/loudness/emotion…）就是
+    「语音表达」的原始读数：提交答案时把它们**整条**填进 `speech` 字段，引擎
+    才会把语速/停顿/填充词算进报告。**别挑字段**——少一项，报告里就少一项读数。
+
     引擎不可用时明确报 503，不静默返回空文本——空文本会被当成「考生没说话」，
     这种静默失败比一次报错难查得多。
     """
@@ -89,14 +93,16 @@ async def transcribe_audio(user: CurrentUser, file: UploadFile) -> dict:
     saved_name = f"{user.id}_{uuid.uuid4().hex[:12]}{ext}"
     (upload_dir / saved_name).write_bytes(content)
 
+    # 引擎 /asr 的返回 = 文字 + 一组读数（外加给前端展示的说明字段）。这里**剥非读数
+    # 键、整条转出**、不挑字段：免得引擎以后加新读数时这里又漏（挑字段导致报告里
+    # 语音读数变 null，引擎侧有实测记录）。剥掉的是：ok（成败已由本响应 code 表达）、
+    # text/url（下面单独给）、error/detail（失败走 503）、elapsed_ms（耗时诊断，非读数）。
     payload = {
-        key: data.get(key)
-        for key in (
-            "text", "duration_ms", "audio_ms", "segments", "pauses", "pause_total_ms",
-            "asr_model", "elapsed_ms", "loudness", "loudness_cv", "tail_ratio",
-            "emotion", "emotion_score", "emotion_dist",
-        )
+        key: value
+        for key, value in data.items()
+        if key not in ("ok", "text", "url", "error", "detail", "elapsed_ms")
     }
+    payload["text"] = data.get("text") or ""
     payload["url"] = f"/uploads/{saved_name}"
     return ok(payload, "转写完成")
 

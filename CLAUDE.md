@@ -45,7 +45,7 @@ P1 维护的零依赖**演示前端**在 `frontend_test/`（由 `backend/start.b
 cd backend && 双击 start.bat        # 或 python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 
 # 测试：必须在 backend/ 目录下跑（pytest.ini 的 asyncio_mode、conftest 的 env 切换都在这里生效）
-cd backend && D:/anaconda3/envs/ai_interview/python.exe -m pytest        # 151 个用例全绿
+cd backend && D:/anaconda3/envs/ai_interview/python.exe -m pytest        # 180 个用例全绿
 cd backend && D:/anaconda3/envs/ai_interview/python.exe -m pytest tests/test_question_bank.py -q   # 单文件
 cd backend && D:/anaconda3/envs/ai_interview/python.exe -m pytest tests/test_api.py::TestAuth::test_login_wrong_password  # 单用例
 
@@ -114,8 +114,10 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
   （`interviews.engine`），中途不切换
 - **未就绪即报 503（错误码 50300），不回落原链路**：半场换口径事后无从分辨。就绪判据是 `/health` 的
   `bank_loaded` + `scorer_ready` + `llm_configured`——**该端点恒返回 200，不能只看状态码**
-- **落库口径**：`qa_records` 每道题一行（`round` = 引擎的 `q_index`），**追问不落新行、只记进 `engine_turns`**；
-  `question` 保持题库原题面逐字不变——学习计划与评分素材按题干反查题库，靠这条不变量
+- **落库口径**：`qa_records` 每道题一行（`round` = 引擎的 `q_index`），**追问不落新行、只记进 `engine_turns`**
+  （每条含考生回答与面试官追问原文；`answer` 列会被后续追问覆盖、只留最后一次，**断点续答靠它经
+  `GET /interviews/{id}` 重建含追问的完整对话**）；`question` 保持题库原题面逐字不变——
+  学习计划与评分素材按题干反查题库，靠这条不变量
 - 报告：引擎 1~5 分制 ×20 换算（`app/core/engine_report.py`），三栏由主后端从引擎明细推导；
   `reports.engine_meta` **只存摘要**，引擎 raw 里的得分点原文不进本表
 - **语音转写**：`POST /uploads/audio/asr` 转发给引擎的 `/asr`，本地模型是 **SenseVoice**
@@ -125,6 +127,9 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
   ⚠️ 情感的口径不能松：引擎定位它是「韵律信号」，**中文标签不可信**，一律说「有情感分布、
   中文看波动」，**演示时别说「情感识别很准」**。引擎侧有内存门槛
   （start.py 注入 `A11_ASR_MIN_FREE_MB=800`）：不足时转写返 503 而不是硬加载到 OOM
+- **语音读数回传**（2026-10-04 接通）：转写的读数（除 text/url）经提交答案的 `speech` 字段
+  **整条**转给引擎 `/chat`，引擎才会把语速/停顿/填充词算进报告——**别挑字段**（少一个键报告里
+  就少一项读数）。用浏览器端 Vosk 之类只有文本的方案时该项用不上
 - **reranker 默认走在线**（硅基流动 API），省下本地那份 2.27GB 常驻内存；`.hf_cache` 里的本地模型
   只在没配 key 时回退。**RAG 与 KB 默认关**，`.env` 设 `DIALOGUE_FULL=1` 开全功能：KB 索引 20396 块、
   懒加载（首次 `/finish` 才加载编码器）；RAG / KB / SenseVoice 三份数据都已 gitignore

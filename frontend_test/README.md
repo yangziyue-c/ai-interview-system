@@ -33,10 +33,12 @@ cd backend && 双击 start.bat      # 或 python -m uvicorn app.main:app --host 
 - **岗位大厅**：数据来自 `GET /positions`（未硬编码岗位列表）。
 - **岗位详情**：简介 / 技术栈 / 考察重点 + 「开始面试」按钮。
 - **面试对话室**：AI 左、用户右气泡；顶部「第 N/7 题」与「结束面试」按钮；
-  文本输入（回车发送）；按住说话语音输入（Web Speech 转写 + MediaRecorder
-  录 webm 上传 `POST /uploads/audio`，audio_url 随答案提交）；
+  文本输入（回车发送）；按住说话语音输入（MediaRecorder 录 webm → 后端
+  `POST /uploads/audio/asr` 转写与存盘，文本填入输入框由考生修改，表达读数
+  随答案的 `speech` 字段提交、进报告的语速/停顿）；
   提交后按 `finished` 字段判断下一题或跳报告；
-  已存在进行中面试（409）自动引导继续；刷新/重新进入可恢复会话。
+  已存在进行中面试（409）自动引导继续；刷新/重新进入可恢复会话
+  （引擎链路按 `qa_records[].engine_turns` 重建含追问的完整对话）。
 - **报告页**：总分 + 5 维雷达图（原生 canvas）+ 评语/优势/不足/建议 +
   能力成长曲线（`GET /reports/growth`，≥2 场时绘制）。
 - **个人中心**：昵称首字母头像 / 学号 / 目标岗位、历史面试列表
@@ -51,7 +53,7 @@ frontend_test/
 ├── css/style.css   # 全部样式（移动端优先，桌面 520px 居中）
 └── js/
     ├── api.js      # fetch 封装：BaseURL 自适应 / Bearer 鉴权 / {code,message,data} 解析
-    ├── audio.js    # 语音：Web Speech 转写 + MediaRecorder 录音上传
+    ├── audio.js    # 语音：MediaRecorder 录音 → 后端转写（/uploads/audio/asr）
     ├── charts.js   # canvas 雷达图 / 成长曲线
     ├── views.js    # 各视图 render + mount（登录注册/大厅/详情/对话室/报告/个人中心）
     └── app.js      # 全局状态 / hash 路由 / 登录守卫 / Tab 栏 / Toast
@@ -59,7 +61,7 @@ frontend_test/
 
 ## 已知限制
 
-- 语音转写依赖浏览器 Web Speech 服务（Chrome/Edge 可用，需要联网）；不支持时
-  仍可录音上传或纯文本作答。
+- 语音转写由后端对话层引擎做（本地 SenseVoice），引擎未就绪时接口返 503；
+  不支持麦克风或转写失败时仍可纯文本作答。
 - `file://` 直接打开时浏览器可能禁用麦克风，建议用方式 ①。
 - 后端在题库存量外的岗位或服务异常时会降级 Mock 出题/评分，前端无需感知。

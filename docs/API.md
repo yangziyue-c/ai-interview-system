@@ -208,10 +208,17 @@ GET /interviews?position=backend     // 可选：只看该岗位的记录
 GET /interviews/{interview_id}
 ```
 
-返回 `data.qa_records`：`[{round, question, answer, audio_url, created_at}]`，按 `round` 升序。
+返回 `data.qa_records`：`[{round, question, answer, audio_url, engine_turns, created_at}]`，按 `round` 升序。
 
 > `answer` 为 `null` 表示该题已出、考生尚未作答。「查看问答记录」直接用本接口，
 > 无需另开接口；`created_at` 供按时间线展示时使用。
+>
+> `engine_turns` 只在引擎链路（`engine=a11`）有值，原链路为 `null`。它是本题的完整
+> 对话明细 `[{answer, audio_url, reply, action, follow_up, swapped}]`：`question` 恒为
+> 题库原题面（学习计划靠它反查题库），**面试官追问原文与考生的每轮回答都在这里**。
+> 断点续答（刷新 / 重新进入对话室）按它重建整段对话：题面 →（每条：考生 `answer` →
+> 面试官 `reply`）；末条 `follow_up=true` 时那条 `reply` 就是当前待答的话。`answer`
+> 列会被追问覆盖、只留最后一次作答，中间轮次只能从这里恢复。
 
 ### 3.4 提交答案并获取下一题
 
@@ -222,9 +229,14 @@ POST /interviews/{interview_id}/answers
 ```json
 {
   "answer": "我认为……（语音转写文本或手输文本）",
-  "audio_url": "/uploads/12_ab3f9c2d.mp3"    // 可选，录音上传接口返回
+  "audio_url": "/uploads/12_ab3f9c2d.mp3",   // 可选，录音上传接口返回
+  "speech": { "duration_ms": 16878, "pauses": 0, "...": "…" }   // 可选，见下
 }
 ```
+
+> `speech` 只用于语音作答：把 6.2 转写接口响应里**除 `text`/`url` 外的键整条原样**
+> 带回来，引擎才会把语速 / 停顿 / 填充词算进报告——少带一个键，报告里就少一项
+> 读数。不传（文字作答）时行为与从前一致；原链路忽略该字段。
 
 返回：
 
@@ -642,18 +654,21 @@ POST /uploads/audio/asr    Content-Type: multipart/form-data
   "duration_ms": 16878, "audio_ms": 16878,
   "segments": [ { "start": 0.0, "end": 6.0, "text": "…" } ],
   "pauses": 0, "pause_total_ms": 0,
-  "asr_model": "sensevoice-small-int8", "elapsed_ms": 1697,
+  "asr_model": "sensevoice-small-int8",
   "loudness": 0.1374, "loudness_cv": 0.2644, "tail_ratio": 1.05,
-  "emotion": "neu", "emotion_score": null,
-  "emotion_dist": null
+  "emotion": "neu", "emotion_score": null, "emotion_dist": null,
+  "pitch_variation": null,
+  "emotion_reliability": "low_for_chinese", "emotion_usage": "prosody_signal_only"
 } }
 ```
 
 - `url` 可直接填入提交答案的 `audio_url`，用法与 6.1 的返回值相同。
 - 转写有错字是正常形态：前端把文本填进输入框、**由考生自行修改**后再发送。
 - `asr_model` 为 `sensevoice-small-int8`（本地 SenseVoice）。首次调用要等它懒加载（实测约 3 秒），期间返回「还在加载」是正常形态，隔几秒重试即可。
-- `emotion*` 三项的标签由 SenseVoice 自己给（闭集 `neu`/`hap`/`ang`/`sad`），**`emotion_score` 与 `emotion_dist` 可能为 `null`**——那个模型只给标签、不给概率。⚠️ 引擎对它的定位是「韵律信号」而非情绪结论，中文上标签尤其不可信：只说「有情感分布、中文看波动」，**别把标签当结论展示给考生**。
+- **这组读数要进报告，就得随作答回传**：提交答案时把除 `text`/`url` 外的键**整条**填进 3.4 的 `speech` 字段（引擎据此算语速 / 停顿 / 填充词）。响应是「引擎给什么转什么、只剥非读数键（`ok`/`elapsed_ms` 等）」，引擎以后加新读数不用改本接口。
+- `emotion*` 三项的标签由 SenseVoice 自己给（闭集 `neu`/`hap`/`ang`/`sad`），**`emotion_score` 与 `emotion_dist` 可能为 `null`**——那个模型只给标签、不给概率。⚠️ 引擎对它的定位是「韵律信号」而非情绪结论，中文上标签尤其不可信：只说「有情感分布、中文看波动」，**别把标签当结论展示给考生**（`emotion_reliability`/`emotion_usage` 是引擎给的同样口径的机器可读标注，随响应原样透传）。
 - `loudness*` 与 `tail_ratio` 是音量三指标，与情感无关，中文上一样有效。
+- `pitch_variation` 当前恒为 `null`（本地管线尚未产出），保留键位。
 - 对话层未就绪或内存不足时返回 **503（50300）**，不返回空文本——空文本会被当成「考生没说话」。
 
 ### 6.3 上传头像

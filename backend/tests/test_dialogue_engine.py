@@ -209,6 +209,7 @@ class _FakeEngine:
         self.start_calls: list[dict] = []
         self.tts_calls: list[dict] = []
         self.body_calls: list[list[dict]] = []
+        self.answer_calls: list[dict] = []
         self.transcribed_bytes = 0
 
     async def is_ready(self, **_) -> bool:
@@ -240,7 +241,9 @@ class _FakeEngine:
         return {"finished": False, "q_index": self.asked,
                 "question": f"第 {self.asked} 道题：请讲讲你的理解。"}
 
-    async def answer(self, session_id: str, text: str) -> dict:
+    async def answer(self, session_id: str, text: str, speech: dict | None = None) -> dict:
+        # 记下 speech：语音读数有没有原样到引擎，靠这里断言
+        self.answer_calls.append({"text": text, "speech": speech})
         self.turns += 1
         follow_up = self.turns == 1     # 只在第一题追问一次
         return {
@@ -284,6 +287,7 @@ class _FakeEngine:
             "ok": True, "text": "这是转写出来的文字", "duration_ms": 3000, "audio_ms": 3000,
             "segments": [], "pauses": 0, "pause_total_ms": 0,
             "asr_model": "fake", "elapsed_ms": 10,
+            "pitch_variation": 0.42,   # 读数键：转发要整条转出（剥键式），不能被挑掉
         }
 
 
@@ -331,6 +335,11 @@ async def test_engine_flow_mirrors_rounds_and_finishes(client: AsyncClient, engi
     assert len(detail["qa_records"]) == 1
     # 题面必须保持题库原题面逐字不变（学习计划靠它反查题库），追问只进 engine_turns
     assert detail["qa_records"][0]["question"] == "第 1 道题：请讲讲你的理解。"
+    # 断点续答靠详情接口里的 engine_turns 重建整段对话：追问 + 考生这一轮说的
+    #（answer 列会被后续追问覆盖、只留最后一次，中间轮次只能从这里恢复）
+    turns_out = detail["qa_records"][0]["engine_turns"]
+    assert turns_out[0]["reply"] == "那你再展开说说实现细节？"
+    assert turns_out[0]["answer"] == "我会从原理、实现与取舍三个层面来讲。"
 
     async with async_session() as session:
         turns = (await session.execute(
@@ -364,6 +373,39 @@ async def test_engine_flow_mirrors_rounds_and_finishes(client: AsyncClient, engi
     detail = (await client.get(f"{BASE}/interviews/{interview_id}", headers=headers)).json()["data"]
     assert detail["status"] == "finished"
     assert [qa["round"] for qa in detail["qa_records"]] == [1, 2]
+
+
+async def test_answer_speech_reaches_engine_verbatim(client: AsyncClient, engine_mode):
+    """语音读数整条原样到引擎：报告里语速/停顿/填充词的唯一来源就是它
+
+    引擎侧的实测教训是「调用方挑字段 → 报告里语音读数全 null」，所以这里按真实
+    前端的形状给一份完整读数，断言一个键都没少；不带 speech 的（文字作答）则
+    一个字段都不多送——引擎侧那两种情况是逐字节相同的路径。
+    """
+    headers = await _auth_headers(client, "speech")
+    start = await client.post(f"{BASE}/interviews", json={"position": "backend"}, headers=headers)
+    interview_id = start.json()["data"]["interview"]["id"]
+
+    readings = {
+        "duration_ms": 16878, "audio_ms": 17600,
+        "segments": [{"start": 0.0, "end": 6.0, "text": "线程…"}],
+        "pauses": 2, "pause_total_ms": 3400, "asr_model": "sensevoice-small-int8",
+        "loudness": 0.1374, "loudness_cv": 0.2644, "tail_ratio": 1.05,
+        "pitch_variation": None, "emotion": "neu",
+        "emotion_score": None, "emotion_dist": None,
+    }
+    await client.post(
+        f"{BASE}/interviews/{interview_id}/answers",
+        json={"answer": "语音作答的转写文本", "audio_url": "/uploads/9_ab.webm", "speech": readings},
+        headers=headers,
+    )
+    assert engine_mode.answer_calls[-1]["speech"] == readings
+
+    await client.post(
+        f"{BASE}/interviews/{interview_id}/answers",
+        json={"answer": "文字作答"}, headers=headers,
+    )
+    assert engine_mode.answer_calls[-1]["speech"] is None
 
 
 async def test_engine_partial_reaches_report(client: AsyncClient, engine_mode):
@@ -558,6 +600,10 @@ async def test_transcribe_endpoint_forwards_audio_to_engine(client: AsyncClient,
     assert data["duration_ms"] == 3000
     assert data["url"].startswith("/uploads/")   # 转写顺带存盘，提交答案时不用再传一次
     assert engine_mode.transcribed_bytes == len(audio)
+    # 读数键整条转出（剥键式，不挑字段），非读数键不转出——
+    # 前端拿到的这份就是回填 speech 的那份
+    assert data["pitch_variation"] == 0.42
+    assert "ok" not in data and "elapsed_ms" not in data
 
 
 async def test_transcribe_reports_engine_failure(client: AsyncClient, monkeypatch):
