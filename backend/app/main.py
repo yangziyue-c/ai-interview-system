@@ -14,6 +14,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException
+from starlette.types import Scope
 
 from app.api import api_router
 from app.config import settings
@@ -88,6 +90,29 @@ upload_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
 
 # 2) 前端构建产物（P4 的 dist 内容放入 backend/static/，统一端口避免跨域）
+class SPAStaticFiles(StaticFiles):
+    """history 路由 SPA 的静态托管：页面路径未命中静态文件时回退 index.html。
+
+    前端是 vue-router history 模式，/login 这类子路径在后端没有对应文件，
+    默认行为会 404（刷新页面或直接打开分享链接就白屏）；回退后交给前端路由渲染。
+    /api 前缀不参与回退，不存在的接口仍按 404 返回，避免前端把 HTML 当 JSON 解析。
+    """
+
+    async def get_response(self, path: str, scope: Scope):
+        try:
+            response = await super().get_response(path, scope)
+        except HTTPException as exc:
+            if exc.status_code == 404 and not scope["path"].startswith("/api"):
+                response = await super().get_response("index.html", scope)
+            else:
+                raise
+        # 不带缓存指令时，浏览器会按"启发式新鲜期"长期沿用本地副本，
+        # 前端更新后访问过的人刷新仍看到旧页面；no-cache = 每次向服务端
+        # 验证一次（未变返回 304，开销极小），保证拿到的永远是最新版本
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 static_dir = Path(settings.STATIC_DIR)
 static_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="frontend")
+app.mount("/", SPAStaticFiles(directory=str(static_dir), html=True), name="frontend")

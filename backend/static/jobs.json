@@ -1,0 +1,14 @@
+[
+    {
+        "jobId": "backend",
+        "jobName": "Java 后端开发",
+        "techStack": "Spring Boot、MySQL、Redis、消息队列",
+        "examFocus": "项目经验深挖、并发编程理解、性能优化思路、JVM调优"
+    },
+    {
+        "jobId": "frontend",
+        "jobName": "Web 前端开发",
+        "techStack": "Vue3 / React、TypeScript、CSS预处理器、构建工具",
+        "examFocus": "组件设计模式、性能优化、浏览器原理、工程化配置"
+    }
+]

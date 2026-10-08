@@ -35,6 +35,13 @@ backend/.test_tmp/
 frontend/node_modules/
 frontend/dist/
 
+# P4 前端静态资源里的大文件：Vosk 语音模型 + mediapipe 第三方二进制（约 137MB，不入库）
+# 由 P4 的 dist 包提供，换机器部署时从该包重新拷入 backend/static/
+# （backend/static/ 下其余内容——index.html 与 assets/ 等代码本体——正常入库）
+backend/static/model.tar.gz
+backend/static/vosk-model-small-cn/
+backend/static/vendor/
+
 # AI 对话层（A11）模型缓存：bge-reranker-v2-m3 约 2.14GB，首次运行自动下载
 backend/.hf_cache/
 
@@ -67,3 +74,6 @@ htmlcov/
 *.swp
 .DS_Store
 .claude/settings.local.json
+
+# 参照材料（其他项目的模板文档，仅本地对照用，不入库）
+项目的详细分工及过程.pdf
