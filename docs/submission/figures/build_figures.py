@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
-"""生成《项目详细方案》与《项目简介 PPT》的插图，SVG 与 PNG 各出一份。
+"""生成《项目详细方案》《项目简介 PPT》与《项目的详细分工及过程》的插图，SVG 与 PNG 各出一份。
 
 图形由字符串拼装，PNG 交给本机 Chrome 或 Edge 的无头模式渲染，不引入第三方依赖。
 改脚本顶部的 FIGURES 即可重出；新增一张图就再加一个配置字典，`type` 决定用哪个渲染器。
 
-支持四种 type：
+支持六种 type：
     hbar     横向条形图（占比、数量对比）
     flow     状态流转 + 横向流程条
     stacked  百分比堆叠条形图（多项权重对比）
     columns  并列卡片栏（分类要点）
+    branch   开关分叉 + 汇聚
+    gantt    项目实施甘特图（阶段色带 + 各模块工作区间）
 
 用法：
     python build_figures.py            # 全部重出
@@ -21,6 +23,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -145,6 +148,37 @@ FIGURES = [
                 ],
             },
         ],
+    },
+    {   # 《项目的详细分工及过程》图 2-1
+        "file": "fig-2-1-项目实施甘特图",
+        "type": "gantt",
+        "title": "项目实施路线与各模块工作区间",
+        "subtitle": "时间依据仓库提交记录与交付物时间绘制　·　阶段三与阶段四并行推进",
+        "date_start": "2026-08-25",
+        "date_end": "2026-10-08",
+        "ticks": ["2026-08-25", "2026-09-01", "2026-09-08", "2026-09-15",
+                  "2026-09-22", "2026-09-29", "2026-10-06"],
+        "phases": [
+            {"name": "阶段一 需求分析与方案设计", "start": None, "end": "2026-08-25",
+             "row": 0, "tone": 0, "open_left": True},
+            {"name": "阶段二 核心功能开发", "start": "2026-08-25", "end": "2026-09-14",
+             "row": 0, "tone": 1},
+            {"name": "阶段三 系统集成与能力增强", "start": "2026-09-14", "end": "2026-09-27",
+             "row": 0, "tone": 2},
+            {"name": "阶段四 测试优化与成果交付", "start": "2026-09-15", "end": "2026-10-08",
+             "row": 1, "tone": 3},
+        ],
+        "rows": [
+            {"name": "后端主服务与接口", "start": "2026-08-25", "end": "2026-10-04"},
+            {"name": "题库与知识库", "start": "2026-09-02", "end": "2026-09-14"},
+            {"name": "出题算法", "start": "2026-09-05", "end": "2026-09-14"},
+            {"name": "评估服务", "start": "2026-09-02", "end": "2026-09-14"},
+            {"name": "前端开发", "start": "2026-09-23", "end": "2026-10-07"},
+            {"name": "对话层引擎集成", "start": "2026-09-23", "end": "2026-10-04"},
+            {"name": "测试与流程仿真", "start": "2026-09-06", "end": "2026-10-04"},
+            {"name": "文档与提交材料", "start": "2026-09-15", "end": "2026-10-08"},
+        ],
+        "source": "时间依据：2026-08-25 首次提交至 2026-10-08 的提交记录、交接文档日期与交付产物时间",
     },
 ]
 
@@ -541,6 +575,86 @@ def render_branch(fig: dict) -> tuple[str, int, int]:
 
 
 # ============================================================
+# 渲染器：项目实施甘特图
+# ============================================================
+
+GANTT_LABEL_R = 196      # 行名右对齐位置
+GANTT_X = 210            # 条区左端
+GANTT_R = 960            # 条区右端
+GANTT_PHASE_Y = 104      # 阶段色带首行顶部
+GANTT_PHASE_H = 34       # 阶段色带高度
+GANTT_TOP = 224          # 模块首行条顶
+GANTT_ROW_H = 42         # 行距
+GANTT_BAR_H = 26         # 条高
+
+# 阶段色带的（底色, 文字色, 描边色）；末档浅底描边，示意与其他阶段并行
+GANTT_TONES = [
+    (C_TRACK, C_SUB, None),
+    (C_ACCENT, WHITE, None),
+    (C_DEEP, WHITE, None),
+    (C_SOFT, C_DEEP, C_ACCENT),
+]
+
+
+def render_gantt(fig: dict) -> tuple[str, int, int]:
+    """项目实施甘特图：上方阶段色带（可两行错开表示并行），下方各模块工作区间。"""
+    d0 = date.fromisoformat(fig["date_start"])
+    d1 = date.fromisoformat(fig["date_end"])
+
+    def x_of(ds: str) -> float:
+        return GANTT_X + (date.fromisoformat(ds) - d0).days / (d1 - d0).days * (GANTT_R - GANTT_X)
+
+    rows = fig["rows"]
+    bar_bottom = GANTT_TOP + (len(rows) - 1) * GANTT_ROW_H + GANTT_BAR_H
+    grid_top = GANTT_PHASE_Y + 2 * (GANTT_PHASE_H + 6) + 26
+    foot_y = bar_bottom + 52
+    h = foot_y + 24
+
+    parts = [
+        f"<title>{esc(fig['title'])}</title>",
+        f'<rect width="{W}" height="{h}" fill="{WHITE}"/>',
+        f'<rect x="{PAD_L}" y="36" width="5" height="30" rx="2.5" fill="{C_ACCENT}"/>',
+        text(PAD_L + 18, 58, fig["title"], size=28, fill=C_TEXT, weight=700),
+        text(PAD_L + 18, 88, fig["subtitle"], size=13.5, fill=C_SUB),
+    ]
+
+    for ph in fig["phases"]:
+        x1 = PAD_L if ph.get("open_left") else x_of(ph["start"])
+        x2 = x_of(ph["end"])
+        y = GANTT_PHASE_Y + ph["row"] * (GANTT_PHASE_H + 6)
+        fill, fg, stroke = GANTT_TONES[ph["tone"]]
+        edge = f' stroke="{stroke}" stroke-width="1.5" stroke-dasharray="5 4"' if stroke else ""
+        parts.append(
+            f'<rect x="{x1 + 1.5:g}" y="{y}" width="{x2 - x1 - 3:g}" height="{GANTT_PHASE_H}" '
+            f'rx="7" fill="{fill}"{edge}/>'
+        )
+        parts.append(text((x1 + x2) / 2, y + 22, ph["name"], size=11.5, fill=fg, weight=600, anchor="middle"))
+
+    for tk in fig["ticks"]:
+        x = x_of(tk)
+        parts.append(
+            f'<line x1="{x:g}" y1="{grid_top}" x2="{x:g}" y2="{bar_bottom}" '
+            f'stroke="{C_TRACK}" stroke-width="1"/>'
+        )
+        parts.append(text(x, grid_top - 8, tk[5:], size=12, fill=C_SUB, anchor="middle"))
+
+    for i, r in enumerate(rows):
+        y = GANTT_TOP + i * GANTT_ROW_H
+        x1, x2 = x_of(r["start"]), x_of(r["end"])
+        parts.append(text(GANTT_LABEL_R, y + 18, r["name"], size=14.5, fill=C_TEXT, anchor="end"))
+        parts.append(
+            f'<rect x="{x1:g}" y="{y}" width="{x2 - x1:g}" height="{GANTT_BAR_H}" rx="6" fill="{C_ACCENT}"/>'
+        )
+        parts.append(text(x1 + 10, y + 17.5, f'{r["start"][5:]} ~ {r["end"][5:]}', size=11.5, fill=WHITE))
+
+    parts.append(
+        f'<line x1="{PAD_L}" y1="{foot_y - 26}" x2="{W - 40}" y2="{foot_y - 26}" stroke="{C_LINE}"/>'
+    )
+    parts.append(text(PAD_L, foot_y, fig["source"], size=12.5, fill=C_SUB))
+    return wrap(parts, W, h), W, h
+
+
+# ============================================================
 # 渲染分派与导出
 # ============================================================
 
@@ -550,6 +664,7 @@ RENDERERS = {
     "stacked": render_stacked,
     "columns": render_columns,
     "branch": render_branch,
+    "gantt": render_gantt,
 }
 
 
