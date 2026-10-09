@@ -10,7 +10,7 @@
   主库 json（题目/得分点/追问/降级策略/知识点…）
     → 每题生成 7 类片段（基准款/语义变体/分级追问/得分点拆分/
       前置知识点/场景化/答案变体）
-    → 输出 {岗位}-rag-v2.jsonl（共 7.4 万条）
+    → 输出 {岗位}-rag-v2.jsonl（当前 9 月 29 日主库为 7.62 万条）
 
 每条 RAG 条目字段（10 个）：
   题目 / 参考答案 / 对应层级 / 原题ID / 题目ID /
@@ -47,7 +47,8 @@ def _pick(*candidates):
         if os.path.exists(c):
             return c
     raise FileNotFoundError("RAG 数据目录不存在，已尝试: " + " | ".join(candidates))
-V5 = _pick(os.path.join(_PKG_ROOT, "数据"),
+V5 = _pick(os.path.join(_PKG_ROOT, "data"),
+           os.path.join(_PKG_ROOT, "数据"),
            r"C:\Users\litao\WorkBuddy\2026-09-10-21-25-17\ai-interview-data\v5")
 
 # 5 个岗位：(文件前缀, 岗位全名, 题目ID前缀)
@@ -401,4 +402,4 @@ if __name__ == "__main__":
         print(f"{pos_name}: 主库{mc}条 → RAG {rc}条 (平均{rc/mc:.1f}条/题)")
     print(f"\n【总计】主库 {total_main} 条 → RAG {total_rag} 条，平均 {total_rag/total_main:.1f} 条/题")
     print(f"层级分布: {dict(all_lv)}")
-    print(f"目标区间: 5.5-7.5 万条 → {'达标 ✓' if 55000 <= total_rag <= 75000 else '未达标 ✗'}")
+    print(f"目标区间: 5.5-8.0 万条 → {'达标 OK' if 55000 <= total_rag <= 80000 else '未达标 FAIL'}")

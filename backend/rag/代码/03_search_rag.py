@@ -62,7 +62,7 @@ def _pick(*candidates):
 
 
 def _ensure_ascii_chroma(src_dir):
-    """chromadb 1.5.9 的 HNSW 段 reader 不支持非 ASCII 路径（Windows 中文路径会报
+    r"""chromadb 1.5.9 的 HNSW 段 reader 不支持非 ASCII 路径（Windows 中文路径会报
     Error loading hnsw index）。路径含非 ASCII 时，自动复制到纯 ASCII 缓存目录
     （C:\Windows\Temp\a11_rag_kb\chroma_db_v2）后返回缓存路径；已缓存则跳过复制。"""
     if all(ord(ch) < 128 for ch in src_dir):
@@ -96,8 +96,8 @@ def _build_where(**kw):
 
 
 CHROMA_DIR = os.environ.get("RAG_CHROMA_DIR") or _pick(
+    os.path.join(_PKG_ROOT, "vector_db", "chroma_db_v2"),
     os.path.join(_PKG_ROOT, "向量库", "chroma_db_v2"),
-    os.path.join(_PKG_ROOT, "chroma_db_v2"),
     r"E:\GitHubRepos\rag-db-v5\chroma_db_v2",
 )
 CHROMA_DIR = _ensure_ascii_chroma(CHROMA_DIR)

@@ -18,7 +18,7 @@ def _pick(*candidates):
 
 
 def _ensure_ascii_chroma(src_dir):
-    """chromadb 1.5.9 的 HNSW 段 reader 不支持非 ASCII 路径（Windows 中文路径会报
+    r"""chromadb 1.5.9 的 HNSW 段 reader 不支持非 ASCII 路径（Windows 中文路径会报
     Error loading hnsw index）。路径含非 ASCII 时，自动复制到纯 ASCII 缓存目录
     （C:\Windows\Temp\a11_rag_kb\chroma_db_v2）后返回缓存路径；已缓存则跳过复制。"""
     if all(ord(ch) < 128 for ch in src_dir):
@@ -43,18 +43,21 @@ def _ensure_ascii_chroma(src_dir):
     return dst
 
 CHROMA_DIR = os.environ.get("RAG_CHROMA_DIR") or _pick(
+    os.path.join(_PKG_ROOT, "vector_db", "chroma_db_v2"),
     os.path.join(_PKG_ROOT, "向量库", "chroma_db_v2"),
-    os.path.join(_PKG_ROOT, "chroma_db_v2"),
     r"E:\GitHubRepos\rag-db-v5\chroma_db_v2",
 )
 CHROMA_DIR = _ensure_ascii_chroma(CHROMA_DIR)
 COLLECTION = "a11_interview_kb_v5v2"
+EXPECTED_N = 76222
 
 client = chromadb.PersistentClient(path=CHROMA_DIR)
 col = client.get_collection(COLLECTION)
 
 total = col.count()
 print(f"[chroma] collection 总条数={total}  向量库目录={CHROMA_DIR}")
+if total != EXPECTED_N:
+    raise SystemExit(f"collection 条数异常：期望 {EXPECTED_N}，实际 {total}")
 
 # 分批拉取元数据（每批 5000，避免 too many SQL variables）
 by_job, by_level, by_type, empty_docs = {}, {}, {}, 0
@@ -80,4 +83,4 @@ print("\n=== 按题型分布 ===")
 for k, v in sorted(by_type.items(), key=lambda x: -x[1]):
     print(f"  {k}: {v}")
 print(f"\n空文档条数: {empty_docs}")
-print(f"验证结果: {'通过 ✓（计数与数据一致）' if offset == total and empty_docs == 0 else '异常 ✗'}")
+print(f"验证结果: {'通过 OK（计数与数据一致）' if offset == total and empty_docs == 0 else '异常 FAIL'}")

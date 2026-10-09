@@ -98,14 +98,15 @@ def _build_where(**kw):
 
 
 CHROMA_DIR = os.environ.get("RAG_CHROMA_DIR") or _pick(
+    os.path.join(_PKG_ROOT, "vector_db", "chroma_db_v2"),
     os.path.join(_PKG_ROOT, "向量库", "chroma_db_v2"),
-    os.path.join(_PKG_ROOT, "chroma_db_v2"),
     r"E:\GitHubRepos\rag-db-v5\chroma_db_v2")
 CHROMA_DIR = _ensure_ascii_chroma(CHROMA_DIR)
 COLLECTION = "a11_interview_kb_v5v2"
 EMBED_MODEL = "BAAI/bge-m3"
 RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 MAIN_DIR = os.environ.get("RAG_MAIN_DIR") or _pick(
+    os.path.join(_PKG_ROOT, "data"),
     os.path.join(_PKG_ROOT, "数据"),
     r"C:\Users\litao\WorkBuddy\2026-09-10-21-25-17\ai-interview-data\v5")
 KG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),

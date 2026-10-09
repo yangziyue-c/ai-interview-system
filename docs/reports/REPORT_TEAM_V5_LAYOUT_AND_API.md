@@ -8,7 +8,7 @@
 
 ## 一、本次改动总览（1 号执行）
 
-**触发原因**：5 号交付了 V5 知识库（主库 5012 题 / 5 岗位 + 74011 条向量检索条目），
+**触发原因**：5 号交付了 V5 知识库（主库 5012 题 / 5 岗位 + 76222 条向量检索条目），
 数据结构与 V4 差异较大，需要换代。
 
 | # | 改动 | 影响面 |
@@ -121,7 +121,7 @@
 |---|---|---|
 | 导入题库 | `cd backend && python -m scripts.import_question_bank --rebuild --yes` | 读 `backend/rag/数据/*-v5.json`（18 字段），幂等可重跑 |
 | 只看统计不落库 | `... --dry-run` | 输出记录数 / 岗位分布 / 阶段分布 / 校验失败明细 |
-| RAG 服务自测 | `python backend/rag/代码/04_verify_collection.py` | 应报 collection 总条数 74011 |
+| RAG 服务自测 | `python backend/rag/代码/04_verify_collection.py` | 应报 collection 总条数 76222 |
 | 交付包改动 | 见《REPORT_TO_P5_V5_PACKAGE_REVIEW.md》 | 13 处，更新交付包时请保留 |
 
 ### 4.6 题库字段变更对照（V4 → V5，19 列）

@@ -3,7 +3,7 @@
 ============================================================
 02 · 向量数据库构建脚本（RAG jsonl → ChromaDB）
 ============================================================
-功能：把 01 生成的 5 个 {岗位}-rag-v2.jsonl（共 7.4 万条）
+功能：把 01 生成的 5 个 {岗位}-rag-v2.jsonl（当前 9 月 29 日主库为 7.62 万条）
       用 bge-m3 向量化后写入 ChromaDB（持久化本地库）。
 
 技术选型（为什么这么选）：
@@ -44,13 +44,17 @@ def _pick(*candidates):
         if os.path.exists(c):
             return c
     raise FileNotFoundError("RAG 数据目录不存在，已尝试: " + " | ".join(candidates))
-BASE = _pick(os.path.join(_PKG_ROOT, "数据"),
+BASE = _pick(os.path.join(_PKG_ROOT, "data"),
+             os.path.join(_PKG_ROOT, "数据"),
              r"C:\Users\litao\WorkBuddy\2026-09-10-21-25-17\ai-interview-data\v5")
 FILES = ["java-rag-v2.jsonl", "web-rag-v2.jsonl", "test-rag-v2.jsonl",
          "algorithm-rag-v2.jsonl", "system-design-rag-v2.jsonl"]
-OUT_DIR = _pick(os.path.join(_PKG_ROOT, "向量库"), _PKG_ROOT)   # 写断点文件的位置（向量库目录优先）
-CHROMA_DIR = _pick(os.path.join(_PKG_ROOT, "向量库", "chroma_db_v2"),
-                   os.path.join(_PKG_ROOT, "chroma_db_v2"))     # 向量库目录
+OUT_DIR = _pick(os.path.join(_PKG_ROOT, "vector_db"),
+                os.path.join(_PKG_ROOT, "向量库"),
+                _PKG_ROOT)   # 写断点文件的位置（向量库目录优先）
+CHROMA_DIR = _pick(os.path.join(_PKG_ROOT, "vector_db", "chroma_db_v2"),
+                   os.path.join(_PKG_ROOT, "向量库", "chroma_db_v2"),
+                   os.path.join(_PKG_ROOT, "vector_db", "chroma_db_v2"))     # 向量库目录
 COLLECTION = "a11_interview_kb_v5v2"                 # collection 名
 EMBED_MODEL = "BAAI/bge-m3"
 MAX_SEQ = 512
@@ -96,9 +100,16 @@ def main():
     if not args.skip_embed:
         t0 = time.time()
         print(f"[model] loading {EMBED_MODEL} (offline) ...", flush=True)
-        model = SentenceTransformer(EMBED_MODEL)
+        model = SentenceTransformer(EMBED_MODEL, device="cpu")
+        if torch.cuda.is_available():
+            model = model.half().to("cuda")
+            print("[model] using CUDA fp16", flush=True)
         model.max_seq_length = MAX_SEQ
-        print(f"[model] loaded in {time.time()-t0:.0f}s dim={model.get_embedding_dimension()}", flush=True)
+        print(
+            f"[model] loaded in {time.time()-t0:.0f}s "
+            f"dim={model.get_sentence_embedding_dimension()}",
+            flush=True,
+        )
         client = chromadb.PersistentClient(path=CHROMA_DIR)
         col = client.get_or_create_collection(COLLECTION, metadata={"hnsw:space": "cosine"})
 
