@@ -140,16 +140,7 @@ figure.fig figcaption {
 
 hr { border: none; border-top: 0.6pt solid #dfe3ee; margin: 7mm 0; }
 
-/* ——— 每页重复的页眉与底纹（打印时 fixed 元素逐页渲染） ——— */
-.page-head {
-  position: fixed; z-index: 1;
-  top: -13mm; left: 0; right: 0; height: 9mm;
-  display: flex; justify-content: space-between; align-items: center;
-  border-bottom: 0.9pt solid #C8DAF8;
-  font-size: 8.5pt; color: #2C63C9; background: #fff;
-}
-.ph-brand { font-weight: 700; letter-spacing: 1.5px; }
-.ph-sub { color: #7A93C4; letter-spacing: 0.5px; }
+/* ——— 每页底纹（打印时 fixed 元素逐页渲染；页眉与页码由 pymupdf 后绘） ——— */
 .page-deco {
   position: fixed; z-index: 0;
   right: -14mm; bottom: -16mm; width: 64mm; height: 64mm;
@@ -185,10 +176,6 @@ TEMPLATE = """<!doctype html>
 # ——— 封面与页眉/底纹（版式的一部分，不写进 Markdown） ———
 
 CHROME_HTML = """
-<div class="page-head">
-  <span class="ph-brand">深镜智聘</span>
-  <span class="ph-sub">AI 模拟面试与能力提升平台</span>
-</div>
 <svg class="page-deco" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
   <g fill="none" stroke="#0066FF" stroke-width="0.9">
     <circle cx="150" cy="150" r="96" opacity="0.07"/>
@@ -236,25 +223,43 @@ def embed_figures(md: str) -> str:
     return FIG_RE.sub(repl, md)
 
 
-def stamp_page_numbers(pdf_path: Path, skip_first: bool = False) -> None:
-    """在每页底部居中盖上页码（skip_first=True 时封面不编号，正文从 1 起）。
+def stamp_chrome(pdf_path: Path, skip_first: bool = False) -> None:
+    """给正文每页盖上页眉（品牌与平台名）与页码。
 
-    Chrome 命令行打印不支持 CSS 页码，生成后用 pymupdf 补（未装则跳过）。
+    Chrome 命令行打印对页边距区内的 fixed 元素定位不可靠，故页眉与页码
+    统一在生成后用 pymupdf 绘制（页面坐标系，位置完全可控）。
+    中文使用 pymupdf 内置 CJK 字体（china-ss），不向 PDF 嵌入字体文件。
+    skip_first=True 时封面不盖。
     """
     try:
         import pymupdf
     except ImportError:
-        print("提示：未安装 pymupdf，跳过页码。")
+        print("提示：未安装 pymupdf，跳过页眉与页码。")
         return
+
     doc = pymupdf.open(str(pdf_path))
     offset = 1 if skip_first else 0
+    mm = 2.8346  # 1mm → pt
+    brand, sub = "深镜智聘", "AI 模拟面试与能力提升平台"
+    w_sub = pymupdf.get_text_length(sub, fontname="china-ss", fontsize=9)
+
     for i, page in enumerate(doc):
         if i < offset:
             continue
         r = page.rect
+        x0, y = 17 * mm, 14 * mm
+        page.insert_text((x0, y), brand, fontname="china-ss", fontsize=9, color=(0.11, 0.26, 0.60))
         page.insert_text(
-            pymupdf.Point(r.width / 2 - 5, r.height - 26),
-            str(i - offset + 1), fontsize=9, fontname="helv", color=(0.55, 0.58, 0.64),
+            (r.width - x0 - w_sub, y), sub,
+            fontname="china-ss", fontsize=9, color=(0.45, 0.56, 0.76),
+        )
+        page.draw_line(
+            pymupdf.Point(x0, y + 5), pymupdf.Point(r.width - x0, y + 5),
+            color=(0.78, 0.85, 0.97), width=0.8,
+        )
+        page.insert_text(
+            (r.width / 2 - 4, r.height - 26), str(i - offset + 1),
+            fontname="helv", fontsize=9, color=(0.55, 0.58, 0.64),
         )
     doc.saveIncr()
 
@@ -377,7 +382,7 @@ def main() -> int:
         merged.close()
         shutil.move(str(final_pdf), str(dst))
 
-    stamp_page_numbers(dst, skip_first=True)
+    stamp_chrome(dst, skip_first=True)
     print(f"PDF  {dst.name}  ({dst.stat().st_size // 1024} KB)")
     return 0
 
