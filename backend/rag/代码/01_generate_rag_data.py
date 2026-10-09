@@ -42,17 +42,11 @@ from collections import Counter
 _PKG_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 交付包根目录
 def _pick(*candidates):
     """按存在性选择路径：交付包结构优先，开发机构建目录回退。
-
-    全部候选都不存在时快速失败（原先返回 candidates[0] 会让下游
-    静默使用无效路径，问题被推迟到运行时且难以定位）。
-    """
+    ★ 全部未命中 → 明确抛错（1 号修复点 P1-4）"""
     for c in candidates:
         if os.path.exists(c):
             return c
-    raise FileNotFoundError(
-        "路径不存在，已尝试：\n  " + "\n  ".join(candidates)
-        + "\n请确认交付包结构完整（数据/ 与本脚本所在目录同级）。"
-    )
+    raise FileNotFoundError("RAG 数据目录不存在，已尝试: " + " | ".join(candidates))
 V5 = _pick(os.path.join(_PKG_ROOT, "数据"),
            r"C:\Users\litao\WorkBuddy\2026-09-10-21-25-17\ai-interview-data\v5")
 

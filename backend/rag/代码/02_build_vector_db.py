@@ -22,14 +22,13 @@
 ★ 性能优化：
   - 按「估计文本长度」排序分桶处理：短文本快、长文本慢，
     长度相近的放同一批减少 padding 浪费。
-  - torch 线程数默认取 CPU 核心数（RAG_THREADS 环境变量可覆盖）开启多线程编码。
+  - torch.set_num_threads(8) 开启多线程编码。
   - 批量 64 条编码，进度日志每 2000 条打一次。
 ============================================================
 """
 import os, json, re, sys, time, argparse
-# 模型下载源：默认走 huggingface.co（本机实测可直连；hf-mirror 反而超时）。
-# 网络受限的环境请自行设置 HF_ENDPOINT=https://hf-mirror.com 走镜像。
-# 默认允许联网下载模型（交付包不含 4.5GB 模型文件）；模型就位后可设 HF_HUB_OFFLINE=1
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+# ★ 不写死离线（1 号修复点 P0-2）：交付包不带模型，成员机器无缓存时允许联网下载
 os.environ.setdefault("HF_HUB_OFFLINE", "0")
 import torch
 torch.set_num_threads(int(os.environ.get("RAG_THREADS", os.cpu_count() or 8)))
@@ -40,36 +39,18 @@ from sentence_transformers import SentenceTransformer
 _PKG_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 交付包根目录
 def _pick(*candidates):
     """按存在性选择：交付包结构优先，开发机构建目录回退。
-
-    全部候选都不存在时快速失败（原先返回 candidates[0] 会让下游
-    静默使用无效路径，问题被推迟到运行时且难以定位）。
-    """
+    ★ 全部未命中 → 明确抛错（1 号修复点 P1-4）"""
     for c in candidates:
         if os.path.exists(c):
             return c
-    raise FileNotFoundError(
-        "路径不存在，已尝试：\n  " + "\n  ".join(candidates)
-        + "\n请确认交付包结构完整（vector_db/、数据/ 与本脚本所在目录同级）。"
-    )
+    raise FileNotFoundError("RAG 数据目录不存在，已尝试: " + " | ".join(candidates))
 BASE = _pick(os.path.join(_PKG_ROOT, "数据"),
              r"C:\Users\litao\WorkBuddy\2026-09-10-21-25-17\ai-interview-data\v5")
 FILES = ["java-rag-v2.jsonl", "web-rag-v2.jsonl", "test-rag-v2.jsonl",
          "algorithm-rag-v2.jsonl", "system-design-rag-v2.jsonl"]
-
-# ★ 向量库目录名必须是纯 ASCII：chromadb 打不开「含非 ASCII 字符的绝对路径」，
-#   且**构建侧同样受影响**（实测产出物缺 HNSW 索引文件、事后无法打开）。
-#   旧交付包目录名为「向量库/」，此处自动升级。
-VECTOR_DIR = os.path.join(_PKG_ROOT, "vector_db")
-_LEGACY_VECTOR_DIR = os.path.join(_PKG_ROOT, "向量库")
-if not os.path.exists(VECTOR_DIR) and os.path.exists(_LEGACY_VECTOR_DIR):
-    print("[init] 旧目录名「向量库」→ vector_db（chromadb 不支持含中文的绝对路径）",
-          flush=True)
-    os.rename(_LEGACY_VECTOR_DIR, VECTOR_DIR)
-
-OUT_DIR = VECTOR_DIR                                  # 写断点文件的位置（由 makedirs 创建）
-# 向量库**输出目录**：构建/重建时它本就不存在，故不走 _pick 的存在性校验
-# （chromadb.PersistentClient 会自动创建；父目录 vector_db/ 由下方 makedirs 保证）
-CHROMA_DIR = os.path.join(VECTOR_DIR, "chroma_db_v2")
+OUT_DIR = _pick(os.path.join(_PKG_ROOT, "向量库"), _PKG_ROOT)   # 写断点文件的位置（向量库目录优先）
+CHROMA_DIR = _pick(os.path.join(_PKG_ROOT, "向量库", "chroma_db_v2"),
+                   os.path.join(_PKG_ROOT, "chroma_db_v2"))     # 向量库目录
 COLLECTION = "a11_interview_kb_v5v2"                 # collection 名
 EMBED_MODEL = "BAAI/bge-m3"
 MAX_SEQ = 512

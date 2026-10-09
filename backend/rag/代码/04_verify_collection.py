@@ -1,52 +1,60 @@
 # -*- coding: utf-8 -*-
 """
-04 · 向量库完整性验证（分批 get，规避 SQLite 变量上限）
-功能：验证 collection 计数、按岗位/层级分布、抽查内容非空。
+04 · 向量库完整性验证（ChromaDB 版）
+功能：验证 collection 计数、按岗位/层级/题型分布、抽查内容非空。
 """
 import os
-# 模型下载源：默认走 huggingface.co（本机实测可直连；hf-mirror 反而超时）。
-# 网络受限的环境请自行设置 HF_ENDPOINT=https://hf-mirror.com 走镜像。
-# 本脚本只读向量库、不加载模型，但仍保持与其他脚本一致（避免将来扩展时踩坑）
-os.environ.setdefault("HF_HUB_OFFLINE", "0")
 import chromadb
 
 # ---- 路径自适应：优先使用交付包内的相对路径（成员机器解压即用） ----
 _PKG_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 交付包根目录
 def _pick(*candidates):
     """按存在性选择：交付包结构优先，开发机构建目录回退。
-
-    全部候选都不存在时快速失败（原先返回 candidates[0] 会让 chromadb
-    静默创建空库，表现为「验证结果全空」而非「路径配错」）。
-    """
+    ★ 全部未命中 → 明确抛错"""
     for c in candidates:
         if os.path.exists(c):
             return c
-    raise FileNotFoundError(
-        "路径不存在，已尝试：\n  " + "\n  ".join(candidates)
-        + "\n请确认交付包结构完整（vector_db/ 与本脚本所在目录同级）。"
-    )
+    raise FileNotFoundError("RAG 向量库目录不存在，已尝试: " + " | ".join(candidates))
 
-# ★ 向量库目录名必须是纯 ASCII：chromadb 打不开「含非 ASCII 字符的绝对路径」
-#   （实测 100% 失败，报 Error loading hnsw index）。旧名为「向量库/」，此处自动升级。
-VECTOR_DIR = os.path.join(_PKG_ROOT, "vector_db")
-_LEGACY_VECTOR_DIR = os.path.join(_PKG_ROOT, "向量库")
-if not os.path.exists(VECTOR_DIR) and os.path.exists(_LEGACY_VECTOR_DIR):
-    print("[init] 旧目录名「向量库」→ vector_db（chromadb 不支持含中文的绝对路径）",
-          flush=True)
-    os.rename(_LEGACY_VECTOR_DIR, VECTOR_DIR)
 
-CHROMA_DIR = _pick(os.path.join(VECTOR_DIR, "chroma_db_v2"),
-                   os.path.join(_PKG_ROOT, "chroma_db_v2"))     # 向量库目录
-if not os.path.abspath(CHROMA_DIR).isascii():
-    raise RuntimeError(
-        f"向量库路径含非 ASCII 字符，chromadb 无法打开：{CHROMA_DIR}\n"
-        f"  请移动到纯 ASCII 路径（推荐 {VECTOR_DIR}）。")
+def _ensure_ascii_chroma(src_dir):
+    """chromadb 1.5.9 的 HNSW 段 reader 不支持非 ASCII 路径（Windows 中文路径会报
+    Error loading hnsw index）。路径含非 ASCII 时，自动复制到纯 ASCII 缓存目录
+    （C:\Windows\Temp\a11_rag_kb\chroma_db_v2）后返回缓存路径；已缓存则跳过复制。"""
+    if all(ord(ch) < 128 for ch in src_dir):
+        return src_dir
+    import shutil
+    roots = [os.environ.get("TEMP", ""), r"C:\Windows\Temp", r"C:\ProgramData"]
+    root = next((r for r in roots if r and os.path.isdir(r) and all(ord(ch) < 128 for ch in r)), r"C:\Windows\Temp")
+    dst = os.path.join(root, "a11_rag_kb", "chroma_db_v2")
+    marker_src = os.path.join(src_dir, "chroma.sqlite3")
+    marker_dst = os.path.join(dst, "chroma.sqlite3")
+    if os.path.isfile(marker_src) and os.path.isfile(marker_dst) and os.path.getsize(marker_dst) == os.path.getsize(marker_src):
+        return dst
+    os.makedirs(dst, exist_ok=True)
+    for item in os.listdir(src_dir):
+        s = os.path.join(src_dir, item)
+        d = os.path.join(dst, item)
+        if os.path.isdir(s):
+            shutil.copytree(s, d, dirs_exist_ok=True)
+        else:
+            shutil.copy2(s, d)
+    print(f"[init] 检测到非 ASCII 路径，向量库已缓存至 {dst}", flush=True)
+    return dst
+
+CHROMA_DIR = os.environ.get("RAG_CHROMA_DIR") or _pick(
+    os.path.join(_PKG_ROOT, "向量库", "chroma_db_v2"),
+    os.path.join(_PKG_ROOT, "chroma_db_v2"),
+    r"E:\GitHubRepos\rag-db-v5\chroma_db_v2",
+)
+CHROMA_DIR = _ensure_ascii_chroma(CHROMA_DIR)
 COLLECTION = "a11_interview_kb_v5v2"
 
 client = chromadb.PersistentClient(path=CHROMA_DIR)
 col = client.get_collection(COLLECTION)
+
 total = col.count()
-print(f"[chroma] collection={COLLECTION} 总条数={total}")
+print(f"[chroma] collection 总条数={total}  向量库目录={CHROMA_DIR}")
 
 # 分批拉取元数据（每批 5000，避免 too many SQL variables）
 by_job, by_level, by_type, empty_docs = {}, {}, {}, 0
@@ -61,7 +69,6 @@ while offset < total:
         if not (doc or "").strip():
             empty_docs += 1
     offset += len(r["documents"])
-    print(f"  已读取 {offset}/{total}")
 
 print("\n=== 按岗位分布 ===")
 for k, v in sorted(by_job.items(), key=lambda x: -x[1]):
