@@ -1,38 +1,9 @@
-# A11 · RAG 专属依赖清单（305 修复后版本：运行时不再依赖 chromadb）
-# 用途：RAG 检索/构建链路。
-# 刻意不并入 backend/requirements.txt：主流程（8001/8002）不依赖它们。
+# 8003 ChromaDB RAG service
+# Python 3.12 recommended
 
-# ⚠️⚠️ 重要变更（2026-09-19，305/HNSW 损坏修复）⚠️⚠️
-# 原 ChromaDB 的 HNSW 近似索引出现损坏（sqlite 74011 条 vs HNSW 73706 条，
-# 缺口 305 条；length.bin 损坏导致 "Error loading hnsw index"）。
-# 修复方案：改用「内存精确余弦索引」（memory_retriever.py + memory_index.npz）。
-#   - 03/04/05 运行时【不再需要 chromadb】，改为加载 memory_index.npz（numpy 精确余弦，Top-K 暴力检索）。
-#   - chromadb 仅 02_build_vector_db.py（构建工具）仍在使用；若不重建库可完全不装。
-#   - 旧 chroma_db_v2 目录保留为只读归档，不再参与运行时检索。
-# 安装自测：python 04_verify_collection.py 应显示 74011 条（从内存索引统计）。
-
-# ---- 安装命令（国内镜像，约 2.5GB；不含 chromadb 可再省 ~600MB）----
-# CPU 版 PyTorch（约 200MB）：
-#   python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-# 其余依赖（运行 03/04/05 不需要 chromadb）：
-#   python -m pip install sentence-transformers fastapi uvicorn pydantic -i https://pypi.tuna.tsinghua.edu.cn/simple
-# 只有要重建向量库/内存索引时才装 chromadb（版本锁定 1.5.9，与构建环境一致）：
-#   python -m pip install chromadb==1.5.9 -i https://pypi.tuna.tsinghua.edu.cn/simple
-
-# ---- 模型（首次启动自动下载，约 4.5GB，走 hf-mirror）----
-# 向量模型：  BAAI/bge-m3               （1024 维，中文语义检索）
-# 重排模型：  BAAI/bge-reranker-v2-m3   （交叉编码器精排）
-# 下载后会自动缓存到 ~/.cache/huggingface，之后可设 HF_HUB_OFFLINE=1 离线加载。
-
-# sentence-transformers
-# torch
-# fastapi
-# uvicorn
-# pydantic
-# numpy          # memory_retriever 的矩阵运算（torch 通常已带，显式声明更稳）
-
-sentence-transformers
 torch
+sentence-transformers
+chromadb==1.5.9
 fastapi
 uvicorn
 pydantic
