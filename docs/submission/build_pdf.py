@@ -130,7 +130,7 @@ figure.fig {
   break-inside: avoid;
 }
 
-figure.fig img { max-width: 100%; border: 0.6pt solid #e4e8f2; }
+figure.fig img { max-width: 100%; max-height: 112mm; border: 0.6pt solid #e4e8f2; }
 
 figure.fig figcaption {
   margin-top: 2mm;
@@ -179,6 +179,26 @@ def embed_figures(md: str) -> str:
         )
 
     return FIG_RE.sub(repl, md)
+
+
+def stamp_page_numbers(pdf_path: Path) -> None:
+    """在每页底部居中盖上页码。
+
+    Chrome 命令行打印不支持 CSS 页码，生成后用 pymupdf 补（未装则跳过）。
+    """
+    try:
+        import pymupdf
+    except ImportError:
+        print("提示：未安装 pymupdf，跳过页码。")
+        return
+    doc = pymupdf.open(str(pdf_path))
+    for i, page in enumerate(doc):
+        r = page.rect
+        page.insert_text(
+            pymupdf.Point(r.width / 2 - 5, r.height - 26),
+            str(i + 1), fontsize=9, fontname="helv", color=(0.55, 0.58, 0.64),
+        )
+    doc.saveIncr()
 
 
 def find_pandoc() -> str | None:
@@ -273,6 +293,7 @@ def main() -> int:
             return 1
         shutil.move(str(pdf_path), str(dst))
 
+    stamp_page_numbers(dst)
     print(f"PDF  {dst.name}  ({dst.stat().st_size // 1024} KB)")
     return 0
 
