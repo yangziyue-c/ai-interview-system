@@ -34,7 +34,7 @@ HERE = Path(__file__).resolve().parent
 # ============================================================
 
 PAGE_CSS = """
-@page { size: A4; margin: 19mm 17mm 17mm; }
+@page { size: A4; margin: 25mm 17mm 17mm; }
 
 html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
@@ -139,6 +139,34 @@ figure.fig figcaption {
 }
 
 hr { border: none; border-top: 0.6pt solid #dfe3ee; margin: 7mm 0; }
+
+/* ——— 每页重复的页眉与底纹（打印时 fixed 元素逐页渲染） ——— */
+.page-head {
+  position: fixed; z-index: 1;
+  top: -13mm; left: 0; right: 0; height: 9mm;
+  display: flex; justify-content: space-between; align-items: center;
+  border-bottom: 0.9pt solid #C8DAF8;
+  font-size: 8.5pt; color: #2C63C9; background: #fff;
+}
+.ph-brand { font-weight: 700; letter-spacing: 1.5px; }
+.ph-sub { color: #7A93C4; letter-spacing: 0.5px; }
+.page-deco {
+  position: fixed; z-index: 0;
+  right: -14mm; bottom: -16mm; width: 64mm; height: 64mm;
+}
+
+/* ——— 封面（单独渲染一页后与正文合并，因此无需覆盖页眉） ——— */
+.cover { position: relative; padding-top: 34mm; background: #fff; }
+.cover-platform { font-size: 11pt; color: #7A8296; letter-spacing: 2.5px; margin: 0; }
+.cover-title { font-size: 48pt; font-weight: 700; color: #0066FF; margin: 8mm 0 0; letter-spacing: 9px; text-align: left; }
+.cover-rule { width: 30mm; height: 1.8mm; background: #0066FF; margin: 7mm 0; }
+.cover-doc { font-size: 24pt; font-weight: 700; color: #1C2430; letter-spacing: 3.5px; margin: 0; }
+.cover-badge {
+  display: inline-block; margin-top: 10mm; padding: 2.4mm 8mm;
+  border: 1.2pt solid #0066FF; border-radius: 1.5mm;
+  color: #0066FF; font-size: 13pt; letter-spacing: 3px;
+}
+.cover-art { display: block; width: 122mm; margin: 20mm auto 0; }
 """
 
 TEMPLATE = """<!doctype html>
@@ -152,6 +180,62 @@ TEMPLATE = """<!doctype html>
 {body}
 </body>
 </html>
+"""
+
+# ——— 封面与页眉/底纹（版式的一部分，不写进 Markdown） ———
+
+CHROME_HTML = """
+<div class="page-head">
+  <span class="ph-brand">深镜智聘</span>
+  <span class="ph-sub">AI 模拟面试与能力提升平台</span>
+</div>
+<svg class="page-deco" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <g fill="none" stroke="#0066FF" stroke-width="0.9">
+    <circle cx="150" cy="150" r="96" opacity="0.07"/>
+    <circle cx="150" cy="150" r="64" opacity="0.10"/>
+    <circle cx="150" cy="150" r="34" opacity="0.13"/>
+    <line x1="10" y1="150" x2="150" y2="150" opacity="0.07"/>
+    <line x1="150" y1="10" x2="150" y2="150" opacity="0.07"/>
+  </g>
+</svg>
+"""
+
+COVER_HTML = """
+<section class="cover">
+  <p class="cover-platform">AI 模拟面试与能力提升平台</p>
+  <h1 class="cover-title">深镜智聘</h1>
+  <div class="cover-rule"></div>
+  <p class="cover-doc">详细分工及过程</p>
+  <div class="cover-badge">Alpha 小队</div>
+  <svg class="cover-art" viewBox="0 0 380 250" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="cg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#0066FF" stop-opacity="0.30"/>
+        <stop offset="1" stop-color="#0066FF" stop-opacity="0.04"/>
+      </linearGradient>
+    </defs>
+    <g fill="none" stroke="#0066FF" stroke-width="1.1">
+      <circle cx="112" cy="120" r="88" opacity="0.28"/>
+      <circle cx="112" cy="120" r="60" opacity="0.42"/>
+      <circle cx="112" cy="120" r="32" opacity="0.60"/>
+      <line x1="200" y1="120" x2="366" y2="120" opacity="0.35" stroke-dasharray="6 6"/>
+      <line x1="112" y1="32" x2="112" y2="8" opacity="0.35"/>
+      <line x1="112" y1="208" x2="112" y2="232" opacity="0.35"/>
+    </g>
+    <circle cx="112" cy="120" r="32" fill="url(#cg)"/>
+    <g fill="#0066FF">
+      <circle cx="112" cy="120" r="6" opacity="0.75"/>
+      <circle cx="225" cy="120" r="4" opacity="0.50"/>
+      <circle cx="290" cy="120" r="3" opacity="0.35"/>
+    </g>
+    <g fill="none" stroke="#0066FF" stroke-width="0.9" opacity="0.28">
+      <rect x="252" y="152" width="86" height="62" rx="6"/>
+      <line x1="252" y1="172" x2="338" y2="172"/>
+      <line x1="252" y1="188" x2="338" y2="188"/>
+      <line x1="252" y1="202" x2="310" y2="202"/>
+    </g>
+  </svg>
+</section>
 """
 
 # 图占位行：[图2-1：说明　配图：`figures/xxx.png`]
@@ -181,8 +265,8 @@ def embed_figures(md: str) -> str:
     return FIG_RE.sub(repl, md)
 
 
-def stamp_page_numbers(pdf_path: Path) -> None:
-    """在每页底部居中盖上页码。
+def stamp_page_numbers(pdf_path: Path, skip_first: bool = False) -> None:
+    """在每页底部居中盖上页码（skip_first=True 时封面不编号，正文从 1 起）。
 
     Chrome 命令行打印不支持 CSS 页码，生成后用 pymupdf 补（未装则跳过）。
     """
@@ -192,11 +276,14 @@ def stamp_page_numbers(pdf_path: Path) -> None:
         print("提示：未安装 pymupdf，跳过页码。")
         return
     doc = pymupdf.open(str(pdf_path))
+    offset = 1 if skip_first else 0
     for i, page in enumerate(doc):
+        if i < offset:
+            continue
         r = page.rect
         page.insert_text(
             pymupdf.Point(r.width / 2 - 5, r.height - 26),
-            str(i + 1), fontsize=9, fontname="helv", color=(0.55, 0.58, 0.64),
+            str(i - offset + 1), fontsize=9, fontname="helv", color=(0.55, 0.58, 0.64),
         )
     doc.saveIncr()
 
@@ -269,31 +356,48 @@ def main() -> int:
             check=True,
             capture_output=True,
         )
-        html_path.write_text(
-            TEMPLATE.format(
-                title=src.stem, css=PAGE_CSS,
-                body=body_path.read_text(encoding="utf-8"),
-            ),
-            encoding="utf-8",
-        )
-        proc = subprocess.run(
-            [
-                browser,
-                "--headless=new",
-                "--disable-gpu",
-                "--no-pdf-header-footer",
-                f"--print-to-pdf={pdf_path}",
-                html_path.as_uri(),
-            ],
-            capture_output=True,
-            timeout=180,
-        )
-        if not pdf_path.exists():
-            print("浏览器未产出 PDF：\n" + proc.stderr.decode("utf-8", "replace")[-1500:])
-            return 1
-        shutil.move(str(pdf_path), str(dst))
+        content = body_path.read_text(encoding="utf-8")
 
-    stamp_page_numbers(dst)
+        # 两次渲染：正文（每页带页眉与底纹）与封面（干净单页），随后合并
+        jobs = [("body", CHROME_HTML + content), ("cover", COVER_HTML)]
+        produced: dict[str, Path] = {}
+        for name, body in jobs:
+            html_p, pdf_p = tmp / f"{name}.html", tmp / f"{name}.pdf"
+            html_p.write_text(
+                TEMPLATE.format(title=src.stem, css=PAGE_CSS, body=body),
+                encoding="utf-8",
+            )
+            proc = subprocess.run(
+                [
+                    browser,
+                    "--headless=new",
+                    "--disable-gpu",
+                    "--no-pdf-header-footer",
+                    f"--print-to-pdf={pdf_p}",
+                    html_p.as_uri(),
+                ],
+                capture_output=True,
+                timeout=180,
+            )
+            if not pdf_p.exists():
+                print(
+                    f"浏览器未产出 {name} PDF：\n"
+                    + proc.stderr.decode("utf-8", "replace")[-1500:]
+                )
+                return 1
+            produced[name] = pdf_p
+
+        import pymupdf
+
+        merged = pymupdf.open()
+        merged.insert_pdf(pymupdf.open(str(produced["cover"])))
+        merged.insert_pdf(pymupdf.open(str(produced["body"])))
+        final_pdf = tmp / "merged.pdf"
+        merged.save(str(final_pdf))
+        merged.close()
+        shutil.move(str(final_pdf), str(dst))
+
+    stamp_page_numbers(dst, skip_first=True)
     print(f"PDF  {dst.name}  ({dst.stat().st_size // 1024} KB)")
     return 0
 
