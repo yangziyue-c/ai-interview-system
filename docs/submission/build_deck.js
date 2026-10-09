@@ -514,21 +514,20 @@ function hbarChart(s, items, x, y, w, labelW, rowH, color) {
   const rows = [
     [
       { text: '8001 主后端', options: { bold: true, color: C.white, fill: { color: C.blue } } },
-      { text: '8002 评估服务', options: { bold: true, color: C.white, fill: { color: C.blue } } },
       { text: '8003 知识库检索', options: { bold: true, color: C.white, fill: { color: C.blue } } },
       { text: '8005 对话与评估层', options: { bold: true, color: C.white, fill: { color: C.blue } } },
       { text: '5173 前端开发', options: { bold: true, color: C.white, fill: { color: C.blue } } },
       { text: '5273 演示前端', options: { bold: true, color: C.white, fill: { color: C.blue } } },
     ],
-    ['后端开发 A', 'AI 评估与报告生成', '知识库构建与测试', 'AI 对话层与面试官人格', '前端全栈开发', '后端开发 A'],
+    ['后端开发 A', '知识库构建与测试', 'AI 对话层与面试官人格\nAI 评估与报告生成', '前端全栈开发', '后端开发 A'],
   ];
 
   s.addTable(rows, {
     x: 0.8, y: 5.8, w: 11.85,
-    colW: [2.2, 2.2, 2.2, 2.2, 1.75, 1.3],
+    colW: [2.37, 2.37, 2.37, 2.37, 2.37],
     fontSize: 10.5, fontFace: F, color: C.textSub,
     border: { type: 'solid', color: C.line, pt: 0.75 },
-    valign: 'middle', margin: 0.06, rowH: 0.42, align: 'center',
+    valign: 'middle', margin: 0.06, rowH: 0.52, align: 'center',
   });
 })();
 
