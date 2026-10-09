@@ -200,43 +200,14 @@ CHROME_HTML = """
 </svg>
 """
 
-COVER_HTML = """
-<section class="cover">
-  <p class="cover-platform">AI 模拟面试与能力提升平台</p>
-  <h1 class="cover-title">深镜智聘</h1>
-  <div class="cover-rule"></div>
-  <p class="cover-doc">详细分工及过程</p>
-  <div class="cover-badge">Alpha 小队</div>
-  <svg class="cover-art" viewBox="0 0 380 250" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="cg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#0066FF" stop-opacity="0.30"/>
-        <stop offset="1" stop-color="#0066FF" stop-opacity="0.04"/>
-      </linearGradient>
-    </defs>
-    <g fill="none" stroke="#0066FF" stroke-width="1.1">
-      <circle cx="112" cy="120" r="88" opacity="0.28"/>
-      <circle cx="112" cy="120" r="60" opacity="0.42"/>
-      <circle cx="112" cy="120" r="32" opacity="0.60"/>
-      <line x1="200" y1="120" x2="366" y2="120" opacity="0.35" stroke-dasharray="6 6"/>
-      <line x1="112" y1="32" x2="112" y2="8" opacity="0.35"/>
-      <line x1="112" y1="208" x2="112" y2="232" opacity="0.35"/>
-    </g>
-    <circle cx="112" cy="120" r="32" fill="url(#cg)"/>
-    <g fill="#0066FF">
-      <circle cx="112" cy="120" r="6" opacity="0.75"/>
-      <circle cx="225" cy="120" r="4" opacity="0.50"/>
-      <circle cx="290" cy="120" r="3" opacity="0.35"/>
-    </g>
-    <g fill="none" stroke="#0066FF" stroke-width="0.9" opacity="0.28">
-      <rect x="252" y="152" width="86" height="62" rx="6"/>
-      <line x1="252" y1="172" x2="338" y2="172"/>
-      <line x1="252" y1="188" x2="338" y2="188"/>
-      <line x1="252" y1="202" x2="310" y2="202"/>
-    </g>
-  </svg>
-</section>
+COVER_CSS = """
+@page { size: A4; margin: 0; }
+html, body { margin: 0; padding: 0; }
+.cover { width: 210mm; height: 297mm; overflow: hidden; }
+.cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
 """
+
+COVER_IMG = HERE / "figures" / "封面-深镜智聘.png"
 
 # 图占位行：[图2-1：说明　配图：`figures/xxx.png`]
 FIG_RE = re.compile(
@@ -358,13 +329,21 @@ def main() -> int:
         )
         content = body_path.read_text(encoding="utf-8")
 
-        # 两次渲染：正文（每页带页眉与底纹）与封面（干净单页），随后合并
-        jobs = [("body", CHROME_HTML + content), ("cover", COVER_HTML)]
+        # 两次渲染：正文（每页带页脚与底纹）与封面（设计图整页铺满），随后合并
+        jobs = [("body", PAGE_CSS, CHROME_HTML + content)]
+        if COVER_IMG.exists():
+            data = base64.b64encode(COVER_IMG.read_bytes()).decode("ascii")
+            jobs.append((
+                "cover", COVER_CSS,
+                '<section class="cover"><img src="data:image/png;base64,'
+                + data + '" alt="封面"></section>',
+            ))
+
         produced: dict[str, Path] = {}
-        for name, body in jobs:
+        for name, css, body in jobs:
             html_p, pdf_p = tmp / f"{name}.html", tmp / f"{name}.pdf"
             html_p.write_text(
-                TEMPLATE.format(title=src.stem, css=PAGE_CSS, body=body),
+                TEMPLATE.format(title=src.stem, css=css, body=body),
                 encoding="utf-8",
             )
             proc = subprocess.run(
@@ -390,8 +369,9 @@ def main() -> int:
         import pymupdf
 
         merged = pymupdf.open()
-        merged.insert_pdf(pymupdf.open(str(produced["cover"])))
-        merged.insert_pdf(pymupdf.open(str(produced["body"])))
+        for name in ("cover", "body"):
+            if name in produced:
+                merged.insert_pdf(pymupdf.open(str(produced[name])))
         final_pdf = tmp / "merged.pdf"
         merged.save(str(final_pdf))
         merged.close()
