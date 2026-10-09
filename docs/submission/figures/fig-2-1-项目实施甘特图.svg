@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="620" viewBox="0 0 1000 620">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="578" viewBox="0 0 1000 578">
 <title>项目实施路线与各模块工作区间</title>
-<rect width="1000" height="620" fill="#ffffff"/>
+<rect width="1000" height="578" fill="#ffffff"/>
 <rect x="44" y="36" width="5" height="30" rx="2.5" fill="#4f6ef7"/>
 <text x="62" y="58" font-size="28" font-weight="700" fill="#1f2430" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">项目实施路线与各模块工作区间</text>
 <text x="62" y="88" font-size="13.5" font-weight="400" fill="#7a8296" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">时间依据仓库提交记录与交付物时间绘制　·　阶段三与阶段四并行推进</text>
@@ -13,44 +13,41 @@
 <text x="661.705" y="126" font-size="11.5" font-weight="600" fill="#ffffff" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">阶段三 系统集成与能力增强</text>
 <rect x="569.455" y="144" width="389.045" height="34" rx="7" fill="#eef1ff" stroke="#4f6ef7" stroke-width="1.5" stroke-dasharray="5 4"/>
 <text x="763.977" y="166" font-size="11.5" font-weight="600" fill="#3a54d6" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">阶段四 测试优化与成果交付</text>
-<line x1="210" y1="210" x2="210" y2="544" stroke="#f2f4fa" stroke-width="1"/>
+<line x1="210" y1="210" x2="210" y2="502" stroke="#f2f4fa" stroke-width="1"/>
 <text x="210" y="202" font-size="12" font-weight="400" fill="#7a8296" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">08-25</text>
-<line x1="329.318" y1="210" x2="329.318" y2="544" stroke="#f2f4fa" stroke-width="1"/>
+<line x1="329.318" y1="210" x2="329.318" y2="502" stroke="#f2f4fa" stroke-width="1"/>
 <text x="329.318" y="202" font-size="12" font-weight="400" fill="#7a8296" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-01</text>
-<line x1="448.636" y1="210" x2="448.636" y2="544" stroke="#f2f4fa" stroke-width="1"/>
+<line x1="448.636" y1="210" x2="448.636" y2="502" stroke="#f2f4fa" stroke-width="1"/>
 <text x="448.636" y="202" font-size="12" font-weight="400" fill="#7a8296" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-08</text>
-<line x1="567.955" y1="210" x2="567.955" y2="544" stroke="#f2f4fa" stroke-width="1"/>
+<line x1="567.955" y1="210" x2="567.955" y2="502" stroke="#f2f4fa" stroke-width="1"/>
 <text x="567.955" y="202" font-size="12" font-weight="400" fill="#7a8296" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-15</text>
-<line x1="687.273" y1="210" x2="687.273" y2="544" stroke="#f2f4fa" stroke-width="1"/>
+<line x1="687.273" y1="210" x2="687.273" y2="502" stroke="#f2f4fa" stroke-width="1"/>
 <text x="687.273" y="202" font-size="12" font-weight="400" fill="#7a8296" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-22</text>
-<line x1="806.591" y1="210" x2="806.591" y2="544" stroke="#f2f4fa" stroke-width="1"/>
+<line x1="806.591" y1="210" x2="806.591" y2="502" stroke="#f2f4fa" stroke-width="1"/>
 <text x="806.591" y="202" font-size="12" font-weight="400" fill="#7a8296" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-29</text>
-<line x1="925.909" y1="210" x2="925.909" y2="544" stroke="#f2f4fa" stroke-width="1"/>
+<line x1="925.909" y1="210" x2="925.909" y2="502" stroke="#f2f4fa" stroke-width="1"/>
 <text x="925.909" y="202" font-size="12" font-weight="400" fill="#7a8296" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">10-06</text>
-<text x="196" y="242" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">后端主服务与接口</text>
+<text x="196" y="242" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">主后端与接口</text>
 <rect x="210" y="224" width="681.818" height="26" rx="6" fill="#4f6ef7"/>
 <text x="220" y="241.5" font-size="11.5" font-weight="400" fill="#ffffff" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">08-25 ~ 10-04</text>
-<text x="196" y="284" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">题库与知识库</text>
+<text x="196" y="284" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">题库与检索服务</text>
 <rect x="346.364" y="266" width="204.545" height="26" rx="6" fill="#4f6ef7"/>
 <text x="356.364" y="283.5" font-size="11.5" font-weight="400" fill="#ffffff" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-02 ~ 09-14</text>
-<text x="196" y="326" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">出题算法</text>
-<rect x="397.5" y="308" width="153.409" height="26" rx="6" fill="#4f6ef7"/>
-<text x="407.5" y="325.5" font-size="11.5" font-weight="400" fill="#ffffff" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-05 ~ 09-14</text>
-<text x="196" y="368" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">评估服务</text>
+<text x="196" y="326" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">面试官算法与对话层</text>
+<rect x="397.5" y="308" width="494.318" height="26" rx="6" fill="#4f6ef7"/>
+<text x="407.5" y="325.5" font-size="11.5" font-weight="400" fill="#ffffff" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-05 ~ 10-04</text>
+<text x="196" y="368" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">AI 评估</text>
 <rect x="346.364" y="350" width="204.545" height="26" rx="6" fill="#4f6ef7"/>
 <text x="356.364" y="367.5" font-size="11.5" font-weight="400" fill="#ffffff" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-02 ~ 09-14</text>
-<text x="196" y="410" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">前端开发</text>
+<text x="196" y="410" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">前端全栈开发</text>
 <rect x="704.318" y="392" width="238.636" height="26" rx="6" fill="#4f6ef7"/>
 <text x="714.318" y="409.5" font-size="11.5" font-weight="400" fill="#ffffff" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-23 ~ 10-07</text>
-<text x="196" y="452" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">对话层引擎集成</text>
-<rect x="704.318" y="434" width="187.5" height="26" rx="6" fill="#4f6ef7"/>
-<text x="714.318" y="451.5" font-size="11.5" font-weight="400" fill="#ffffff" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-23 ~ 10-04</text>
-<text x="196" y="494" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">测试与流程仿真</text>
-<rect x="414.545" y="476" width="477.273" height="26" rx="6" fill="#4f6ef7"/>
-<text x="424.545" y="493.5" font-size="11.5" font-weight="400" fill="#ffffff" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-06 ~ 10-04</text>
-<text x="196" y="536" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">文档与提交材料</text>
-<rect x="567.955" y="518" width="392.045" height="26" rx="6" fill="#4f6ef7"/>
-<text x="577.955" y="535.5" font-size="11.5" font-weight="400" fill="#ffffff" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-15 ~ 10-08</text>
-<line x1="44" y1="570" x2="960" y2="570" stroke="#e4e8f2"/>
-<text x="44" y="596" font-size="12.5" font-weight="400" fill="#7a8296" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">时间依据：2026-08-25 首次提交至 2026-10-08 的提交记录、交接文档日期与交付产物时间</text>
+<text x="196" y="452" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">测试与流程仿真</text>
+<rect x="414.545" y="434" width="477.273" height="26" rx="6" fill="#4f6ef7"/>
+<text x="424.545" y="451.5" font-size="11.5" font-weight="400" fill="#ffffff" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-06 ~ 10-04</text>
+<text x="196" y="494" font-size="14.5" font-weight="400" fill="#1f2430" text-anchor="end" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">文档与提交材料</text>
+<rect x="567.955" y="476" width="392.045" height="26" rx="6" fill="#4f6ef7"/>
+<text x="577.955" y="493.5" font-size="11.5" font-weight="400" fill="#ffffff" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">09-15 ~ 10-08</text>
+<line x1="44" y1="528" x2="960" y2="528" stroke="#e4e8f2"/>
+<text x="44" y="554" font-size="12.5" font-weight="400" fill="#7a8296" text-anchor="start" font-family="'Microsoft YaHei','PingFang SC','Hiragino Sans GB',sans-serif">时间依据：2026-08-25 首次提交至 2026-10-08 的提交记录、交接文档日期与交付产物时间</text>
 </svg>
