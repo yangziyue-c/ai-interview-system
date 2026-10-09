@@ -427,7 +427,7 @@ function hbarChart(s, items, x, y, w, labelW, rowH, color) {
 (function frontend() {
   const s = baseSlide('前端全栈开发', '团队分工 · 1.2');
 
-  s.addText('Vue 3 + Vite + TypeScript，14 个页面 + 1 个设置组件，桌面与移动端响应式；以下为实际交付界面的部分截图。', {
+  s.addText('Vue 3 + Vite，14 个页面 + 1 个设置组件，桌面与移动端响应式；以下为实际交付界面的部分截图。', {
     x: 0.78, y: 1.12, w: 11.9, h: 0.4,
     fontSize: 12, color: C.textSub, fontFace: F, margin: 0,
   });
