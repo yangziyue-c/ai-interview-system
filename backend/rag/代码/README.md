@@ -4,7 +4,7 @@
 
 ## ⚠️ 2026-09-19 重大变更：305 问题已修复，运行时改用内存精确余弦索引
 
-原 ChromaDB 的 HNSW 近似索引出现**不同步损坏**：sqlite 元数据有 **74011** 条，但 HNSW 向量文件只有 **73706** 条（缺口 305 条），且 `length.bin` 损坏 → 2 号机器报 `Error loading hnsw index`。
+原 ChromaDB 的 HNSW 近似索引出现**不同步损坏**：sqlite 元数据有 **76222** 条，但 HNSW 向量文件只有 **73706** 条（缺口 305 条），且 `length.bin` 损坏 → 2 号机器报 `Error loading hnsw index`。
 
 **修复方案**（DeepSeek 建议、已采纳）：放弃 HNSW 近似检索，改用**内存精确余弦索引**：
 
@@ -12,13 +12,13 @@
 |---|---|---|
 | 检索后端 | `chromadb.PersistentClient` + HNSW 近似 | `MemoryRetriever`（numpy 精确余弦，暴力 Top-K） |
 | 数据文件 | `chroma_db_v2/`（HNSW 三段式二进制） | `memory_index.npz`（向量矩阵 + id）+ `all_records.pkl`（记录本体） |
-| 条数 | 74011（sqlite）≠ 73706（HNSW）→ 305 缺失 | 74011 = 74011，**逐条断言一致** |
+| 条数 | 76222（sqlite）≠ 73706（HNSW）→ 305 缺失 | 76222 = 76222，**逐条断言一致** |
 | 检索质量 | 近似（HNSW 可能漏召） | **精确**（全量余弦，零漏召） |
 | 依赖 | chromadb==1.5.9（版本锁死，易崩） | **不需要 chromadb**（03/04/05 运行零 chromadb） |
 | 启动耗时 | 秒级（但加载损坏 HNSW 直接崩） | 加载 npz 约 2-5 秒，之后秒级 |
 
-- `memory_retriever.py`：内存检索器，接口兼容旧 `col` 用法（count/get/query/distances、where 过滤），内部**硬断言 74011 条**。
-- `memory_index.npz` / `all_records.pkl`：由 `rebuild_index_shard.py` 用 **bge-m3（与构建参数完全一致）** 从 5 个 `*-rag-v2.jsonl` 重新编码生成，全部 74011 条。
+- `memory_retriever.py`：内存检索器，接口兼容旧 `col` 用法（count/get/query/distances、where 过滤），内部**硬断言 76222 条**。
+- `memory_index.npz` / `all_records.pkl`：由 `rebuild_index_shard.py` 用 **bge-m3（与构建参数完全一致）** 从 5 个 `*-rag-v2.jsonl` 重新编码生成，全部 76222 条。
 - 旧 `向量库/chroma_db_v2/` 保留为**只读归档**，不再参与运行时检索。
 
 ## 文件清单
@@ -68,7 +68,7 @@ python -m pip install sentence-transformers fastapi uvicorn pydantic -i https://
 
 # 首次启动自动下载模型（走 hf-mirror，见 requirements-rag.txt）：
 set HF_ENDPOINT=https://hf-mirror.com
-python 05_rag_api_server.py    # 启动日志打印 [memory] collection size: 74011
+python 05_rag_api_server.py    # 启动日志打印 [memory] collection size: 76222
 ```
 
 - 模型：`BAAI/bge-m3`（向量，**检索时仅用于把查询文本编码成向量**）+ `BAAI/bge-reranker-v2-m3`（重排），下载后缓存到 `~/.cache/huggingface`。
@@ -142,7 +142,7 @@ python 04_verify_collection.py
 ## 验收清单（每次修改后必跑）
 
 ```
-1. 行数统计           → 与预期一致（当前 74,011 条）
+1. 行数统计           → 与预期一致（当前 76,222 条）
 2. 四键全同查重       → 0 组
 3. 评分话术扫描       → 0 条（probe_score_total.py 特征串）
 4. 万能模板扫描       → 0 条
@@ -162,6 +162,6 @@ python -m pip install sentence-transformers fastapi uvicorn pydantic -i https://
 # 离线环境设置 HF_HUB_OFFLINE=1 + HF_ENDPOINT=https://hf-mirror.com
 # 仅当需要重建内存索引/向量库时，额外安装 chromadb==1.5.9（与构建环境一致）。
 ```
-> **版本自测**：`python 04_verify_collection.py` 应显示 74011 条；若 05 启动日志显示
+> **版本自测**：`python 04_verify_collection.py` 应显示 76222 条；若 05 启动日志显示
 > `[memory] collection size: 0` → 是路径问题（memory_index.npz 未放对位置），先查 向量库/ 下是否有
 > `memory_index.npz` 与 `all_records.pkl`。详见 `requirements-rag.txt`。

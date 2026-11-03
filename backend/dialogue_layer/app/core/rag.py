@@ -28,7 +28,7 @@ logger = get_logger(__name__)
 #
 # 实测（不是猜的）：
 #   ⚠️ 2026-09-25 更正：旧注释写的「「原题」层 6/6 条都含这两个词」是**抽样偏差**。
-#   全量扫 74,011 条：「原题」80/5012（**1.6%**）、「语义变体」175/17390（1.0%），
+#   全量扫 76,222 条：「原题」80/5012（**1.6%**）、「语义变体」175/17390（1.0%），
 #   而且**从不出现在第一行**。那 6/6 全落在**行为素质题**（57/495）与**项目经历题**
 #   （23/599）上；技术知识题 0/2835、场景应用题 0/1083 —— 当时抽到的正好是前者。
 #   真正的危险来源与这两个词无关：`document = 题目.strip() + "\n" + 参考答案.strip()`
@@ -218,7 +218,7 @@ class RagIndex:
                             avail if avail is not None else "未知",
                             config.RAG_MIN_FREE_MB)
 
-                # ② 检索器（74011 条内存精确余弦）
+                # ② 检索器（76222 条内存精确余弦）
                 mod = self._load_retriever_module()
                 self.retriever = mod.MemoryRetriever()
 
@@ -236,7 +236,7 @@ class RagIndex:
                 # ⚠️ 必须是 except Exception，不能只抓 FileNotFoundError：
                 #    memory_retriever 类内**没有任何降级** ——
                 #      · 6 个候选路径全落空 → raise FileNotFoundError
-                #      · 条数 != EXPECTED_N(74011) → raise ValueError
+                #      · 条数 != EXPECTED_N(76222) → raise ValueError
                 #      · 反序列化失败 → 各种 pickle 异常
                 #    少抓一种就是一次 500。失败后置 _failed 闩，本进程永久降级。
                 self._failed = True

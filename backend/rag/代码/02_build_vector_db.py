@@ -8,7 +8,7 @@
 
 技术选型（为什么这么选）：
   - 向量模型：BAAI/bge-m3 —— 中文语义检索标杆，1024 维，
-    max_seq 512 token；纯 CPU 可跑（7.4 万条约 3 小时）。
+    max_seq 512 token；纯 CPU 可跑（7.62 万条约 3 小时）。
   - 向量库：ChromaDB（PersistentClient）—— 轻量、本地持久化、
     自带 cosine 距离（hnsw:space=cosine），适合单机项目。
   - 相似度：cosine（normalize_embeddings=True 后点积即余弦）。
