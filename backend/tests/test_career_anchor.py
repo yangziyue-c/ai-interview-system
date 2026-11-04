@@ -1,4 +1,4 @@
-"""职业锚定测试：题目下发、计分推荐、非法作答"""
+"""岗位倾向速测：题目下发、20 条评分、岗位推荐与非法作答"""
 import uuid
 
 import pytest
@@ -21,72 +21,92 @@ async def _register(client: AsyncClient) -> dict:
     return {"Authorization": f"Bearer {resp.json()['data']['access_token']}"}
 
 
+def _answers_for(position: str, high: int = 5, low: int = 2) -> list[int]:
+    """构造偏向某个岗位的 20 条评分：该岗位 4 条给高分，其余给低分"""
+    from app.core.career_anchor import SCALE_QUESTIONS
+
+    return [
+        high if question["role"] == position else low
+        for question in SCALE_QUESTIONS
+    ]
+
+
 class TestCareerAnchor:
-    async def test_questions_hide_scores(self, client: AsyncClient):
+    async def test_questions_shape(self, client: AsyncClient):
         headers = await _register(client)
         resp = await client.get(f"{BASE}/career-anchor/questions", headers=headers)
         assert resp.status_code == 200
         data = resp.json()["data"]
-        assert data["total"] == 5
-        assert len(data["questions"]) == 5
+        assert data["total"] == 20
+        assert len(data["questions"]) == 20
+        assert len(data["interest_ratings"]) == 5
+        assert len(data["ability_ratings"]) == 5
         for question in data["questions"]:
-            assert set(question) == {"id", "text", "options"}
-            for option in question["options"]:
-                # 计分权重绝不能下发给前端
-                assert set(option) == {"key", "text"}
+            assert set(question) == {"id", "category", "role", "text"}
+            assert question["category"] in ("interest", "ability")
+            assert question["role"] in {
+                "backend", "frontend", "test_engineer", "algorithm", "system_design"
+            }
 
-    async def test_submit_recommends_enabled_position(self, client: AsyncClient):
+    @pytest.mark.parametrize(
+        "position", ["backend", "frontend", "test_engineer", "algorithm", "system_design"]
+    )
+    async def test_position_specific_answers(self, client: AsyncClient, position: str):
         headers = await _register(client)
         resp = await client.post(
             f"{BASE}/career-anchor/submit",
-            json={"answers": {"q1": "A", "q2": "A", "q3": "A", "q4": "A", "q5": "A"}},
+            json={"answers": _answers_for(position)},
             headers=headers,
         )
         assert resp.status_code == 200, resp.text
         data = resp.json()["data"]
-        assert data["recommended"]["position"] in {
-            "backend", "frontend", "algorithm", "test_engineer", "system_design"
-        }
+        assert data["recommended"]["position"] == position
         assert data["recommended"]["name"]
         assert data["recommended"]["reason"]
+        assert 0 <= data["recommended"]["index"] <= 100
+        assert len(data["scores"]) == 5
+        assert data["scores"][0]["position"] == position
+        assert data["confidence"] in ("高", "中", "低")
+        assert 0 <= data["consistency_percent"] <= 100
         assert data["guide"]
-        # alternatives 不含推荐岗位本身
-        alt_positions = {item["position"] for item in data["alternatives"]}
-        assert data["recommended"]["position"] not in alt_positions
-        # scores 覆盖全部 5 个岗位，且按降序
-        scores = [item["score"] for item in data["scores"]]
-        assert len(scores) == 5
-        assert scores == sorted(scores, reverse=True)
 
-    async def test_frontend_answers_recommend_frontend(self, client: AsyncClient):
+    async def test_all_same_scores_are_unclear(self, client: AsyncClient):
         headers = await _register(client)
         resp = await client.post(
             f"{BASE}/career-anchor/submit",
-            json={"answers": {"q1": "B", "q2": "B", "q3": "B", "q4": "B", "q5": "B"}},
+            json={"answers": [5] * 20},
             headers=headers,
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json()["data"]["recommended"]["position"] == "frontend"
+        data = resp.json()["data"]
+        # 五个岗位同分，分差为 0，不能形成明确推荐
+        assert data["margin"] == 0
+        assert data["title"] == "方向暂不明确"
+        assert data["confidence"] == "低"
+        assert data["consistency_percent"] == 100
 
-    async def test_missing_answer_rejected(self, client: AsyncClient):
+    async def test_missing_answers_rejected(self, client: AsyncClient):
         headers = await _register(client)
         resp = await client.post(
             f"{BASE}/career-anchor/submit",
-            json={"answers": {"q1": "A", "q2": "A"}},
+            json={"answers": [5] * 19},
             headers=headers,
         )
         assert resp.status_code == 400
-        assert "未作答" in resp.json()["message"]
+        assert "20 条" in resp.json()["message"]
 
-    async def test_unknown_option_rejected(self, client: AsyncClient):
+    @pytest.mark.parametrize("bad", [0, 6])
+    async def test_out_of_range_rejected(self, client: AsyncClient, bad):
         headers = await _register(client)
+        answers = [5] * 20
+        answers[3] = bad
         resp = await client.post(
             f"{BASE}/career-anchor/submit",
-            json={"answers": {"q1": "Z", "q2": "A", "q3": "A", "q4": "A", "q5": "A"}},
+            json={"answers": answers},
             headers=headers,
         )
         assert resp.status_code == 400
-        assert "选项非法" in resp.json()["message"]
+        assert "1~5" in resp.json()["message"]
 
     async def test_requires_auth(self, client: AsyncClient):
         resp = await client.get(f"{BASE}/career-anchor/questions")

@@ -1019,11 +1019,14 @@ PUT /settings
 
 ---
 
-## 10. 职业锚定测试
+## 10. 岗位倾向速测
 
-5 道单选题 → 推荐最适合的面试岗位 → 前端拿推荐岗位的 code 直接调
-`POST /interviews` 开始模拟面试。推荐只依据考生勾选的工作偏好，**不是能力测评**，
-也不输出性格标签。
+20 条陈述 → 推荐最适合的面试岗位 → 前端拿推荐岗位的 code 直接调
+`POST /interviews` 开始模拟面试。前 10 条测兴趣，后 10 条测当前能否独立完成，
+每条 1~5 分。推荐只依据考生自评，**不是能力测评**，也不输出性格标签。
+
+计分在后端：每个岗位 4 条陈述（兴趣 2 条 + 能力 2 条），兴趣占 60%、能力占 40%，
+换算成 0~100 的倾向指数。
 
 ### 10.1 获取题目
 
@@ -1033,39 +1036,56 @@ GET /career-anchor/questions
 
 ```json
 { "code": 0, "message": "ok", "data": {
-    "total": 5,
+    "total": 20,
     "questions": [
-      { "id": "q1", "text": "接到一个新需求，你最想先动手做哪一部分？",
-        "options": [ { "key": "A", "text": "把服务拆成模块……" },
-                     { "key": "B", "text": "把页面结构和交互流程先画出来" } ] }
-    ] } }
+      { "id": "q1", "category": "interest", "role": "backend",
+        "text": "我喜欢把业务规则拆成清晰的数据模型和接口边界。" }
+    ],
+    "interest_ratings": [ { "value": 1, "label": "完全不符合" } ],
+    "ability_ratings": [ { "value": 1, "label": "目前做不到" } ]
+  } }
 ```
 
-> 选项**只下发 key 与文案**，计分权重不下发。
+> `category` 为 `interest`（兴趣）或 `ability`（能力）；`role` 是该条陈述对应的岗位 code。
+> 计分权重不下发。
 
-### 10.2 提交答案，获取推荐岗位
+### 10.2 提交评分，获取推荐岗位
 
 ```
 POST /career-anchor/submit
-{ "answers": { "q1": "A", "q2": "C", "q3": "B", "q4": "A", "q5": "D" } }
+{ "answers": [5, 4, 3, 5, 2, ...] }
 ```
 
-5 道题**必须全部作答**，缺题或选项非法返回 400。
+`answers` 必须正好 20 项，每项为 1~5 的整数，顺序与 10.1 返回的题目一致。
+缺项或越界返回 400。
 
 ```json
 { "code": 0, "message": "推荐岗位已生成", "data": {
     "recommended": {
-      "position": "backend", "name": "后端开发工程师", "score": 9,
-      "reason": "你的选择在多个方向间有交叉，后端开发工程师的匹配度最高（9 分，领先第二名 2 分）。"
+      "position": "backend", "name": "后端开发工程师", "index": 90,
+      "reason": "更关注数据、接口与系统稳定性，后端的学习路径和你的选择更接近。"
     },
-    "alternatives": [ { "position": "system_design", "name": "系统设计工程师", "score": 7 } ],
-    "scores": [ { "position": "backend", "name": "后端开发工程师", "score": 9 } ],
+    "alternatives": [ { "position": "system_design", "name": "系统设计工程师", "index": 72 } ],
+    "scores": [
+      { "position": "backend", "name": "后端开发工程师",
+        "interest_raw": 10, "ability_raw": 8, "interest_norm": 1.0,
+        "ability_norm": 0.5, "composite": 0.8, "index": 90 }
+    ],
+    "consistency_percent": 88,
+    "confidence": "高",
+    "margin": 14,
+    "title": "后端开发工程师",
+    "narrative": "……",
+    "signal_label": "兴趣与能力方向一致",
+    "signal_narrative": "……",
     "guide": "可以先用「后端开发工程师」开始一场模拟面试，系统会按该岗位的题目出题。"
   }
 }
 ```
 
-> `scores` 覆盖全部**已开放**岗位并按得分降序；`alternatives` 只取第 2~3 名。
+> `scores` 覆盖全部已开放岗位并按综合分降序；`alternatives` 取第 2~3 名。
+> `index` 为 0~100 的倾向指数，`margin` 是第一与第二名指数差，分差小于 5 时
+> `title` 为「方向暂不明确」。`confidence` 取「高 / 中 / 低」，由一致性与分差共同决定。
 > 同分时按固定岗位顺序推荐，同样的答案永远得到同样的结果。
 
 ---

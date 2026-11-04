@@ -1,10 +1,10 @@
-"""职业锚定测试 schema"""
+"""岗位倾向速测 schema"""
 from pydantic import BaseModel, Field
 
 
 class AnchorSubmitRequest(BaseModel):
-    """提交答案：题目 ID → 选项 key（如 {"q1": "A", ...}）"""
+    """提交 20 条陈述的 1~5 评分，顺序与题目接口返回一致"""
 
-    answers: dict[str, str] = Field(
-        description="5 道题的作答，键为题号、值为选项 key；必须全部作答"
+    answers: list[int] = Field(
+        description="20 条陈述的评分，按题目顺序，每项为 1~5 的整数"
     )

@@ -1,18 +1,18 @@
-"""职业锚定测试接口：5 道选择题 → 推荐岗位 → 引导进入该岗位面试
+"""岗位倾向速测接口：20 条陈述 → 推荐岗位 → 引导进入该岗位面试
 
-只做「引导入口」：推荐依据是考生自己勾选的工作偏好，不涉及能力评测。
-推荐的岗位一定从 positions 表里已开放的岗位中选，前端拿到 code 后直接调
-`POST /interviews` 即可开始一场该岗位的模拟面试。
+题目与计分都在后端，前端只负责答题与展示。与前端 v3 的结果页字段逐项对齐：
+`scores`（五个岗位的兴趣/能力/指数）、`consistency_percent`、`confidence`、
+`title`、`narrative`、`signal_label`、`signal_narrative`。
+
+推荐只依据考生自己的偏好与能力自评，不做能力判定，也不输出性格标签。
 """
 from fastapi import APIRouter
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.career_anchor import (
-    ANCHOR_QUESTIONS,
-    build_reason,
+    POSITION_REASONS,
     public_questions,
-    rank_positions,
     score_answers,
     validate_answers,
 )
@@ -24,49 +24,51 @@ from app.utils.response import ok
 router = APIRouter()
 
 
-@router.get("/questions", response_model=dict, summary="获取职业锚定测试题目")
+@router.get("/questions", response_model=dict, summary="获取岗位倾向速测题目")
 async def get_anchor_questions(_: CurrentUser) -> dict:
-    return ok({"questions": public_questions(), "total": len(ANCHOR_QUESTIONS)})
+    return ok(public_questions())
 
 
-@router.post("/submit", response_model=dict, summary="提交答案，返回推荐岗位")
+@router.post("/submit", response_model=dict, summary="提交 20 条评分，返回推荐岗位")
 async def submit_anchor(req: AnchorSubmitRequest, _: CurrentUser, db: DbSession) -> dict:
     try:
         validate_answers(req.answers)
     except ValueError as exc:
         raise BadRequestError(str(exc)) from exc
 
-    scores = score_answers(req.answers)
-    rows = (
-        await db.scalars(select(Position).where(Position.enabled.is_(True)))
-    ).all()
+    result = score_answers(req.answers)
+
+    # 只推荐已开放岗位：系统默认五岗全开，这里保留过滤是为了岗位下线时
+    # 不会把考生引到一个无法开始面试的方向
+    rows = (await db.scalars(select(Position).where(Position.enabled.is_(True)))).all()
     enabled = {row.code for row in rows}
     names = {row.code: row.name for row in rows}
-
-    ranked = rank_positions(scores, enabled)
-    if not ranked:
-        # 全部岗位下线时没有可推荐项：明确报错，不返回一个不存在的岗位
+    scores = [item for item in result["scores"] if item["position"] in enabled]
+    if not scores:
         raise ServiceUnavailableError("当前没有开放的面试岗位，暂时无法推荐")
 
-    top_code, top_score = ranked[0]
-    second_score = ranked[1][1] if len(ranked) > 1 else 0
-    top_name = names.get(top_code, top_code)
+    for item in scores:
+        item["name"] = names.get(item["position"], item["name"])
 
-    ordered = [
-        {"position": code, "name": names.get(code, code), "score": score}
-        for code, score in ranked
-    ]
-    return ok(
-        {
-            "recommended": {
-                "position": top_code,
-                "name": top_name,
-                "score": top_score,
-                "reason": build_reason(top_name, top_score, second_score),
-            },
-            "alternatives": ordered[1:3],
-            "scores": ordered,
-            "guide": f"可以先用「{top_name}」开始一场模拟面试，系统会按该岗位的题目出题。",
-        },
-        "推荐岗位已生成",
+    top = scores[0]
+    if top["position"] != result["recommended"]["position"]:
+        # 首选岗位已下线：改用当前开放岗位里的第一名，文案同步重算
+        result["recommended"] = {
+            "position": top["position"],
+            "name": top["name"],
+            "index": top["index"],
+            "reason": POSITION_REASONS.get(top["position"], ""),
+        }
+        result["title"] = top["name"]
+        result["guide"] = f"可以先用「{top['name']}」开始一场模拟面试，系统会按该岗位的题目出题。"
+
+    result["recommended"]["name"] = names.get(
+        result["recommended"]["position"], result["recommended"]["name"]
     )
+    result["alternatives"] = [
+        {"position": item["position"], "name": item["name"], "index": item["index"]}
+        for item in scores[1:3]
+    ]
+    result["scores"] = scores
+
+    return ok(result, "推荐岗位已生成")

@@ -49,8 +49,12 @@
 
       <div class="quiz-actions">
         <button class="btn btn-secondary" :disabled="current === 0" @click="prev">上一题</button>
-        <button class="btn btn-primary" :disabled="answers[current] === null" @click="next">
-          {{ isLast ? '查看结果' : '下一题' }}
+        <button
+          class="btn btn-primary"
+          :disabled="answers[current] === null || submitting"
+          @click="next"
+        >
+          {{ submitting ? '正在生成推荐…' : (isLast ? '查看结果' : '下一题') }}
         </button>
       </div>
 
@@ -58,6 +62,7 @@
     </div>
 
     <div v-else class="result-body">
+      <p v-if="submitError" class="quiz-note">{{ submitError }}</p>
       <div class="result-card">
         <div class="result-badge">
           <AppIcon name="sparkles" :size="18" />
@@ -137,6 +142,7 @@ import { computed, nextTick, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMediaQuery } from '@/utils/useMediaQuery'
 import AppIcon from '@/components/AppIcon.vue'
+import { submitCareerAnswers } from '@/api/career'
 
 const router = useRouter()
 const isDesktop = useMediaQuery('(min-width: 1024px)')
@@ -179,6 +185,8 @@ const ABILITY_RATINGS = [
   { value: 5, label: '能够稳定独立完成' }
 ]
 
+// 题目与后端 app/core/career_anchor.py 的 SCALE_QUESTIONS 同源；
+// 改题时两边必须同步，否则提交的 20 条评分与题目顺序会对不上。
 const questions = [
   {
     category: 'interest',
@@ -285,6 +293,9 @@ const questions = [
 const current = ref(0)
 const answers = ref(Array(questions.length).fill(null))
 const finished = ref(false)
+const remoteResult = ref(null)
+const submitting = ref(false)
+const submitError = ref('')
 
 const currentQuestion = computed(() => questions[current.value])
 const isLast = computed(() => current.value === questions.length - 1)
@@ -355,17 +366,20 @@ const ranked = computed(() => {
   })
 })
 
-const topCode = computed(() => ranked.value[0].code)
-const topName = computed(() => POSITIONS[topCode.value].name)
-const topIndex = computed(() => ranked.value[0].index)
-const secondCode = computed(() => ranked.value[1].code)
-const secondName = computed(() => ranked.value[1].name)
-const secondIndex = computed(() => ranked.value[1].index)
-const secondReason = computed(() => REASONS[secondCode.value])
+const topCode = computed(() => remoteResult.value?.recommended?.position || ranked.value[0].code)
+const topName = computed(() => remoteResult.value?.recommended?.name || POSITIONS[topCode.value].name)
+const topIndex = computed(() => remoteResult.value?.recommended?.index ?? ranked.value[0].index)
+const secondCode = computed(() => remoteResult.value?.alternatives?.[0]?.position || ranked.value[1].code)
+const secondName = computed(() => remoteResult.value?.alternatives?.[0]?.name || ranked.value[1].name)
+const secondIndex = computed(() => remoteResult.value?.alternatives?.[0]?.index ?? ranked.value[1].index)
+const secondReason = computed(() => REASONS[secondCode.value] || '')
 const topInterestCode = computed(() => preferenceRanked.value[0].code)
 const topAbilityCode = computed(() => abilityRanked.value[0].code)
 
 const consistencyPercent = computed(() => {
+  if (remoteResult.value?.consistency_percent !== undefined) {
+    return remoteResult.value.consistency_percent
+  }
   let totalDifference = 0
   let pairCount = 0
   CODES.forEach((code) => {
@@ -387,15 +401,17 @@ const consistencyPercent = computed(() => {
 
 const scoreMargin = computed(() => topIndex.value - secondIndex.value)
 const recommendationTitle = computed(() => (
-  scoreMargin.value < 5 ? '方向暂不明确' : topName.value
+  remoteResult.value?.title || (scoreMargin.value < 5 ? '方向暂不明确' : topName.value)
 ))
 const confidenceLabel = computed(() => {
+  if (remoteResult.value?.confidence) return remoteResult.value.confidence
   if (consistencyPercent.value >= 75 && scoreMargin.value >= 10) return '高'
   if (consistencyPercent.value >= 50 && scoreMargin.value >= 5) return '中'
   return '低'
 })
 
 const topNarrative = computed(() => {
+  if (remoteResult.value?.narrative) return remoteResult.value.narrative
   const interestName = POSITIONS[topInterestCode.value].name
   const abilityName = POSITIONS[topAbilityCode.value].name
   if (scoreMargin.value < 5) {
@@ -408,11 +424,13 @@ const topNarrative = computed(() => {
 })
 
 const signalLabel = computed(() => {
+  if (remoteResult.value?.signal_label) return remoteResult.value.signal_label
   if (scoreMargin.value < 5) return '各方向区分度不足'
   return topInterestCode.value === topAbilityCode.value ? '兴趣与能力方向一致' : '兴趣与能力方向存在差异'
 })
 
 const signalNarrative = computed(() => {
+  if (remoteResult.value?.signal_narrative) return remoteResult.value.signal_narrative
   const interestName = POSITIONS[topInterestCode.value].name
   const abilityName = POSITIONS[topAbilityCode.value].name
   if (scoreMargin.value < 5) {
@@ -434,6 +452,15 @@ const signalNarrative = computed(() => {
 })
 
 const scoreRows = computed(() => {
+  if (remoteResult.value?.scores) {
+    return remoteResult.value.scores.map((item) => ({
+      code: item.position,
+      name: item.name,
+      interestRaw: item.interest_raw,
+      abilityRaw: item.ability_raw,
+      index: item.index
+    }))
+  }
   return ranked.value
 })
 
@@ -441,17 +468,30 @@ const selectRating = (rating) => {
   answers.value[current.value] = rating
 }
 
-const next = () => {
+const next = async () => {
   if (answers.value[current.value] === null) return
   if (!isLast.value) {
     current.value += 1
     scrollToTop()
     return
   }
+
+  submitting.value = true
+  submitError.value = ''
+  try {
+    remoteResult.value = await submitCareerAnswers(answers.value)
+  } catch (e) {
+    // 后端暂时不可用时回退本地计算，保证演示与离线场景仍能出结果
+    remoteResult.value = null
+    submitError.value = '推荐服务暂时不可用，当前结果由本地计算生成。'
+  } finally {
+    submitting.value = false
+  }
+
   finished.value = true
   try {
     localStorage.setItem('career_anchor_result', JSON.stringify({
-      version: 3,
+      version: 4,
       code: topCode.value,
       secondCode: secondCode.value,
       scores: Object.fromEntries(scoreRows.value.map((item) => [item.code, {
@@ -480,6 +520,8 @@ const restart = () => {
   answers.value = Array(questions.length).fill(null)
   current.value = 0
   finished.value = false
+  remoteResult.value = null
+  submitError.value = ''
   scrollToTop()
 }
 

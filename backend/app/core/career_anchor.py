@@ -1,220 +1,237 @@
-"""极简职业锚定测试：5 道选择题，推荐最匹配的面试岗位
+"""岗位倾向速测：20 条陈述，按兴趣与能力双维度推荐岗位
 
-这是「引导入口」，不是心理测评：题目只问工作偏好的日常表现（先做什么、
-哪类成果有成就感），每项给岗位加分，答完直接给出岗位建议并引导进入该岗位
-的模拟面试。**不做能力判定**，也不输出性格标签。
+与前端 `CareerAnchor.vue` 的算分口径逐项一致，后端接管计算后，题目与结果
+都只有一份事实源。速测是**引导入口**，不是能力测评：题目问的是日常偏好与
+当前能否独立完成，结果用于推荐先体验哪个岗位，不做性格或能力判定。
 
-岗位 code 与 positions 表一致；本模块只负责题目与计分，岗位是否开放、
-展示名如何由接口层查库决定。
+计分口径（与前端 v3 对齐）：
+- 每个岗位 4 条陈述：2 条兴趣、2 条能力，每题 1~5 分；
+- 岗位原始分 = 同岗位同类别两条之和（2~10），归一化 `(raw - 6) / 4` 到 -1~1；
+- 综合分 = 兴趣 60% + 能力 40%，指数 = `(综合分 + 1) * 50`，落在 0~100；
+- 排序：综合分降序，再能力分、兴趣分，最后固定岗位顺序；
+- 一致性 = 1 - 同岗位同类两条陈述的平均差值 / 4，换算成百分比。
 """
 
-# 岗位 code（与 positions 表对齐）
-POSITIONS = ("backend", "frontend", "algorithm", "test_engineer", "system_design")
+POSITION_CODES = ("backend", "frontend", "test_engineer", "algorithm", "system_design")
 
-# 5 道题 × 4 选项。scores 只写非零项，未列出的岗位该项得 0 分。
-ANCHOR_QUESTIONS: list[dict] = [
-    {
-        "id": "q1",
-        "text": "接到一个新需求，你最想先动手做哪一部分？",
-        "options": [
-            {
-                "key": "A",
-                "text": "把服务拆成模块，先定好接口和数据怎么流转",
-                "scores": {"backend": 2, "system_design": 1},
-            },
-            {
-                "key": "B",
-                "text": "把页面结构和交互流程先画出来",
-                "scores": {"frontend": 3},
-            },
-            {
-                "key": "C",
-                "text": "想清楚数据处理方式，估算规模与复杂度",
-                "scores": {"algorithm": 3},
-            },
-            {
-                "key": "D",
-                "text": "先列出哪些边界情况可能出问题",
-                "scores": {"test_engineer": 3},
-            },
-        ],
-    },
-    {
-        "id": "q2",
-        "text": "排查一个线上问题时，你最习惯从哪入手？",
-        "options": [
-            {
-                "key": "A",
-                "text": "看服务日志和调用链，定位是哪个环节出错",
-                "scores": {"backend": 2, "system_design": 2},
-            },
-            {
-                "key": "B",
-                "text": "按用户的操作路径复现一遍",
-                "scores": {"frontend": 2, "test_engineer": 1},
-            },
-            {
-                "key": "C",
-                "text": "分析性能瓶颈和数据规模带来的影响",
-                "scores": {"algorithm": 2, "system_design": 1},
-            },
-            {
-                "key": "D",
-                "text": "检查各种边界条件和异常分支有没有被覆盖",
-                "scores": {"test_engineer": 3},
-            },
-        ],
-    },
-    {
-        "id": "q3",
-        "text": "哪种成果最让你有成就感？",
-        "options": [
-            {
-                "key": "A",
-                "text": "接口稳定，系统在流量上来时依然扛得住",
-                "scores": {"backend": 2, "system_design": 1},
-            },
-            {
-                "key": "B",
-                "text": "用户说这个页面用起来顺手、看着舒服",
-                "scores": {"frontend": 3},
-            },
-            {
-                "key": "C",
-                "text": "程序跑得更快，结果也更准确",
-                "scores": {"algorithm": 3},
-            },
-            {
-                "key": "D",
-                "text": "上线后缺陷率明显下降，问题提前被拦住",
-                "scores": {"test_engineer": 3},
-            },
-        ],
-    },
-    {
-        "id": "q4",
-        "text": "空闲时你更愿意钻研哪类内容？",
-        "options": [
-            {
-                "key": "A",
-                "text": "数据库、缓存与分布式一致性",
-                "scores": {"backend": 2, "system_design": 2},
-            },
-            {
-                "key": "B",
-                "text": "浏览器渲染机制与前端工程化",
-                "scores": {"frontend": 3},
-            },
-            {
-                "key": "C",
-                "text": "算法复杂度、模型与性能调优",
-                "scores": {"algorithm": 3},
-            },
-            {
-                "key": "D",
-                "text": "测试框架、质量度量与自动化",
-                "scores": {"test_engineer": 2, "system_design": 1},
-            },
-        ],
-    },
-    {
-        "id": "q5",
-        "text": "在团队里，你更像哪种角色？",
-        "options": [
-            {
-                "key": "A",
-                "text": "把各个模块拼起来、保证整条链路能跑通的人",
-                "scores": {"backend": 1, "system_design": 2},
-            },
-            {
-                "key": "B",
-                "text": "打磨体验细节、让产品更好用的人",
-                "scores": {"frontend": 3},
-            },
-            {
-                "key": "C",
-                "text": "愿意啃最难那块硬骨头的人",
-                "scores": {"algorithm": 3},
-            },
-            {
-                "key": "D",
-                "text": "守住最后一道质量关的人",
-                "scores": {"test_engineer": 3},
-            },
-        ],
-    },
-]
-
-# 题目 ID → 选项 key → 选项（校验与计分共用）
-_QUESTION_INDEX = {
-    q["id"]: {opt["key"]: opt for opt in q["options"]} for q in ANCHOR_QUESTIONS
+POSITION_NAMES = {
+    "backend": "后端开发工程师",
+    "frontend": "前端开发工程师",
+    "test_engineer": "测试开发工程师",
+    "algorithm": "算法工程师",
+    "system_design": "系统设计工程师",
 }
 
-# 平分时的固定顺序：保证同样答案永远给同样推荐（不依赖 dict 顺序）
-_PRIORITY = {code: index for index, code in enumerate(POSITIONS)}
+POSITION_REASONS = {
+    "backend": "更关注数据、接口与系统稳定性，后端的学习路径和你的选择更接近。",
+    "frontend": "更关注交互、体验与工程化，前端的学习路径和你的选择更接近。",
+    "test_engineer": "更关注质量、边界与可验证性，测试开发的成长路径和你的选择更接近。",
+    "system_design": "更关注架构、容量与高可用，系统设计方向的综合要求与你的回答更接近。",
+    "algorithm": "更关注模型效果与指标提升，算法工程方向与你的兴趣和能力自评更接近。",
+}
+
+# 1~5 分自评的标签，下发给前端作为选项文案（前端也可本地兜底）
+INTEREST_RATINGS = [
+    {"value": 1, "label": "完全不符合"},
+    {"value": 2, "label": "不太符合"},
+    {"value": 3, "label": "一般或不确定"},
+    {"value": 4, "label": "比较符合"},
+    {"value": 5, "label": "非常符合"},
+]
+ABILITY_RATINGS = [
+    {"value": 1, "label": "目前做不到"},
+    {"value": 2, "label": "需要较多帮助"},
+    {"value": 3, "label": "基本了解，但不够独立"},
+    {"value": 4, "label": "基本可以独立完成"},
+    {"value": 5, "label": "能够稳定独立完成"},
+]
+
+# 20 条陈述，顺序即前端答题顺序。category=interest/ability，role=岗位 code
+SCALE_QUESTIONS: list[dict] = [
+    {"id": "q1", "category": "interest", "role": "backend", "text": "我喜欢把业务规则拆成清晰的数据模型和接口边界。"},
+    {"id": "q2", "category": "interest", "role": "frontend", "text": "我愿意反复打磨页面交互、视觉细节和操作路径。"},
+    {"id": "q3", "category": "interest", "role": "test_engineer", "text": "我喜欢提前设计异常场景和验收标准。"},
+    {"id": "q4", "category": "interest", "role": "system_design", "text": "我喜欢权衡模块边界、容量、扩展性和可用性。"},
+    {"id": "q5", "category": "interest", "role": "algorithm", "text": "我愿意用数据和实验判断一个方案是否真的有效。"},
+    {"id": "q6", "category": "interest", "role": "backend", "text": "看到一套服务稳定支撑高并发请求，我会很有成就感。"},
+    {"id": "q7", "category": "interest", "role": "frontend", "text": "我享受把复杂功能整理成清晰、顺手的界面。"},
+    {"id": "q8", "category": "interest", "role": "test_engineer", "text": "我愿意追查偶现问题，直到它能够稳定复现。"},
+    {"id": "q9", "category": "interest", "role": "system_design", "text": "我对多个服务如何协作、部署和承受流量很感兴趣。"},
+    {"id": "q10", "category": "interest", "role": "algorithm", "text": "我喜欢研究模型、特征或指标为什么发生变化。"},
+    {"id": "q11", "category": "ability", "role": "backend", "text": "我能独立设计数据表、接口和基本的登录权限。"},
+    {"id": "q12", "category": "ability", "role": "frontend", "text": "我能独立完成响应式页面、组件交互和状态联动。"},
+    {"id": "q13", "category": "ability", "role": "test_engineer", "text": "我能独立设计测试用例、自动化脚本和回归检查。"},
+    {"id": "q14", "category": "ability", "role": "system_design", "text": "我能拆分模块、画架构图并说明部署方案。"},
+    {"id": "q15", "category": "ability", "role": "algorithm", "text": "我能完成数据清洗、模型训练和基本效果评估。"},
+    {"id": "q16", "category": "ability", "role": "backend", "text": "遇到数据库异常、并发或消息堆积时，我知道从哪里排查。"},
+    {"id": "q17", "category": "ability", "role": "frontend", "text": "遇到渲染、兼容性或网络请求问题时，我能定位到具体环节。"},
+    {"id": "q18", "category": "ability", "role": "test_engineer", "text": "我能复现环境差异、边界输入和偶现缺陷。"},
+    {"id": "q19", "category": "ability", "role": "system_design", "text": "我能分析服务依赖、资源瓶颈和扩展方案。"},
+    {"id": "q20", "category": "ability", "role": "algorithm", "text": "遇到指标异常时，我能判断是数据、特征还是训练过程的问题。"},
+]
+
+_QUESTION_COUNT = len(SCALE_QUESTIONS)
 
 
-def public_questions() -> list[dict]:
-    """下发给前端的题目（剥掉计分权重——权重不该让考生看见）"""
-    return [
-        {
-            "id": q["id"],
-            "text": q["text"],
-            "options": [{"key": opt["key"], "text": opt["text"]} for opt in q["options"]],
-        }
-        for q in ANCHOR_QUESTIONS
-    ]
+def public_questions() -> dict:
+    """下发给前端的题目与评分标签（不含任何计分权重）"""
+    return {
+        "total": _QUESTION_COUNT,
+        "questions": [
+            {"id": q["id"], "category": q["category"], "role": q["role"], "text": q["text"]}
+            for q in SCALE_QUESTIONS
+        ],
+        "interest_ratings": INTEREST_RATINGS,
+        "ability_ratings": ABILITY_RATINGS,
+    }
 
 
-def validate_answers(answers: dict[str, str]) -> None:
-    """校验 5 题全部作答且选项合法；不合法抛 ValueError（接口层转 400）
-
-    不做「缺一题按默认算」：漏答会让推荐结果悄悄偏向某个岗位，而考生
-    不知道自己答漏了。
-    """
-    expected = {q["id"] for q in ANCHOR_QUESTIONS}
-    missing = expected - set(answers)
-    if missing:
-        raise ValueError(f"还有 {len(missing)} 道题未作答：{', '.join(sorted(missing))}")
-    unknown = set(answers) - expected
-    if unknown:
-        raise ValueError(f"未知题目：{', '.join(sorted(unknown))}")
-    for qid, key in answers.items():
-        if key not in _QUESTION_INDEX[qid]:
-            raise ValueError(f"题目 {qid} 的选项非法：{key}")
+def validate_answers(answers: list[int]) -> None:
+    """校验 20 条全部作答且每项在 1~5；不合法抛 ValueError（接口层转 400）"""
+    if len(answers) != _QUESTION_COUNT:
+        raise ValueError(f"需要作答 {_QUESTION_COUNT} 条陈述，当前提交了 {len(answers)} 条")
+    for index, value in enumerate(answers, 1):
+        if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 5:
+            raise ValueError(f"第 {index} 条评分必须是 1~5 的整数，当前为 {value!r}")
 
 
-def score_answers(answers: dict[str, str]) -> dict[str, int]:
-    """按选项权重累计各岗位得分（调用前先 validate_answers）"""
-    scores = {code: 0 for code in POSITIONS}
-    for qid, key in answers.items():
-        for code, points in _QUESTION_INDEX[qid][key]["scores"].items():
-            scores[code] += points
-    return scores
+def _normalize(raw: int) -> float:
+    """两条陈述之和（2~10）归一化到 -1~1"""
+    return (raw - 6) / 4
 
 
-def rank_positions(scores: dict[str, int], enabled: set[str]) -> list[tuple[str, int]]:
-    """只在已开放岗位里排序：零分岗位也要排在后面，而不是被推荐
+def _local_consistency(answers: list[int]) -> int:
+    """同岗位同类两条陈述的差值越小，一致性越高（0~100）"""
+    total_difference = 0
+    pair_count = 0
+    for code in POSITION_CODES:
+        for category in ("interest", "ability"):
+            values = [
+                answers[i]
+                for i, q in enumerate(SCALE_QUESTIONS)
+                if q["role"] == code and q["category"] == category
+            ]
+            if len(values) == 2:
+                total_difference += abs(values[0] - values[1])
+                pair_count += 1
+    if pair_count == 0:
+        return 0
+    return round((1 - total_difference / (pair_count * 4)) * 100)
 
-    排序键 = (分数倒序, 固定优先级)。同分时推荐谁必须稳定——否则同样的
-    答案在两次请求里可能得到不同建议。
-    """
-    candidates = [(code, scores.get(code, 0)) for code in POSITIONS if code in enabled]
-    candidates.sort(key=lambda item: (-item[1], _PRIORITY[item[0]]))
-    return candidates
 
+def score_answers(answers: list[int]) -> dict:
+    """按前端 v3 口径算分并生成结果文案（调用前先 validate_answers）"""
+    interest = {code: 0 for code in POSITION_CODES}
+    ability = {code: 0 for code in POSITION_CODES}
+    for value, question in zip(answers, SCALE_QUESTIONS):
+        if question["category"] == "interest":
+            interest[question["role"]] += value
+        else:
+            ability[question["role"]] += value
 
-def build_reason(position_name: str, score: int, second_score: int) -> str:
-    """推荐理由：只陈述选择倾向与得分差距，不夸大成「能力很强」
+    ranked = []
+    for code in POSITION_CODES:
+        interest_norm = _normalize(interest[code])
+        ability_norm = _normalize(ability[code])
+        composite = interest_norm * 0.6 + ability_norm * 0.4
+        ranked.append(
+            {
+                "position": code,
+                "name": POSITION_NAMES[code],
+                "interest_raw": interest[code],
+                "ability_raw": ability[code],
+                "interest_norm": round(interest_norm, 4),
+                "ability_norm": round(ability_norm, 4),
+                "composite": round(composite, 4),
+                "index": round((composite + 1) * 50),
+            }
+        )
+    # 与前端排序键一致：综合分、能力分、兴趣分，最后固定岗位顺序
+    ranked.sort(
+        key=lambda item: (
+            -item["composite"],
+            -item["ability_norm"],
+            -item["interest_norm"],
+            POSITION_CODES.index(item["position"]),
+        )
+    )
 
-    用与第二名的分差判断，而不是 score/满分：5 道题里各岗位权重不同，
-    拿一个理论满分做分母会把「都答得分散」也说成高匹配。
-    """
-    if score <= 0:
-        return f"你的选择没有特别偏向某个方向，{position_name} 是当前可用岗位中的默认推荐。"
-    gap = score - second_score
-    if gap >= 3:
-        return f"你的选择明显集中在{position_name}相关的任务上（{score} 分，领先第二名 {gap} 分）。"
-    if gap >= 1:
-        return f"你的选择在多个方向间有交叉，{position_name}的匹配度最高（{score} 分，领先第二名 {gap} 分）。"
-    return f"几个方向的得分非常接近，{position_name}按默认顺序排在前面（与第二名同为 {score} 分）。"
+    top = ranked[0]
+    second = ranked[1]
+    margin = top["index"] - second["index"]
+    consistency = _local_consistency(answers)
+    confidence = (
+        "高"
+        if consistency >= 75 and margin >= 10
+        else "中"
+        if consistency >= 50 and margin >= 5
+        else "低"
+    )
+
+    top_interest = max(
+        POSITION_CODES, key=lambda code: (interest[code], -POSITION_CODES.index(code))
+    )
+    top_ability = max(
+        POSITION_CODES, key=lambda code: (ability[code], -POSITION_CODES.index(code))
+    )
+    interest_name = POSITION_NAMES[top_interest]
+    ability_name = POSITION_NAMES[top_ability]
+
+    if margin < 5:
+        title = "方向暂不明确"
+        narrative = (
+            f"当前相对最高的是「{top['name']}」，但与「{second['name']}」的分差只有 {margin} 分，"
+            "暂时不能形成明确的主推荐。建议补充项目经历后再测，或先分别体验这两个方向。"
+        )
+        signal_label = "各方向区分度不足"
+        signal_narrative = (
+            "各岗位的倾向指数过于接近，当前无法可靠判断兴趣与能力的优势方向。"
+            "建议补充真实项目经历后重测，或分别体验排名靠前的岗位。"
+        )
+    else:
+        title = top["name"]
+        if top_interest == top_ability:
+            narrative = (
+                f"兴趣量表与能力自评都更支持「{interest_name}」。"
+                f"{POSITION_REASONS[top['position']]}"
+            )
+            signal_label = "兴趣与能力方向一致"
+            signal_narrative = f"两类量表都把「{interest_name}」排在首位，方向较一致。"
+        else:
+            narrative = (
+                f"兴趣量表更偏向「{interest_name}」，能力自评更偏向「{ability_name}」。"
+                f"按兴趣 60%、能力 40% 综合后，当前优先推荐「{top['name']}」。"
+            )
+            signal_label = "兴趣与能力方向存在差异"
+            signal_narrative = (
+                f"兴趣最高的是「{interest_name}」，能力自评最高的是「{ability_name}」。"
+                "建议先用项目或模拟面试验证兴趣方向，同时评估能力方向的提升空间。"
+            )
+        if confidence == "低":
+            signal_narrative += " 当前主次分差较小，或同类陈述的回答不够稳定，结果只适合作为初步线索。"
+        elif confidence == "中":
+            signal_narrative += " 结果具有一定区分度，但仍建议结合一次真实练习验证。"
+        else:
+            signal_narrative += " 主次方向区分较清楚，可以作为优先探索方向。"
+
+    return {
+        "recommended": {
+            "position": top["position"],
+            "name": top["name"],
+            "index": top["index"],
+            "reason": POSITION_REASONS[top["position"]],
+        },
+        "alternatives": [
+            {"position": item["position"], "name": item["name"], "index": item["index"]}
+            for item in ranked[1:3]
+        ],
+        "scores": ranked,
+        "consistency_percent": consistency,
+        "confidence": confidence,
+        "margin": margin,
+        "title": title,
+        "narrative": narrative,
+        "signal_label": signal_label,
+        "signal_narrative": signal_narrative,
+        "guide": f"可以先用「{top['name']}」开始一场模拟面试，系统会按该岗位的题目出题。",
+    }
