@@ -98,6 +98,16 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
   `app/core/evaluation_weights.py` 的 `POSITION_CONFIG`（源自根目录《评估维度.csv》，
   `tests/test_api.py::test_weights_match_csv` 机器校验两者一致——改 CSV 或权重必须同步跑该测试）
 - 老库启动自愈：`adaptability_score` 为 0 时用 expression_score 近似回填（database.py init_db）
+- **表达与表现分析（2026-10-31）**：报告里的语音/体态数据只来自 `qa_records.speech`
+  （ASR 原始读数，提交答案时落库）与 `qa_records.body_language`（体态分析结果，带
+  `interview_id`+`round` 调用 6.8 接口才落库），由 `app/core/expression_analysis.py` 聚合。
+  ⚠️ P3 返回的 `_speech_details` 是按回答字数估的模拟值（`simulated: true`），**不能**当真实
+  语速/停顿用；`tests/test_expression_analysis.py` 有防混入的用例
+- **示范作答（2026-10-31）**：题库 V5 **没有**「优秀范例」字段，示范作答由
+  `app/core/sample_answer.py` 按基础/进阶得分点 + 校准锚点让 LLM 生成，缓存到
+  `sample_answers` 表（qa_record 一对一）；接口 `POST /interviews/{id}/qa/{qa_id}/sample-answer`
+- **逐题判档**：引擎 `/chat` 的 done 帧带 `judge_band`（L1/L2/L3=答到 / degrade / swap），
+  已存入 `engine_turns`；原链路没有单题分，`needs_improvement` 恒为 `null`（不是 false）
 
 ### AI 对话层引擎（可选链路：P5 的 A11，`backend/dialogue_layer/`）
 

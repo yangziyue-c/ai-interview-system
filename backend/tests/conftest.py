@@ -13,8 +13,10 @@ os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_interview.db"
 os.environ["REDIS_URL"] = ""
 os.environ["AI_INTERVIEWER_URL"] = ""
 os.environ["AI_EVALUATOR_URL"] = ""
-# 测试必须禁用大模型直连（本机 .env 若配置了 LLM_API_KEY，空库测试会误调真实大模型）
+# 测试必须禁用大模型直连（本机 .env 若配置了 LLM_API_KEY，空库测试会误调真实大模型）。
+# BASE_URL 一并清空：判定「是否配置」的是它和 KEY 的组合，只清一个不够隔离。
 os.environ["LLM_API_KEY"] = ""
+os.environ["LLM_BASE_URL"] = ""
 # RAG 源也要禁用：config.py 里它默认为 http://localhost:8003（不像上三个默认为空），
 # 不禁用会让每个「题库未命中」的用例真去连本机 8003——服务没起时每次白等 1 秒探测超时，
 # 服务起了则拿到真实题目，「空库降级 Mock」这类断言就失去了意义。

@@ -170,6 +170,21 @@ async def init_db() -> None:
             "engine_turns",
             "ALTER TABLE qa_records ADD COLUMN engine_turns JSON",
         )
+        # 语音读数与体态结果落库（2026-10-31，报告页「表达与表现分析」的数据源）。
+        # 两列都可空：文字作答 / 未开摄像头 / 前端尚未接入时保持 NULL，报告侧据此
+        # 如实返回「没有这类数据」，而不是拿按字数估算的模拟值顶替。
+        await conn.run_sync(
+            _ensure_column,
+            "qa_records",
+            "speech",
+            "ALTER TABLE qa_records ADD COLUMN speech JSON",
+        )
+        await conn.run_sync(
+            _ensure_column,
+            "qa_records",
+            "body_language",
+            "ALTER TABLE qa_records ADD COLUMN body_language JSON",
+        )
         await conn.run_sync(
             _ensure_column,
             "reports",

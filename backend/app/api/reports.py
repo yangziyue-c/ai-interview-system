@@ -453,7 +453,9 @@ async def get_report(interview_id: int, user: CurrentUser, db: DbSession) -> dic
     report = await db.scalar(select(Report).where(Report.interview_id == interview_id))
     if report is None:
         raise ConflictError("报告生成中或生成失败，请稍后重试")
-    return ok(report_out(report, interview).model_dump())
+    # get_owned_interview 已 selectinload 问答记录，直接传入即可（async 上下文
+    # 里不能靠懒加载去取 speech / body_language）
+    return ok(report_out(report, interview, interview.qa_records).model_dump())
 
 
 @router.post("/{interview_id}/share", response_model=dict, summary="生成报告分享链接")

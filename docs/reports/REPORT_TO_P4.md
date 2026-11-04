@@ -370,6 +370,71 @@ GET  /resumes/{resume_id}/file    // 下载原件（仅本人）
 > 读取用 `GET /resumes/latest`（返回同一结构）；**从未上传过时 `data` 为 `null`
 > 而不是 404**，页面加载时判 null 显示引导上传的空态即可。
 
+### 2.15 报告页「表达与表现分析」+「查看示范作答」（2026-10-31 新增）
+
+**报告接口多了一个 `expression_analysis` 对象**（`GET /reports/{id}`、
+`GET /share/{code}` 以及结束面试的响应里都有）：
+
+```json
+"expression_analysis": {
+  "available": true,
+  "voice": { "available": true, "avg_chars_per_min": 213.3, "total_pauses": 3,
+             "total_fillers": 1, "rounds": [ … ], "feedback": ["语速适中……"] },
+  "body":  { "available": true, "avg_score": 4.0, "confidence": "high",
+             "feedback": ["保持得不错"], "summary": "体态整体稳定……" },
+  "notice": null
+}
+```
+
+前端要点：
+
+- `available=false` 时**不画模块**，直接把 `notice` 当一句说明展示（例如「本场没有
+  语音或体态数据」）。数值字段为 `null` 是「没有数据」，不要用 0 占位。
+- 语音部分的前提是：录完音后调 `POST /uploads/audio/asr`，把响应里除
+  `text`/`url` 外的键**整条**塞进提交答案的 `speech` 字段——少一个键报告里就少
+  一项读数。
+- 体态部分的前提是：调 `POST /body-language/analyze` 时**同时**带上当前
+  `interview_id` 和 `round`，后端才会把结果存进这一轮（不带时只转发不保存）。
+  只带一个会返回 400。
+
+**逐题「查看示范作答」**：
+
+- 报告响应新增 `qa_review: [{qa_id, round, question, judge_band, needs_improvement}]`；
+  `GET /interviews/{id}` 的每条 `qa_records` 也带 `judge_band` / `needs_improvement`。
+- `needs_improvement === true`（仅引擎链路可能）→ 优先标「待提升」并挂按钮；
+  `null`（原链路）→ 平台不知道对错，可以每道题都挂入口，**不要画成「答得好」**。
+- 按钮点击调 `POST /interviews/{interview_id}/qa/{qa_id}/sample-answer`：
+  首次生成有数秒耗时（给加载态），命中缓存时 `cached: true` 秒开；
+  `available: false` 表示这道题不在题库（追问/现场题），按提示文案处理，不是错误；
+  503 表示大模型不可用，给「稍后再试」。
+- 弹窗渲染正文用 `textContent`（内容含换行，用 `white-space: pre-wrap`）。
+
+### 2.16 设置页面（2026-10-31 新增）
+
+```
+GET /settings          // 没有存过记录时返回默认值，不需要初始化
+PUT /settings          // 部分更新，只提交要改的字段
+```
+
+6 项：`default_position`（岗位 code，空串=未设置）、`voice_answer`、`auto_tts`、
+`body_language`、`report_preference`（`detailed`/`concise`）、`theme`
+（`light`/`dark`/`system`）。非法取值返回 400。
+
+> 这些开关目前是**给前端读的偏好**：语音/体态开关决定前端是否采集，默认岗位
+> 决定开始面试时预选哪个岗位。后端不会替前端强制执行（例如关了体态开关但前端
+> 仍调用分析接口，照常返回结果）。
+
+### 2.17 职业锚定测试（2026-10-31 新增）
+
+```
+GET  /career-anchor/questions   // 5 道单选题，选项只给 key + 文案
+POST /career-anchor/submit      // {"answers": {"q1":"A", …}}，必须 5 题全答
+```
+
+返回 `recommended.position`（岗位 code）与 `guide`；前端展示推荐卡片，
+「开始面试」按钮直接调 `POST /interviews` 并带 `position: recommended.position`。
+`alternatives` 是第 2~3 名，可用于「也可以试试」的次选。缺题/选项非法返回 400。
+
 ---
 
 ## 3. 前端常见错误对照（原 frontend-spec 接口部分已作废，此表防再犯）

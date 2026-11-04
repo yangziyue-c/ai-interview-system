@@ -38,11 +38,21 @@ class QAOut(BaseModel):
     question: str
     answer: str | None
     audio_url: str | None
-    # 引擎链路的本题对话明细，每条 {answer, audio_url, reply, action, follow_up, swapped}：
-    # 追问原文只在这里（question 恒为题库原题面），engine_turns 是断点续答按序重建
-    # 整段对话（含考生每轮回答）的唯一来源——answer 列会被追问覆盖，只剩最后一次。
+    # 语音表达读数（ASR 原始响应）与体态分析结果：报告页「表达与表现分析」
+    # 与问答历史共用。文字作答 / 未开摄像头时为 None。
+    speech: dict | None = None
+    body_language: dict | None = None
+    # 引擎链路的本题对话明细，每条 {answer, audio_url, reply, action, follow_up,
+    # swapped, judge_band, judge_ok}：追问原文只在这里（question 恒为题库原题面），
+    # engine_turns 是断点续答按序重建整段对话（含考生每轮回答）的唯一来源。
     # 原链路为 None。
     engine_turns: list[dict] | None = None
+    # 本题最终判档（L1/L2/L3/degrade/swap）；原链路与引擎没判出来时为 None。
+    # 由 QARecord 的 property 从 engine_turns 最后一轮派生。
+    judge_band: str | None = None
+    # 是否建议看示范作答：仅引擎链路给出 True/False，原链路恒为 None。
+    # None = 不知道（不是「答得好」），前端不要把未知标成待提升。
+    needs_improvement: bool | None = None
     # 出题时间：问答回顾页按时间线展示「何时问、何时答」需要它
     created_at: datetime
 

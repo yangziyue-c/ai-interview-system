@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.api.deps import DbSession
 from app.core.exceptions import NotFoundError
-from app.models import Interview, Report, ReportShare
+from app.models import Interview, QARecord, Report, ReportShare
 from app.schemas.report import report_out
 from app.utils.response import ok
 
@@ -32,8 +32,18 @@ async def get_shared_report(code: str, db: DbSession) -> dict:
     if interview is None or report is None:
         raise NotFoundError("分享的报告已不存在")
 
+    # 免登录路由没有 get_owned_interview 的预加载，问答记录要单独查：
+    # 表达分析与逐题摘要都靠它，懒加载在 async 上下文里会抛 MissingGreenlet。
+    qa_records = (
+        await db.scalars(
+            select(QARecord)
+            .where(QARecord.interview_id == share.interview_id)
+            .order_by(QARecord.round)
+        )
+    ).all()
+
     share.view_count += 1
     await db.commit()
 
     # 结构与 GET /reports/{interview_id} 完全一致，前端可复用同一套渲染
-    return ok(report_out(report, interview).model_dump())
+    return ok(report_out(report, interview, list(qa_records)).model_dump())

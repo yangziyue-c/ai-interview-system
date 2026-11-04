@@ -16,15 +16,23 @@ from datetime import datetime
 
 from fastapi import APIRouter, Query
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.adapters import get_dialogue_adapter, get_evaluator_adapter, get_interviewer_adapter
 from app.adapters.ai_dialogue import EngineError, EngineSessionLostError
+from app.adapters.llm import LLMError
 from app.api.deps import CurrentUser, DbSession, get_owned_interview, validate_position
 from app.config import settings
 from app.core.engine_report import build_engine_meta, build_engine_report
-from app.core.exceptions import BadRequestError, ConflictError, ServiceUnavailableError
+from app.core.exceptions import (
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
+from app.core.sample_answer import generate_sample_answer
 from app.core.state_machine import InterviewStatus, StateMachine
-from app.models import Interview, QARecord, Report
+from app.models import Interview, Position, QARecord, Question, Report, SampleAnswer
 from app.schemas.interview import (
     AnswerRequest,
     FinishInterviewOut,
@@ -167,6 +175,10 @@ async def _advance_engine(
     except EngineError as exc:
         raise _engine_http_error(exc) from exc
 
+    # done 事件里带着本轮判档（L1/L2/L3/degrade/swap）与判档是否成功。
+    # 原先只取 action/follow_up，报告页就无从判断「这道题答到什么程度」；
+    # judge_band 为 None = LLM 没判出来，不是「判成降级」。
+    done = result.get("done") or {}
     current_qa.engine_turns = list(current_qa.engine_turns or []) + [
         {
             "answer": current_qa.answer,
@@ -175,6 +187,8 @@ async def _advance_engine(
             "action": result.get("action"),
             "follow_up": result["follow_up"],
             "swapped": result.get("swapped"),
+            "judge_band": done.get("judge_band"),
+            "judge_ok": done.get("judge_ok"),
         }
     ]
 
@@ -212,7 +226,7 @@ async def _advance_engine(
                 finished=True,
                 interview=InterviewOut.model_validate(interview),
                 next_question=None,
-                report=report_out(report, interview),
+                report=report_out(report, interview, interview.qa_records),
             ).model_dump(),
             "面试已完成",
         )
@@ -382,6 +396,100 @@ async def get_interview(interview_id: int, user: CurrentUser, db: DbSession) -> 
     return ok(detail.model_dump())
 
 
+def _sample_answer_payload(record: SampleAnswer, *, cached: bool) -> dict:
+    return {
+        "available": True,
+        "cached": cached,
+        "content": record.content,
+        "question_no": record.question_no,
+        "model": record.model,
+        "notice": None,
+    }
+
+
+@router.post(
+    "/{interview_id}/qa/{qa_id}/sample-answer",
+    response_model=dict,
+    summary="查看示范作答（题库题，大模型生成并缓存）",
+)
+async def get_sample_answer(
+    interview_id: int, qa_id: int, user: CurrentUser, db: DbSession
+) -> dict:
+    """按问答记录取一份示范作答
+
+    只有题库里的题才生成：题干能反查到 questions 行，才有基础/进阶得分点与
+    校准锚点作为依据；追问与现场生成题没有素材，返回 available=false，而不是
+    让模型凭空写一份。
+
+    首次调用生成并落库（qa_record 一对一），之后命中缓存秒开。大模型未配置
+    或调用失败返回 503，不返回空内容——空弹窗比一次明确报错难查得多。
+    """
+    interview = await get_owned_interview(interview_id, user, db)
+    if interview.status != InterviewStatus.FINISHED.value:
+        raise ConflictError("面试尚未结束，暂不能查看示范作答")
+    qa = next((record for record in interview.qa_records if record.id == qa_id), None)
+    if qa is None:
+        raise NotFoundError("问答记录不存在")
+
+    cached = await db.scalar(select(SampleAnswer).where(SampleAnswer.qa_record_id == qa_id))
+    if cached is not None:
+        return ok(_sample_answer_payload(cached, cached=True))
+
+    stem = (qa.question or "").strip()
+    question = await db.scalar(
+        select(Question).where(
+            Question.position_code == interview.position, Question.question == stem
+        )
+    )
+    if question is None:
+        return ok(
+            {
+                "available": False,
+                "cached": False,
+                "content": None,
+                "question_no": None,
+                "model": None,
+                "notice": "这道题不在题库中（可能是追问或现场生成题），没有得分点素材，无法生成示范作答。",
+            }
+        )
+
+    position_name = await db.scalar(
+        select(Position.name).where(Position.code == interview.position)
+    )
+    try:
+        content = await generate_sample_answer(
+            position_label=position_name or interview.position,
+            question=stem,
+            candidate_answer=qa.answer or "",
+            basic_points=question.basic_score_points,
+            advanced_points=question.advanced_score_points,
+            calibration_anchor=question.calibration_anchor,
+        )
+    except LLMError as exc:
+        raise ServiceUnavailableError(str(exc)) from exc
+
+    record = SampleAnswer(
+        qa_record_id=qa_id,
+        question_no=question.question_no,
+        content=content,
+        model=settings.LLM_MODEL,
+    )
+    db.add(record)
+    try:
+        await db.commit()
+    except IntegrityError:
+        # 并发重复点击：另一请求先落库了，回滚后直接返回它生成的那份
+        await db.rollback()
+        cached = await db.scalar(
+            select(SampleAnswer).where(SampleAnswer.qa_record_id == qa_id)
+        )
+        if cached is None:
+            raise
+        return ok(_sample_answer_payload(cached, cached=True))
+    await db.refresh(record)
+    return ok(_sample_answer_payload(record, cached=False), "示范作答已生成")
+
+
 @router.post("/{interview_id}/answers", response_model=dict, summary="提交答案并获取下一题")
 async def submit_answer(interview_id: int, req: AnswerRequest, user: CurrentUser, db: DbSession) -> dict:
     interview = await get_owned_interview(interview_id, user, db)
@@ -396,6 +504,9 @@ async def submit_answer(interview_id: int, req: AnswerRequest, user: CurrentUser
         raise ConflictError("面试数据异常，请重新开始一场面试")
     current_qa.answer = req.answer
     current_qa.audio_url = req.audio_url
+    # 语音读数整条落库：引擎链路会自己消费，原链路则只有这里存下来才能进
+    # 报告页的「表达与表现分析」。不传 = 文字作答，保持 NULL。
+    current_qa.speech = req.speech
 
     if interview.engine == ENGINE_A11:
         # 引擎链路：下一步由对话层的 done 决定（追问 / 下一题 / 收尾）
@@ -412,7 +523,7 @@ async def submit_answer(interview_id: int, req: AnswerRequest, user: CurrentUser
                 finished=True,
                 interview=InterviewOut.model_validate(interview),
                 next_question=None,
-                report=report_out(report, interview),
+                report=report_out(report, interview, interview.qa_records),
             ).model_dump(),
             "面试已完成",
         )
@@ -450,7 +561,7 @@ async def finish_interview(interview_id: int, user: CurrentUser, db: DbSession) 
     return ok(
         FinishInterviewOut(
             interview=InterviewOut.model_validate(interview),
-            report=report_out(report, interview),
+            report=report_out(report, interview, interview.qa_records),
         ).model_dump(),
         "面试已结束",
     )

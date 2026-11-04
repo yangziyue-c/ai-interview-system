@@ -43,6 +43,17 @@ class BodyLanguageFrame(BaseModel):
 
 
 class BodyLanguageRequest(BaseModel):
-    """体态分析入参；上限 600 帧，与引擎侧一致"""
+    """体态分析入参；上限 600 帧，与引擎侧一致
+
+    interview_id + round 可选：两者**同时**提供时，后端把这次分析结果写进
+    对应问答记录，报告页的「体态稳定性」评语才有数据来源。不传则行为与
+    加这两个字段之前完全一致（纯转发、不落库）。
+    """
 
     frames: list[BodyLanguageFrame] = Field(min_length=1, max_length=600)
+    interview_id: int | None = Field(
+        default=None, ge=1, description="面试 ID（可选；与 round 同时提供才落库）"
+    )
+    round: int | None = Field(
+        default=None, ge=1, description="第几轮问答（可选；与 interview_id 同时提供才落库）"
+    )

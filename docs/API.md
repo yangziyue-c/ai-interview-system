@@ -2,6 +2,7 @@
 
 - Base URL：`http://localhost:8001/api/v1`（内网穿透后为公网地址 + 相同路径）
 - 在线调试：启动后访问 `http://localhost:8001/docs`（Swagger UI）
+- 最后更新：2026-11-01，覆盖 33 个接口路径、36 个操作（新增设置、示范作答、职业锚定与报告的表达分析字段）
 - 统一响应格式：
 
 ```json
@@ -17,7 +18,7 @@
 | 40400 | 资源不存在 |
 | 40900 | 状态冲突（如对已结束的面试提交答案） |
 | 50000 | 服务器内部错误 |
-| 50300 | 依赖服务不可用（AI 对话层引擎未就绪或连不上；仅在 `DIALOGUE_ENGINE=a11` 时出现） |
+| 50300 | 依赖服务不可用（AI 对话层引擎未就绪、语音转写或体态服务不可用、示范作答的大模型不可用） |
 
 ## 鉴权
 
@@ -208,17 +209,28 @@ GET /interviews?position=backend     // 可选：只看该岗位的记录
 GET /interviews/{interview_id}
 ```
 
-返回 `data.qa_records`：`[{round, question, answer, audio_url, engine_turns, created_at}]`，按 `round` 升序。
+返回 `data.qa_records`：`[{round, question, answer, audio_url, speech, body_language, engine_turns, judge_band, needs_improvement, created_at}]`，按 `round` 升序。
 
 > `answer` 为 `null` 表示该题已出、考生尚未作答。「查看问答记录」直接用本接口，
 > 无需另开接口；`created_at` 供按时间线展示时使用。
 >
+> `speech` 是提交答案时带回来的语音读数原文（见 3.4），`body_language` 是该轮体态
+> 分析结果（见 6.8）。文字作答 / 未开摄像头时为 `null`——**`null` 表示没有数据，
+> 不是 0**，前端别画成「语速 0」。
+>
 > `engine_turns` 只在引擎链路（`engine=a11`）有值，原链路为 `null`。它是本题的完整
-> 对话明细 `[{answer, audio_url, reply, action, follow_up, swapped}]`：`question` 恒为
-> 题库原题面（学习计划靠它反查题库），**面试官追问原文与考生的每轮回答都在这里**。
+> 对话明细 `[{answer, audio_url, reply, action, follow_up, swapped, judge_band, judge_ok}]`：
+> `question` 恒为题库原题面（学习计划靠它反查题库），**面试官追问原文与考生的每轮回答都在这里**。
 > 断点续答（刷新 / 重新进入对话室）按它重建整段对话：题面 →（每条：考生 `answer` →
 > 面试官 `reply`）；末条 `follow_up=true` 时那条 `reply` 就是当前待答的话。`answer`
 > 列会被追问覆盖、只留最后一次作答，中间轮次只能从这里恢复。
+>
+> `judge_band` 是本题**最后一轮**的引擎判档：`L1` / `L2` / `L3`（答到了）、`degrade`
+> （答不出）、`swap`（换题）；`null` = 没判出来（不是「判成降级」）。原链路的单题
+> 判档恒为 `null`——平台没有单题得分，不假装知道哪道题答错。
+>
+> `needs_improvement` 只在引擎链路给出 `true/false`：最后一轮为 `degrade` / `swap`
+> 时为 `true`。原链路恒为 `null`（不知道），前端不要把 `null` 画成「答得好」。
 
 ### 3.4 提交答案并获取下一题
 
@@ -236,7 +248,9 @@ POST /interviews/{interview_id}/answers
 
 > `speech` 只用于语音作答：把 6.2 转写接口响应里**除 `text`/`url` 外的键整条原样**
 > 带回来，引擎才会把语速 / 停顿 / 填充词算进报告——少带一个键，报告里就少一项
-> 读数。不传（文字作答）时行为与从前一致；原链路忽略该字段。
+> 读数。不传（文字作答）时保持 `null`，报告的表达分析会如实说明「没有语音数据」。
+> 2026-10-31 起**原链路也会落库**这两项读数，供报告的「表达与表现分析」使用
+> （此前原链路直接丢弃）。
 
 返回：
 
@@ -259,6 +273,42 @@ POST /interviews/{interview_id}/finish
 ```
 
 返回：`interview`（status=finished）+ `report`（评估报告）。
+
+### 3.6 查看示范作答（报告页 / 问答历史用）
+
+```
+POST /interviews/{interview_id}/qa/{qa_id}/sample-answer
+```
+
+返回一份**由大模型按题库得分点生成的示范作答**。首次调用生成并缓存，之后同一
+`qa_id` 直接命中缓存（`cached: true`），不会重复计费。
+
+```json
+{
+  "code": 0,
+  "message": "示范作答已生成",
+  "data": {
+    "available": true,
+    "cached": false,
+    "content": "先说结论：……（300~500 字）",
+    "question_no": "JAVA_BACKEND-Q0001",
+    "model": "deepseek-chat",
+    "notice": null
+  }
+}
+```
+
+> 只有**题库里的题**才能生成：追问、RAG / 现场生成的题没有得分点素材，此时返回
+> `available: false`、`content: null`，`notice` 说明原因——前端据此不显示按钮或
+> 显示提示，不要当错误处理。
+>
+> 面试未结束时返回 **409**；大模型未配置或调用失败返回 **503（50300）**，
+> 不返回空内容。
+>
+> 展示位置建议：`GET /interviews/{id}` 的 `needs_improvement === true` 的题优先
+> 挂按钮；原链路该字段为 `null`（不知道对错），可以每道题都挂入口。
+>
+> ⚠️ 本接口有生成耗时（数秒），前端请给按钮加载态；命中缓存后为毫秒级。
 
 ---
 
@@ -288,10 +338,47 @@ GET /reports/{interview_id}
     "suggestions": ["继续深挖技术原理……"],
     "partial": false,            // 本场评分是否不完整（2026-09-27 新增）；原链路恒为 false
     "review": { "headline": "……", "gaps": [], "counts": {} },   // 考后复盘清单（见 4.7）；原链路为 null
+    // 表达与表现分析（2026-10-31 新增，见下）
+    "expression_analysis": {
+      "available": true,
+      "voice": {
+        "available": true, "round_count": 3,
+        "avg_chars_per_min": 213.3, "avg_pause_rate_per_min": 2.0,
+        "total_pauses": 3, "total_pause_ms": 2000, "total_fillers": 1,
+        "avg_filler_rate": 0.01, "avg_loudness_cv": 0.25,
+        "rounds": [ { "round": 1, "chars_per_min": 220, "pauses": 2, "...": "…" } ],
+        "feedback": ["语速适中（平均约 213 字/分）。"]
+      },
+      "body": {
+        "available": true, "round_count": 2, "avg_score": 4.0,
+        "confidence": "high", "feedback": ["保持得不错"],
+        "summary": "体态整体稳定，镜头前状态自然。"
+      },
+      "notice": null
+    },
+    // 逐题摘要（2026-10-31 新增）：报告页据此挂「查看示范作答」按钮（见 3.6）
+    "qa_review": [
+      { "qa_id": 12, "round": 1, "question": "……",
+        "judge_band": null, "needs_improvement": null }
+    ],
     "created_at": "2026-08-25T21:00:00"
   }
 }
 ```
+
+> `expression_analysis` 的数据只来自**真实测量**：语音读数是提交答案时的
+> `speech`（ASR 原始响应），体态结果是 6.8 落库的分析结果。**没有数据时
+> `available: false`、数值为 `null`，并给出 `notice`**——前端据此不画模块，不要
+> 用 0 占位。P3 评估里按字数估算的模拟值不会混进这里。
+>
+> - `voice.feedback` 是按参考区间给的陈述性提示（语速 / 停顿 / 填充词 / 音量），
+>   不是评分结论；`voice.rounds` 是逐轮读数，可用于画趋势。
+> - `body.avg_score` 是引擎 0~5 分制，`confidence` 取多轮里最保守的一档；
+>   `body.summary` 是「体态稳定性」评语，`feedback` 是逐条改进提示。
+> - 纯文字作答且未开摄像头 → `available: false`，`notice` 说明原因。
+>
+> `qa_review` 的 `needs_improvement` 口径与 3.3 的 `qa_records` 一致：原链路恒为
+> `null`（平台没有单题分），引擎链路才给出 `true/false`。
 
 > 评分维度 5 维（2026-09-04 起，源自团队《评估维度.csv》）：技术水平 / 逻辑思维 /
 > 沟通表达 / 应变能力 / 岗位匹配度。`adaptability_score` 为新增字段，前端雷达图按 5 轴渲染。
@@ -665,7 +752,7 @@ POST /uploads/audio/asr    Content-Type: multipart/form-data
 - `url` 可直接填入提交答案的 `audio_url`，用法与 6.1 的返回值相同。
 - 转写有错字是正常形态：前端把文本填进输入框、**由考生自行修改**后再发送。
 - `asr_model` 为 `sensevoice-small-int8`（本地 SenseVoice）。首次调用要等它懒加载（实测约 3 秒），期间返回「还在加载」是正常形态，隔几秒重试即可。
-- **这组读数要进报告，就得随作答回传**：提交答案时把除 `text`/`url` 外的键**整条**填进 3.4 的 `speech` 字段（引擎据此算语速 / 停顿 / 填充词）。响应是「引擎给什么转什么、只剥非读数键（`ok`/`elapsed_ms` 等）」，引擎以后加新读数不用改本接口。
+- **这组读数要进报告，就得随作答回传**：提交答案时把除 `text`/`url` 外的键**整条**填进 3.4 的 `speech` 字段。引擎据此算语速 / 停顿 / 填充词，原链路的报告「表达与表现分析」（见 4.1）也直接使用这组读数。响应是「引擎给什么转什么、只剥非读数键（`ok`/`elapsed_ms` 等）」，引擎以后加新读数不用改本接口。
 - `emotion*` 三项的标签由 SenseVoice 自己给（闭集 `neu`/`hap`/`ang`/`sad`），**`emotion_score` 与 `emotion_dist` 可能为 `null`**——那个模型只给标签、不给概率。⚠️ 引擎对它的定位是「韵律信号」而非情绪结论，中文上标签尤其不可信：只说「有情感分布、中文看波动」，**别把标签当结论展示给考生**（`emotion_reliability`/`emotion_usage` 是引擎给的同样口径的机器可读标注，随响应原样透传）。
 - `loudness*` 与 `tail_ratio` 是音量三指标，与情感无关，中文上一样有效。
 - `pitch_variation` 当前恒为 `null`（本地管线尚未产出），保留键位。
@@ -817,7 +904,9 @@ POST /body-language/analyze
   "frames": [
     { "timestamp_ms": 0,
       "landmarks": [ { "x": 0.51, "y": 0.32, "z": 0.0, "visibility": 0.99 } ] }
-  ]
+  ],
+  "interview_id": 12,   // 可选：与 round 同时提供才落库
+  "round": 3            // 可选：本轮题号
 }
 ```
 
@@ -825,16 +914,26 @@ POST /body-language/analyze
 上传的只有这里的数字（一次 1~600 帧，x/y/z 是 [0,1] 的归一化坐标）。
 本接口**只收数字关键点**，不接受图片、视频或音频。
 
+`interview_id` + `round` 可选但必须**同时**提供：提供时后端把结果写进对应轮次的
+问答记录，报告页的「体态稳定性」评语（见 4.1 `expression_analysis.body`）才有
+数据来源。不传则行为与从前一致（纯转发、不落库）。只传其中一个返回 **400**；
+会话不属于当前用户返回 **404**，轮次不存在返回 **400**。
+
 返回引擎的沟通姿态信号：
 
 ```json
-{ "code": 0, "message": "分析完成", "data": { "score": 82.0, "notes": ["肩线平稳"] } }
+{
+  "code": 0, "message": "分析完成",
+  "data": { "available": true, "score": 4.2, "confidence": "high",
+            "feedback": ["肩线平稳"], "metrics": {}, "notes": [], "stored": true }
+}
 ```
 
-- `score` **可能不存在**：证据不足（帧太少、镜头里看不到肩线）时引擎**不给分**，
-  而不是给低分。前端别补 0——摄像头坏了不该等于考生体态差。
+- `score` **可能不存在**（`available: false`）：证据不足（帧太少、镜头里看不到
+  肩线）时引擎**不给分**，而不是给低分。前端别补 0——摄像头坏了不该等于考生体态差。
+- `stored` 表示这次结果是否已写入问答记录；不带 `interview_id`/`round` 时为 `false`。
 - 引擎未就绪时返回 **503（50300）**。
-- ⚠️ 该结果目前**未接入评分链路**：只作为独立信号返回，是否进报告待定。
+- 该结果**不参与五维评分**：它只作为报告里「表达与表现分析」的独立信号展示。
 
 ---
 
@@ -875,6 +974,99 @@ GET /share/{code}
 > 分享码不存在或已过期，一律返回 404（`code: 40400`）且提示同一句话，
 > 不区分二者——否则可被用来枚举试探出哪些分享码真实有效。
 > 每次成功访问累加一次访问计数（`report_shares.view_count`，当前不对外暴露）。
+
+---
+
+## 9. 用户设置
+
+设置页面的 6 项通用偏好。**没有存过记录时，GET 返回默认值**；PUT 首次提交时
+自动建行，不需要单独的「初始化」接口。
+
+| 字段 | 类型 | 默认值 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `default_position` | string | `""` | 默认面试岗位 code；空串 = 未设置 |
+| `voice_answer` | bool | `true` | 语音作答开关 |
+| `auto_tts` | bool | `true` | 面试官自动朗读开关（仅引擎链路） |
+| `body_language` | bool | `true` | 摄像头体态分析开关 |
+| `report_preference` | string | `detailed` | 报告展示偏好：`detailed` / `concise` |
+| `theme` | string | `system` | 界面主题：`light` / `dark` / `system` |
+
+### 9.1 获取当前用户设置
+
+```
+GET /settings
+```
+
+```json
+{ "code": 0, "message": "ok", "data": {
+    "default_position": "", "voice_answer": true, "auto_tts": true,
+    "body_language": true, "report_preference": "detailed", "theme": "system" } }
+```
+
+### 9.2 更新设置（部分字段）
+
+```
+PUT /settings
+{ "theme": "dark", "voice_answer": false }    // 只提交要改的字段
+```
+
+返回完整的设置对象（与 9.1 同结构）。校验规则：
+
+- `default_position` 传空串表示清空；非空时必须是**已开放**的岗位 code，
+  否则返回 400。
+- `report_preference` / `theme` 取值不在上表范围内返回 400。
+- 传 `null` 的字段按「不修改」处理。
+
+---
+
+## 10. 职业锚定测试
+
+5 道单选题 → 推荐最适合的面试岗位 → 前端拿推荐岗位的 code 直接调
+`POST /interviews` 开始模拟面试。推荐只依据考生勾选的工作偏好，**不是能力测评**，
+也不输出性格标签。
+
+### 10.1 获取题目
+
+```
+GET /career-anchor/questions
+```
+
+```json
+{ "code": 0, "message": "ok", "data": {
+    "total": 5,
+    "questions": [
+      { "id": "q1", "text": "接到一个新需求，你最想先动手做哪一部分？",
+        "options": [ { "key": "A", "text": "把服务拆成模块……" },
+                     { "key": "B", "text": "把页面结构和交互流程先画出来" } ] }
+    ] } }
+```
+
+> 选项**只下发 key 与文案**，计分权重不下发。
+
+### 10.2 提交答案，获取推荐岗位
+
+```
+POST /career-anchor/submit
+{ "answers": { "q1": "A", "q2": "C", "q3": "B", "q4": "A", "q5": "D" } }
+```
+
+5 道题**必须全部作答**，缺题或选项非法返回 400。
+
+```json
+{ "code": 0, "message": "推荐岗位已生成", "data": {
+    "recommended": {
+      "position": "backend", "name": "后端开发工程师", "score": 9,
+      "reason": "你的选择在多个方向间有交叉，后端开发工程师的匹配度最高（9 分，领先第二名 2 分）。"
+    },
+    "alternatives": [ { "position": "system_design", "name": "系统设计工程师", "score": 7 } ],
+    "scores": [ { "position": "backend", "name": "后端开发工程师", "score": 9 } ],
+    "guide": "可以先用「后端开发工程师」开始一场模拟面试，系统会按该岗位的题目出题。"
+  }
+}
+```
+
+> `scores` 覆盖全部**已开放**岗位并按得分降序；`alternatives` 只取第 2~3 名。
+> 同分时按固定岗位顺序推荐，同样的答案永远得到同样的结果。
 
 ---
 

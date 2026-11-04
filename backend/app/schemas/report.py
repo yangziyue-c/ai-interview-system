@@ -7,6 +7,22 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.expression_analysis import build_expression_analysis
+
+
+class QAReviewOut(BaseModel):
+    """报告页逐题摘要：哪道题建议看示范作答
+
+    原链路的 needs_improvement 恒为 None（没有单题分，不假装知道对错）；
+    引擎链路按最后一轮判档给出 True/False。
+    """
+
+    qa_id: int
+    round: int
+    question: str
+    judge_band: str | None = None
+    needs_improvement: bool | None = None
+
 
 class ReportOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -34,11 +50,16 @@ class ReportOut(BaseModel):
     # 复盘清单（引擎链路的考生出口）：headline / gaps[] / covered[] / actions[] / caveats[]。
     # 原链路场次与引擎关掉该功能时都是 null——前端据此决定要不要画这一块。
     review: dict | None = None
+    # 表达与表现分析（语音读数 + 体态结果聚合）。None = 调用方没传问答记录
+    # （不该发生），或该功能未计算；available=false = 算了但本场没有数据。
+    expression_analysis: dict | None = None
+    # 逐题摘要（轮次/题干/判档/是否待提升），报告页据此挂「查看示范作答」按钮。
+    qa_review: list[QAReviewOut] = []
     created_at: datetime
 
 
-def report_out(report, interview) -> ReportOut:
-    """由「报告 + 其所属面试」构造响应对象（五处报告出口统一走这里）。
+def report_out(report, interview, qa_records: list | None = None) -> ReportOut:
+    """由「报告 + 其所属面试（+ 问答记录）」构造响应对象。
 
     为什么不直接让 `ReportOut.model_validate(report)` 读 position：
     reports 表没有岗位列，而 Report.interview 这个 relationship 在 async 上下文里
@@ -47,12 +68,30 @@ def report_out(report, interview) -> ReportOut:
 
     partial 同理：它是 engine_meta 这个 JSON 列里的一个键，不是独立列，
     在这里拉平成布尔。原链路场次 engine_meta 为 None，取不到即为 false。
+
+    qa_records 必须由调用方显式传入（已完成加载的列表）：本函数会遍历它读
+    speech / body_language / engine_turns，在 async 上下文里懒加载关系会抛
+    MissingGreenlet。传 None 时表达分析与逐题摘要留空，而不是猜一份默认值。
     """
     meta = report.engine_meta
+    records = list(qa_records or [])
     return ReportOut.model_validate(report).model_copy(
         update={
             "position": interview.position,
             "partial": bool(meta.get("partial")) if isinstance(meta, dict) else False,
+            "expression_analysis": (
+                build_expression_analysis(records) if qa_records is not None else None
+            ),
+            "qa_review": [
+                QAReviewOut(
+                    qa_id=qa.id,
+                    round=qa.round,
+                    question=qa.question,
+                    judge_band=qa.judge_band,
+                    needs_improvement=qa.needs_improvement,
+                )
+                for qa in records
+            ],
         }
     )
 
