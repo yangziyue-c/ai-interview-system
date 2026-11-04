@@ -77,3 +77,12 @@ htmlcov/
 
 # 参照材料（其他项目的模板文档，仅本地对照用，不入库）
 项目的详细分工及过程.pdf
+
+# 正式前端（Vue 3 + Vite）的依赖与大体积运行资源：代码入库，模型/构建产物不入库
+# public/model.tar.gz、vosk-model-small-cn/、vendor/ 合计约 137MB，由发布包提供
+frontend/ai-interview-front/node_modules/
+frontend/ai-interview-front/dist/
+frontend/ai-interview-front/dist.zip
+frontend/ai-interview-front/public/model.tar.gz
+frontend/ai-interview-front/public/vosk-model-small-cn/
+frontend/ai-interview-front/public/vendor/

@@ -111,9 +111,9 @@ def mem_mb():
 # 被 rag.py 的 except Exception 吞掉 → 静默永久降级。这里要能报出「本来能命中哪条」。
 RAG_PKL, RAG_NPZ = "all_records.pkl", "memory_index.npz"
 # 字节数从磁盘实测（2026-09-23）。它是「有没有拷坏 / 拷了一半」最便宜的判据；
-# 两个文件是一对，必须来自同一次构建（EXPECTED_N=74011 是硬断言）。
+# 两个文件是一对，必须来自同一次构建（EXPECTED_N=76222 是硬断言）。
 RAG_SIZE = {RAG_PKL: 71412669, RAG_NPZ: 158639920}
-RAG_EXPECTED_N = 74011
+RAG_EXPECTED_N = 76222
 # _pick() 的候选顺序，与 memory_retriever.py:75-80 一一对应
 RAG_FALLBACK_HINT = [
     r"<_PKG_ROOT>\向量库",

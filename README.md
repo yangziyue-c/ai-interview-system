@@ -179,7 +179,7 @@ idle → in_progress → finished（终态）
 
 ```bash
 cd backend
-python -m pytest    # 151 个用例（测试库 test_interview.db 与临时目录 .test_tmp/，均不污染工作区）
+python -m pytest    # 180 个用例（测试库 test_interview.db 与临时目录 .test_tmp/，均不污染工作区）
 ```
 
 > 测试必须在 `backend/` 目录下运行（pytest.ini 的 asyncio 配置与 conftest
