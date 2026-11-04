@@ -10,6 +10,7 @@ const MainLayout = () => import('@/views/MainLayout.vue')
 const InterviewHall = () => import('@/views/InterviewHall.vue')
 const InterviewDetail = () => import('@/views/InterviewDetail.vue')
 const InterviewRoom = () => import('@/views/InterviewRoom.vue')
+const CareerAnchor = () => import('@/views/CareerAnchor.vue')
 const ReportPage = () => import('@/views/ReportPage.vue')
 const QaHistoryPage = () => import('@/views/QaHistoryPage.vue')
 const QuestionBank = () => import('@/views/QuestionBank.vue')
@@ -62,6 +63,11 @@ const routes = [
                 path: 'interview/room',
                 component: InterviewRoom,
                 meta: { title: '面试对话室', hideTabBar: true }
+            },
+            {
+                path: 'career-anchor',
+                component: CareerAnchor,
+                meta: { title: '岗位倾向速测', hideTabBar: true }
             },
             {
                 path: 'question-bank',

@@ -7,6 +7,15 @@
       <p class="hall-subtitle">选定方向，开启 AI 模拟面试</p>
     </div>
 
+    <button class="anchor-entry" @click="goAnchor">
+      <AppIcon name="sparkles" :size="18" />
+      <span class="anchor-entry-text">
+        <strong>不确定选哪个岗位？</strong>
+        <span>完成 20 条量表，综合兴趣、能力与置信度找到方向</span>
+      </span>
+      <AppIcon name="chevron-right" :size="18" class="anchor-entry-arrow" />
+    </button>
+
     <div v-if="loading" class="state-card">
       <AppIcon name="loading" :size="28" class="state-icon spin" />
       <p>加载岗位信息中...</p>
@@ -63,6 +72,10 @@ const loadError = ref(false)
 
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 
+const goAnchor = () => {
+  router.push('/main/career-anchor')
+}
+
 const goToDetail = (job) => {
   router.push({
     path: '/main/interview/detail',
@@ -104,6 +117,51 @@ onMounted(() => {
 .hall-header {
   padding: var(--space-3) 0 var(--space-5);
   animation: fadeInUp 0.35s var(--ease-out);
+}
+
+/* 岗位倾向速测入口 */
+.anchor-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  margin-bottom: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.anchor-entry:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.anchor-entry-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.anchor-entry-text strong {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.anchor-entry-text span {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.anchor-entry-arrow {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
 }
 
 .hall-title {

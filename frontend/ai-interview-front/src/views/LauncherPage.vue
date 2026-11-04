@@ -42,6 +42,17 @@
         <AppIcon name="chevron-right" :size="18" class="card-arrow" />
       </div>
 
+      <div class="feature-card" @click="choose('/main/career-anchor')">
+        <div class="card-icon">
+          <AppIcon name="sparkles" :size="28" />
+        </div>
+        <div class="card-body">
+          <h3 class="card-title">岗位倾向速测</h3>
+          <p class="card-desc">20 条陈述，综合兴趣、能力与置信度找到方向</p>
+        </div>
+        <AppIcon name="chevron-right" :size="18" class="card-arrow" />
+      </div>
+
       <div class="feature-card" @click="choose('/main/profile')">
         <div class="card-icon">
           <AppIcon name="trending" :size="28" />
@@ -300,9 +311,9 @@ onMounted(async () => {
 
 .launcher-page.is-desktop .card-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: var(--space-5);
-  max-width: 960px;
+  max-width: 760px;
   width: 100%;
   margin: 0 auto;
 }
