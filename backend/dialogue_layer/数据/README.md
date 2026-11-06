@@ -10,8 +10,8 @@
 | :--- | :--- | :--- | :--- |
 | `kg/kg_question_graph.pkl` | 知识图谱，14.8MB | P5 后端包 | 是 |
 | `学习资源样例.json` | 学习资源推荐的素材源，4.5MB | P5 后端包 | 是 |
-| `rag/` | RAG 三件，约 256MB / 76222 条 | P5 的 RAG 数据包 | 否 |
-| `kb_index/` | 知识库检索索引，约 150MB / 20396 块 | P5 的 KB 数据包 | 否 |
+| `rag/` | RAG 三件，约 333MB / 76222 条 | 2026-10-09 最终 RAG 数据包 | 分片 + zstd |
+| `kb_index/` | 知识库检索索引，约 151MB / 20396 块 | P5 的 KB 数据包 | 分片 + zstd |
 | `models/sensevoice-small/` | 语音转写模型，239MB | P5 后端包 | 否 |
 
 **题库不在这里**：环境变量 `A11_MAIN_DB` 指向 `backend/rag/数据/`，与主项目共用一份
@@ -53,6 +53,9 @@ python -c "from modelscope import snapshot_download as d; d('BAAI/bge-reranker-v
 ## 别做的事
 
 - **别改数据内容。** 题库与索引都是只读源头，改了就没法跟别人对账。
-- **别把 `rag/` 或 `kb_index/` 挪进 git。** 它们加起来约 400MB，已 gitignore；
-  换机器时从 P5 的数据包解压到位。
+- **`rag/` 与 `kb_index/` 的原始大文件不直接入库。** 它们由
+  `runtime-assets/` 下的压缩分片恢复；在仓库根目录运行
+  `tools/restore-runtime-assets.ps1`。
+- **不要重复提交 Vosk 解包副本。** 前端运行时只加载 `model.tar.gz`，
+  `vosk-model-small-cn/` 可以从该压缩包解出，不需要再占一份仓库容量。
 - **别把 `bank/` 拷进来。** 题库已经共用主项目那一份，多拷一份就会两边漂移。

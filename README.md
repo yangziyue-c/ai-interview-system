@@ -66,6 +66,11 @@ project/
 
 ## 快速开始（Windows）
 
+首次克隆后，在仓库根目录运行
+`powershell -ExecutionPolicy Bypass -File tools/restore-runtime-assets.ps1`。
+RAG、KB 索引和浏览器 Vosk 模型经过压缩与分片后随普通 Git 保存，脚本会校验并
+还原为运行时文件。资源版本、校验值和排除项见 `docs/RUNTIME_ASSETS.md`。
+
 **方式一：一键启动（推荐）**
 
 双击 `backend/start.bat`：

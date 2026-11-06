@@ -148,6 +148,12 @@ VITE_ASSET_BASE=
 
 **关于 MediaPipe**：摄像头追踪用。浏览器本地提取姿态关键点，只把数字坐标传给后端，视频画面不出本机。缺这些文件，摄像头功能用不了。
 
+**Git 获取方式**：`model.tar.gz` 经过 zstd 压缩后随普通 Git 分片保存；MediaPipe
+`vendor` 已随对话层 `backend/dialogue_layer/web/vendor/` 入库，不再重复保存。
+首次克隆后运行仓库根目录的 `tools/restore-runtime-assets.ps1`，脚本会还原并校验
+`model.tar.gz`，同时补齐
+`frontend/public/vendor/` 与 `backend/static/vendor/`。
+
 **来源**：
 
 - `vendor/mediapipe/`：从 5 号的对话层交付包 `backend/dialogue_layer/web/vendor/mediapipe/` 复制
