@@ -71,6 +71,9 @@ async def transcribe_audio(user: CurrentUser, file: UploadFile) -> dict:
     引擎不可用时明确报 503，不静默返回空文本——空文本会被当成「考生没说话」，
     这种静默失败比一次报错难查得多。
     """
+    if settings.OFFLINE_MODE:
+        raise ServiceUnavailableError("离线版未启用语音转写，请使用文字作答")
+
     ext = Path(file.filename or "").suffix.lower()
     if ext not in _ALLOWED_EXT:
         raise BadRequestError(
@@ -145,6 +148,8 @@ async def synthesize_speech(user: CurrentUser, req: TtsRequest) -> dict:
     引擎不可用时明确报 503，**不返回空音频**——空音频在前端表现为「播放了但没声音」，
     比一次报错难查得多。
     """
+    if settings.OFFLINE_MODE:
+        raise ServiceUnavailableError("离线版未启用面试官朗读")
     try:
         audio, content_type = await get_dialogue_adapter().synthesize(req.text, req.voice)
     except EngineError as exc:

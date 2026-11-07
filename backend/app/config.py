@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     # 该目录已进 .gitignore——简历原件永远不该进版本库。
     RESUME_DIR: str = "private/resumes"
     MAX_RESUME_SIZE_MB: int = 10
+
+    # 离线版：只使用本地题库和确定性规则评分，不调用大模型、RAG、8005 或外部评估服务。
+    # 该开关优先于 DIALOGUE_ENGINE：即使 .env 里仍写着 a11，也不会启用 8005。
+    OFFLINE_MODE: bool = False
     # 全文存储与接口返回的上限。同时受 MySQL TEXT 64KB 字节约束
     # （utf8mb4 最坏 4 字节/字符，10000 字符 ≈ 40KB，留足余量）；
     # 将来若要放宽到 5 万字符，得换 MEDIUMTEXT，不是改这个常量的事。
@@ -121,7 +125,7 @@ class Settings(BaseSettings):
     @property
     def engine_enabled(self) -> bool:
         """AI 对话层引擎是否启用（取值见 DIALOGUE_ENGINE）"""
-        return self.DIALOGUE_ENGINE.strip().lower() == "a11"
+        return not self.OFFLINE_MODE and self.DIALOGUE_ENGINE.strip().lower() == "a11"
 
 
 @lru_cache

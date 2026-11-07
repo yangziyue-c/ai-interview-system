@@ -36,6 +36,8 @@ async def chat(
 
     messages 为 [{role, content}]。任何失败抛 LLMError。
     """
+    if settings.OFFLINE_MODE:
+        raise LLMError("离线版未启用大模型，无法生成示范作答")
     if not settings.LLM_API_KEY or not settings.LLM_BASE_URL:
         raise LLMError("未配置大模型（LLM_BASE_URL / LLM_API_KEY），无法生成示范作答")
     base_url = settings.LLM_BASE_URL.rstrip("/")

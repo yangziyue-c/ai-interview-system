@@ -91,6 +91,15 @@ async def get_archive(
     不传 position 时取最近一场已结束面试的岗位。
     引擎不可用时返回 available=false 而不是 500——与 /rag/search 的透传口径一致。
     """
+    if settings.OFFLINE_MODE:
+        return ok({
+            "available": False,
+            "position": position or "",
+            "record_count": 0,
+            "notice": "离线版未启用成长档案服务",
+            "wrong_book": None, "kp_map": None, "history": None, "plan": None,
+        })
+
     conditions = [
         Interview.user_id == user.id,
         Interview.status == InterviewStatus.FINISHED.value,

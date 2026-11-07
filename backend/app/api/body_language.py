@@ -16,6 +16,7 @@ from sqlalchemy import select
 from app.adapters import get_dialogue_adapter
 from app.adapters.ai_dialogue import EngineError
 from app.api.deps import CurrentUser, DbSession
+from app.config import settings
 from app.core.exceptions import BadRequestError, NotFoundError, ServiceUnavailableError
 from app.models import Interview, QARecord
 from app.schemas.engine import BodyLanguageRequest
@@ -59,6 +60,8 @@ async def analyze_body_language(user: CurrentUser, req: BodyLanguageRequest, db:
     """
     if (req.interview_id is None) != (req.round is None):
         raise BadRequestError("interview_id 与 round 需要同时提供（或都不提供）")
+    if settings.OFFLINE_MODE:
+        raise ServiceUnavailableError("离线版未启用体态分析服务")
 
     frames = [frame.model_dump(exclude_none=True) for frame in req.frames]
     try:

@@ -143,8 +143,11 @@ cd backend && D:/anaconda3/envs/ai_interview/python.exe -m scripts.simulate_inte
 
 #### AI 对话层引擎（可选链路：P5 的 A11，`backend/dialogue_layer/`）
 
-- 独立 FastAPI 服务（**8005**，源码一行未改），`start.py` 在 RAG 之后拉起；开关 `DIALOGUE_ENGINE=a11`
-  （`.env`，默认空 = 关）。开启后出题/追问/五维评分全部委托它，主后端只镜像落库
+- 独立 FastAPI 服务（**8005**），`start.py` 只在主版本拉起；`.env` 默认 `DIALOGUE_ENGINE=a11`，
+  显式留空才切到无 8005 的备用链路。开启后出题/追问/五维评分全部委托它，主后端只镜像落库
+- **无大模型离线版**用 `backend/start_offline.bat`（等价于 `python start.py --offline`）：
+  只启动主后端与本地前端，使用本地题库和确定性规则评分，不调用大模型、RAG、8005、外部评估、
+  在线语音或成长档案服务
 - **2026-09-29 版升级**：原 10 个端点全部保留，新增 `/tts`（朗读）与 `/body-language/analyze`（体态），
   另加简历模式、客观题评分、知识库检索（KB）。主后端已接三个转发口（`uploads/audio/tts`、
   `body-language/analyze`，建面试可带 `resume_text`），**前端页面尚未接**
