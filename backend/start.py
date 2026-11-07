@@ -7,6 +7,8 @@ Python is immune to the encoding / line-ending pitfalls of cmd batch files.
 Started processes:
 1. Main FastAPI backend on port 8001 (foreground)
 2. P3 AI evaluator (Flask) on port 8002 (child process, auto-stopped on exit)
+3. A11 dialogue engine on port 8005 only in the primary profile
+4. RAG service and demo frontend when their local dependencies are available
 """
 import json
 import os
@@ -29,6 +31,8 @@ EVALUATOR_PORT = "8002"
 FRONTEND_PORT = "5273"  # 演示前端（frontend_test/）静态服务端口（避开 P4 Vite 联调用的 5173）
 RAG_PORT = "8003"       # RAG 语义检索服务（V5 知识库，backend/rag/）
 DIALOGUE_PORT = "8005"  # AI 对话层引擎（P5 交付的 A11，backend/dialogue_layer/）
+PRIMARY_DIALOGUE_ENGINE = "a11"  # 主版本：启用 8005 完整链路
+BACKUP_DIALOGUE_ENGINE = "legacy"  # 备用版本：不启用 8005
 HEALTH_WAIT_SECONDS = 30  # 主后端就绪的最长等待时间
 PIP_INDEX = "https://pypi.tuna.tsinghua.edu.cn/simple"
 # 主后端 + P3 评估服务所需的全部第三方库（缺任一则触发 pip install）
@@ -45,9 +49,9 @@ RAG_IMPORT_CHECK = (
     "u.find_spec(m) for m in ('torch','chromadb','sentence_transformers')) else 1)"
 )
 
-# AI 对话层（可选引擎）：整场委托出题 / 追问 / 五维评分。与 RAG 同档 ——
-# 依赖外部 API key 与约 2.14GB 的本地 reranker 模型，属「可选增强」，
-# 端口被占用只跳过、依赖缺失只提示，主流程不受影响。
+# AI 对话层：主版本（a11）整场委托出题 / 追问 / 五维评分；
+# 备用版本（DIALOGUE_ENGINE 显式留空）完全不拉起 8005，避免占端口和内存。
+# 端口被占用只跳过、依赖缺失只提示；主后端仍会保持 a11 模式并明确返回 503。
 DIALOGUE_DIR = BASE_DIR / "dialogue_layer"
 DIALOGUE_ENTRY = DIALOGUE_DIR / "app" / "main.py"
 DIALOGUE_IMPORT_CHECK = (
@@ -174,15 +178,15 @@ def wait_until_ready(
     return False
 
 
-def read_env_value(name: str) -> str:
-    """从 backend/.env 读一个配置项（没有则返回空串）
+def read_env_entry(name: str) -> tuple[bool, str]:
+    """从 backend/.env 读取配置项，并区分“未配置”与“显式留空”
 
     刻意不 import app.config：启动器要能在依赖没装好、应用起不来时照样跑，
     只做最简单的 KEY=VALUE 解析就够，不值得为此引入 dotenv。
     """
     env_file = BASE_DIR / ".env"
     if not env_file.exists():
-        return ""
+        return False, ""
     try:
         for line in env_file.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -190,10 +194,29 @@ def read_env_value(name: str) -> str:
                 continue
             key, _, value = line.partition("=")
             if key.strip() == name:
-                return value.strip().strip('"').strip("'")
+                return True, value.strip().strip('"').strip("'")
     except OSError:
-        return ""
-    return ""
+        return False, ""
+    return False, ""
+
+
+def read_env_value(name: str, default: str = "") -> str:
+    """从 backend/.env 读一个配置项（没有则返回 default）"""
+    found, value = read_env_entry(name)
+    return value if found else default
+
+
+def dialogue_engine_mode() -> str:
+    """当前运行版本：默认主版本 a11；显式留空则进入无 8005 的备用版本。"""
+    found, value = read_env_entry("DIALOGUE_ENGINE")
+    if not found:
+        return PRIMARY_DIALOGUE_ENGINE
+    return value.strip().lower() or BACKUP_DIALOGUE_ENGINE
+
+
+def dialogue_engine_enabled() -> bool:
+    """是否启用 8005 主版本。只有 a11 会启用。"""
+    return dialogue_engine_mode() == PRIMARY_DIALOGUE_ENGINE
 
 
 def dialogue_engine_url() -> str:
@@ -382,8 +405,10 @@ def print_guide(
         print("          稍后刷新 /health 看到 collection_size 即就绪。主流程不等它。")
     else:
         print("      （未启用：依赖缺失或 backend/rag 不存在，主流程不受影响）")
-    print("  🤖  [AI 对话层引擎] 整场委托出题 / 追问 / 五维评分（可选引擎模式）")
-    if dialogue_url:
+    engine_mode = dialogue_engine_mode()
+    print("  🤖  [AI 对话层引擎] 整场委托出题 / 追问 / 五维评分")
+    if engine_mode == PRIMARY_DIALOGUE_ENGINE and dialogue_url:
+        print("      版本定位: 主版本（8005 完整链路）")
         print(f"      地址:      {dialogue_url}")
         print(f"      健康检查:  {dialogue_url}/health")
         if dialogue_started:
@@ -391,12 +416,13 @@ def print_guide(
         if dialogue_url != f"http://localhost:{DIALOGUE_PORT}":
             # 远端引擎：面试能不能跑取决于**别人的机器**在不在线，这一条要说清楚
             print("      注：引擎跑在远端——它不在线时面试接口返 503（不回落原链路），演示前先探 /health。")
-        if read_env_value("DIALOGUE_ENGINE").strip().lower() == "a11":
-            print("      状态:      已在 .env 里启用（DIALOGUE_ENGINE=a11）")
-        else:
-            print("      启用方式:  在 backend/.env 里设 DIALOGUE_ENGINE=a11（不设则走原链路）")
+        print("      状态:      已在 .env 里启用（DIALOGUE_ENGINE=a11）")
+    elif engine_mode == BACKUP_DIALOGUE_ENGINE:
+        print("      版本定位: 备用版本（无 8005，原链路 7 轮制）")
+        print("      状态:      DIALOGUE_ENGINE 已显式留空，8005 不启动")
+        print("      恢复主版本: 在 backend/.env 里设 DIALOGUE_ENGINE=a11 后重启")
     else:
-        print("      （未启用：目录缺失或依赖未就绪，主流程不受影响）")
+        print("      （主版本目录缺失或依赖未就绪；面试会明确返回 503，不会静默切换备用链路）")
     print("=" * 64)
     print("  停止全部服务：在本窗口按 Ctrl+C（前端 / P3 / RAG / 对话层 / 主后端一并退出）")
     print("=" * 64)
@@ -566,7 +592,9 @@ def main() -> None:
         # 就绪与否由 /health 的 scorer_ready 表达，引擎模式下面试会据此明确报错。
         dialogue_started = False
         dialogue_url = ""
-        if dialogue_engine_is_remote():
+        if not dialogue_engine_enabled():
+            print("当前为备用版本（DIALOGUE_ENGINE 显式留空），跳过拉起 AI 对话层 8005")
+        elif dialogue_engine_is_remote():
             # 引擎跑在队友机器上（经 Tailscale 连 P5 的 8005 就是这种）：**不拉起本地那一份**。
             # 本地引擎没人用，却会占住 8005 端口、吃一份内存，全功能档还要预热评分器。
             dialogue_url = dialogue_engine_url()

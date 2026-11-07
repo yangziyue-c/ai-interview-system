@@ -133,8 +133,8 @@ app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="frontend
 - 依赖未就绪时接口返回 **503（错误码 50300）**，按「服务暂时不可用，稍后重试」处理，
   不要和 500 合并。
 
-默认配置（`DIALOGUE_ENGINE` 留空）不受这条影响。判断当前是哪条链路用 `GET /config`
-的 `engine` 字段。
+默认配置是 `DIALOGUE_ENGINE=a11` 主版本；显式写成 `DIALOGUE_ENGINE=` 才切到无 8005
+的备用链路，此时超时要求不受这条影响。判断当前是哪条链路用 `GET /config` 的 `engine` 字段。
 
 ---
 

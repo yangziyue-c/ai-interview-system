@@ -126,7 +126,8 @@ cd backend/dialogue_layer && python app/main.py
 
 ## 启用与回滚
 
-`backend/.env` 里设 `DIALOGUE_ENGINE=a11` 启用，置空回到原链路。开关是部署级的，改完需要重启主后端。
+`backend/.env` 里设 `DIALOGUE_ENGINE=a11` 启用 8005 主版本；显式置空才回到无 8005
+的备用原链路。未配置该项时默认按 a11 主版本启动。开关是部署级的，改完需要重启主后端。
 
 引擎启用但未就绪时（`/health` 的 `bank_loaded`、`scorer_ready`、`llm_configured` 任一为假），面试接口返回 503 与具体原因，**不回落原链路**。这是刻意的：一场面试的分数如果中途换了口径，事后无法分辨，排查成本远高于一次明确的失败。原链路的 Mock 兜底行为不受影响。
 
