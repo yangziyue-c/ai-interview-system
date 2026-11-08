@@ -990,6 +990,7 @@ GET /share/{code}
 | `body_language` | bool | `true` | 摄像头体态分析开关 |
 | `report_preference` | string | `detailed` | 报告展示偏好：`detailed` / `concise` |
 | `theme` | string | `system` | 界面主题：`light` / `dark` / `system` |
+| `career_anchor_result` | object 或 null | `null` | 只读；最近一次岗位倾向速测结果摘要，未测试过为 `null` |
 
 ### 9.1 获取当前用户设置
 
@@ -1000,7 +1001,16 @@ GET /settings
 ```json
 { "code": 0, "message": "ok", "data": {
     "default_position": "", "voice_answer": true, "auto_tts": true,
-    "body_language": true, "report_preference": "detailed", "theme": "system" } }
+    "body_language": true, "report_preference": "detailed", "theme": "system",
+    "career_anchor_result": null } }
+```
+
+`career_anchor_result` 非 `null` 时表示测过，结构为：
+
+```json
+{ "position": "backend", "name": "后端开发工程师", "index": 90,
+  "consistency_percent": 88, "confidence": "高",
+  "tested_at": "2026-11-08T15:30:00" }
 ```
 
 ### 9.2 更新设置（部分字段）
@@ -1016,6 +1026,8 @@ PUT /settings
   否则返回 400。
 - `report_preference` / `theme` 取值不在上表范围内返回 400。
 - 传 `null` 的字段按「不修改」处理。
+- `career_anchor_result` 是只读字段，PUT 不支持；每次
+  `POST /career-anchor/submit` 成功后由后端覆盖为最近一次结果。
 
 ---
 

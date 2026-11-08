@@ -8,7 +8,7 @@ upsert，不碰 users 行，也不会因为设置字段的增删影响登录链�
 """
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -47,6 +47,12 @@ class UserSetting(Base):
     # 界面主题：light / dark / system
     theme: Mapped[str] = mapped_column(
         String(16), default="system", comment="界面主题"
+    )
+    # 最近一次岗位倾向速测的结果摘要（推荐岗位、指数、一致性、置信度、时间）。
+    # `none_as_null=True` 的理由同 reports.digest：未测试过必须是 SQL NULL，
+    # 不能被 JSON 的 null 字面量混成「有记录」。
+    career_anchor_result: Mapped[dict | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True, comment="最近一次岗位倾向速测结果摘要"
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now(), comment="最后更新时间"

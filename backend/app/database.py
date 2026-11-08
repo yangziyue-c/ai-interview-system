@@ -205,6 +205,13 @@ async def init_db() -> None:
             "review",
             "ALTER TABLE reports ADD COLUMN review JSON",
         )
+        # 岗位倾向速测结果摘要（最近一次测试的推荐岗位与指数，供前端判断是否测过）
+        await conn.run_sync(
+            _ensure_column,
+            "user_settings",
+            "career_anchor_result",
+            "ALTER TABLE user_settings ADD COLUMN career_anchor_result JSON",
+        )
         # 注：原「题库 V4 第 16 列 expression_points」的补列语句已随 V5 换代删除——
         # 该列在新表结构中不存在，留着会在每次启动把已删列 ALTER 回来。
         # questions 的结构变更走 scripts/import_question_bank.py --rebuild，

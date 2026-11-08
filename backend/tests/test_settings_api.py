@@ -34,6 +34,7 @@ class TestSettings:
             "body_language": True,
             "report_preference": "detailed",
             "theme": "system",
+            "career_anchor_result": None,
         }
 
     async def test_partial_update(self, client: AsyncClient):

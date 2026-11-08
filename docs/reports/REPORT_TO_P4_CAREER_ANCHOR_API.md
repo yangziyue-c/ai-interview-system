@@ -200,3 +200,27 @@ Authorization: Bearer <token>
 - 示例里的 `index: 100` 是因为刻意把后端相关题目全给 5 分，正常作答会落在 0~100 之间，不是固定上限。
 - `recommended.name` 来自后端 positions 表，可能与前端本地 `POSITIONS` 的文案略有差异。显示以后端返回为准。
 - 未登录返回 401；岗位全部下线时返回 503（业务码 50300）。
+
+---
+
+## 五、测试记录（是否测过）
+
+`POST /career-anchor/submit` 成功后，后端会把最近一次结果摘要写进用户设置。前端打开速测入口时调 `GET /settings`，读 `career_anchor_result`：
+
+- `null`：没测过。
+- 非 `null`：测过，可以直接展示上次推荐，并给出「重新测一次」入口。
+
+结构：
+
+```json
+{
+  "position": "backend",
+  "name": "后端开发工程师",
+  "index": 90,
+  "consistency_percent": 88,
+  "confidence": "高",
+  "tested_at": "2026-11-08T15:30:00"
+}
+```
+
+每次重新提交会覆盖为最新一次。该字段只读，`PUT /settings` 传了也不会生效。换设备登录仍能读到；localStorage 可以留作离线兜底，但不要作为唯一来源。

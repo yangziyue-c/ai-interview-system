@@ -16,6 +16,10 @@ class SettingsOut(BaseModel):
     body_language: bool = Field(description="摄像头体态分析开关")
     report_preference: str = Field(description="报告展示偏好：detailed / concise")
     theme: str = Field(description="界面主题：light / dark / system")
+    career_anchor_result: dict | None = Field(
+        default=None,
+        description="最近一次岗位倾向速测结果摘要；未测试过为 null",
+    )
 
 
 class SettingsUpdate(BaseModel):

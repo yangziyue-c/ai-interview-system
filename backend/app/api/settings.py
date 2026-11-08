@@ -26,10 +26,13 @@ _DEFAULTS = {
 
 def _serialize(row: UserSetting | None) -> dict:
     """没有记录时返回默认值；有记录时逐字段回读（老行缺列值用默认兜底）"""
-    return {
+    data = {
         key: (getattr(row, key) if row is not None else default)
         for key, default in _DEFAULTS.items()
     }
+    # 速测结果是只读记录，不参与 PUT；未测试过时明确返回 null
+    data["career_anchor_result"] = row.career_anchor_result if row is not None else None
+    return data
 
 
 @router.get("", response_model=dict, summary="获取当前用户设置")

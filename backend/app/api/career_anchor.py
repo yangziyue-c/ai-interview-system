@@ -6,6 +6,8 @@
 
 推荐只依据考生自己的偏好与能力自评，不做能力判定，也不输出性格标签。
 """
+from datetime import datetime
+
 from fastapi import APIRouter
 from sqlalchemy import select
 
@@ -17,7 +19,7 @@ from app.core.career_anchor import (
     validate_answers,
 )
 from app.core.exceptions import BadRequestError, ServiceUnavailableError
-from app.models import Position
+from app.models import Position, UserSetting
 from app.schemas.career_anchor import AnchorSubmitRequest
 from app.utils.response import ok
 
@@ -30,7 +32,7 @@ async def get_anchor_questions(_: CurrentUser) -> dict:
 
 
 @router.post("/submit", response_model=dict, summary="提交 20 条评分，返回推荐岗位")
-async def submit_anchor(req: AnchorSubmitRequest, _: CurrentUser, db: DbSession) -> dict:
+async def submit_anchor(req: AnchorSubmitRequest, user: CurrentUser, db: DbSession) -> dict:
     try:
         validate_answers(req.answers)
     except ValueError as exc:
@@ -70,5 +72,21 @@ async def submit_anchor(req: AnchorSubmitRequest, _: CurrentUser, db: DbSession)
         for item in scores[1:3]
     ]
     result["scores"] = scores
+
+    # 落一份结果摘要：前端从 GET /settings 读它判断「是否测过」，
+    # 换设备也能看到上次推荐，不依赖浏览器本地存储。
+    setting = await db.get(UserSetting, user.id)
+    if setting is None:
+        setting = UserSetting(user_id=user.id)
+        db.add(setting)
+    setting.career_anchor_result = {
+        "position": result["recommended"]["position"],
+        "name": result["recommended"]["name"],
+        "index": result["recommended"]["index"],
+        "consistency_percent": result["consistency_percent"],
+        "confidence": result["confidence"],
+        "tested_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    await db.commit()
 
     return ok(result, "推荐岗位已生成")

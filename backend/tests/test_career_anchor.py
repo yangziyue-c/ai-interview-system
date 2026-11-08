@@ -85,6 +85,28 @@ class TestCareerAnchor:
         assert data["confidence"] == "低"
         assert data["consistency_percent"] == 100
 
+    async def test_result_saved_to_settings(self, client: AsyncClient):
+        headers = await _register(client)
+        before = await client.get(f"{BASE}/settings", headers=headers)
+        assert before.json()["data"]["career_anchor_result"] is None
+
+        resp = await client.post(
+            f"{BASE}/career-anchor/submit",
+            json={"answers": _answers_for("backend")},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        result = resp.json()["data"]
+
+        after = await client.get(f"{BASE}/settings", headers=headers)
+        saved = after.json()["data"]["career_anchor_result"]
+        assert saved["position"] == "backend"
+        assert saved["name"] == result["recommended"]["name"]
+        assert saved["index"] == result["recommended"]["index"]
+        assert saved["consistency_percent"] == result["consistency_percent"]
+        assert saved["confidence"] == result["confidence"]
+        assert saved["tested_at"]
+
     async def test_missing_answers_rejected(self, client: AsyncClient):
         headers = await _register(client)
         resp = await client.post(
