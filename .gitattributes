@@ -7,3 +7,12 @@
 # MediaPipe 运行时（体态识别的浏览器端）：wasm/task 是二进制、js 是第三方产物，
 # 一律原样存入不做行尾转换——二进制被转换一次就废了，第三方文件也不该被我们改写
 backend/dialogue_layer/web/vendor/** -text
+
+# Gitee 社区版不支持 Git LFS，完整运行资源使用普通 Git 分片保存。
+runtime-assets/** -text
+tools/bin/*.exe -text
+tools/bin/zstd-LICENSE.txt -text
+frontend/ai-interview-front/public/model.tar.gz -text
+backend/dialogue_layer/数据/rag/memory_retriever.py -text
+backend/dialogue_layer/数据/kb_index/*.json -text
+backend/dialogue_layer/数据/kb_index/README_START.txt -text

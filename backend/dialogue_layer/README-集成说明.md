@@ -33,8 +33,8 @@ backend/dialogue_layer/
 ├── 数据/
 │   ├── kg/kg_question_graph.pkl      知识图谱（14.8MB，入库）
 │   ├── 学习资源样例.json              4a 学习资源的素材源（4.7MB，入库）
-│   ├── rag/                          RAG 三件（约 256MB，不入库）
-│   ├── kb_index/                     知识库检索索引（约 150MB，不入库）
+│   ├── rag/                          RAG 三件（约 333MB，压缩分片）
+│   ├── kb_index/                     知识库检索索引（约 151MB，压缩分片）
 │   └── models/sensevoice-small/      语音转写模型（约 239MB，不入库）
 ├── smoke_test.py            冒烟测试（桩模式，不需要 key，判据「失败 0 项」）
 ├── requirements-handoff.txt 轻量在线模式所需依赖（本版新增 sherpa-onnx）
@@ -54,7 +54,7 @@ backend/dialogue_layer/
 
 **知识图谱**与**学习资源样例**是 A11 独有的数据，随代码入库。
 
-**RAG 索引**（`数据/rag/`，76222 条）与**知识库索引**（`数据/kb_index/`，20396 块）来自两个数据包。前者服务引擎的 RAG 旁路，后者服务「学习资源的知识库参考」与「面试时的知识库证据通道」。索引目录**不入库**，换机器时从数据包解压到位。
+**RAG 索引**（`数据/rag/`，76222 条）与**知识库索引**（`数据/kb_index/`，20396 块）来自两个数据包。前者服务引擎的 RAG 旁路，后者服务「学习资源的知识库参考」与「面试时的知识库证据通道」。由于 Gitee 社区版不支持 Git LFS，两份索引以 **zstd 压缩 + 普通 Git 分片**保存；克隆后运行 `tools/restore-runtime-assets.ps1` 还原。文件校验清单位于仓库根目录 `runtime_assets.manifest.json`。
 
 **SenseVoice 语音模型**（`数据/models/sensevoice-small/`，239MB）随后端包提供，无公开下载路径，同样不入库。
 
@@ -126,7 +126,8 @@ cd backend/dialogue_layer && python app/main.py
 
 ## 启用与回滚
 
-`backend/.env` 里设 `DIALOGUE_ENGINE=a11` 启用，置空回到原链路。开关是部署级的，改完需要重启主后端。
+`backend/.env` 里设 `DIALOGUE_ENGINE=a11` 启用 8005 主版本；显式置空才回到无 8005
+的备用原链路。未配置该项时默认按 a11 主版本启动。开关是部署级的，改完需要重启主后端。
 
 引擎启用但未就绪时（`/health` 的 `bank_loaded`、`scorer_ready`、`llm_configured` 任一为假），面试接口返回 503 与具体原因，**不回落原链路**。这是刻意的：一场面试的分数如果中途换了口径，事后无法分辨，排查成本远高于一次明确的失败。原链路的 Mock 兜底行为不受影响。
 

@@ -7,6 +7,8 @@ Python is immune to the encoding / line-ending pitfalls of cmd batch files.
 Started processes:
 1. Main FastAPI backend on port 8001 (foreground)
 2. P3 AI evaluator (Flask) on port 8002 (child process, auto-stopped on exit)
+3. A11 dialogue engine on port 8005 only in the primary profile
+4. RAG service and demo frontend when their local dependencies are available
 """
 import json
 import os
@@ -29,6 +31,9 @@ EVALUATOR_PORT = "8002"
 FRONTEND_PORT = "5273"  # 演示前端（frontend_test/）静态服务端口（避开 P4 Vite 联调用的 5173）
 RAG_PORT = "8003"       # RAG 语义检索服务（V5 知识库，backend/rag/）
 DIALOGUE_PORT = "8005"  # AI 对话层引擎（P5 交付的 A11，backend/dialogue_layer/）
+PRIMARY_DIALOGUE_ENGINE = "a11"  # 主版本：启用 8005 完整链路
+BACKUP_DIALOGUE_ENGINE = "legacy"  # 备用版本：不启用 8005
+OFFLINE_PROFILE = "offline"  # 离线版：无大模型、无 RAG、无 8005
 HEALTH_WAIT_SECONDS = 30  # 主后端就绪的最长等待时间
 PIP_INDEX = "https://pypi.tuna.tsinghua.edu.cn/simple"
 # 主后端 + P3 评估服务所需的全部第三方库（缺任一则触发 pip install）
@@ -45,9 +50,9 @@ RAG_IMPORT_CHECK = (
     "u.find_spec(m) for m in ('torch','chromadb','sentence_transformers')) else 1)"
 )
 
-# AI 对话层（可选引擎）：整场委托出题 / 追问 / 五维评分。与 RAG 同档 ——
-# 依赖外部 API key 与约 2.14GB 的本地 reranker 模型，属「可选增强」，
-# 端口被占用只跳过、依赖缺失只提示，主流程不受影响。
+# AI 对话层：主版本（a11）整场委托出题 / 追问 / 五维评分；
+# 备用版本（DIALOGUE_ENGINE 显式留空）完全不拉起 8005，避免占端口和内存。
+# 端口被占用只跳过、依赖缺失只提示；主后端仍会保持 a11 模式并明确返回 503。
 DIALOGUE_DIR = BASE_DIR / "dialogue_layer"
 DIALOGUE_ENTRY = DIALOGUE_DIR / "app" / "main.py"
 DIALOGUE_IMPORT_CHECK = (
@@ -174,15 +179,15 @@ def wait_until_ready(
     return False
 
 
-def read_env_value(name: str) -> str:
-    """从 backend/.env 读一个配置项（没有则返回空串）
+def read_env_entry(name: str) -> tuple[bool, str]:
+    """从 backend/.env 读取配置项，并区分“未配置”与“显式留空”
 
     刻意不 import app.config：启动器要能在依赖没装好、应用起不来时照样跑，
     只做最简单的 KEY=VALUE 解析就够，不值得为此引入 dotenv。
     """
     env_file = BASE_DIR / ".env"
     if not env_file.exists():
-        return ""
+        return False, ""
     try:
         for line in env_file.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -190,10 +195,46 @@ def read_env_value(name: str) -> str:
                 continue
             key, _, value = line.partition("=")
             if key.strip() == name:
-                return value.strip().strip('"').strip("'")
+                return True, value.strip().strip('"').strip("'")
     except OSError:
-        return ""
-    return ""
+        return False, ""
+    return False, ""
+
+
+def read_env_value(name: str, default: str = "") -> str:
+    """从 backend/.env 读一个配置项（没有则返回 default）"""
+    found, value = read_env_entry(name)
+    return value if found else default
+
+
+def _env_flag(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def offline_mode() -> bool:
+    """离线版优先于主/备版本；支持 --offline 或 OFFLINE_MODE=1。"""
+    if "--offline" in sys.argv:
+        return True
+    process_value = os.environ.get("OFFLINE_MODE")
+    if process_value is not None:
+        return _env_flag(process_value)
+    _, file_value = read_env_entry("OFFLINE_MODE")
+    return _env_flag(file_value)
+
+
+def dialogue_engine_mode() -> str:
+    """当前运行版本：默认主版本 a11；显式留空则进入无 8005 的备用版本。"""
+    if offline_mode():
+        return OFFLINE_PROFILE
+    found, value = read_env_entry("DIALOGUE_ENGINE")
+    if not found:
+        return PRIMARY_DIALOGUE_ENGINE
+    return value.strip().lower() or BACKUP_DIALOGUE_ENGINE
+
+
+def dialogue_engine_enabled() -> bool:
+    """是否启用 8005 主版本。只有 a11 会启用。"""
+    return dialogue_engine_mode() == PRIMARY_DIALOGUE_ENGINE
 
 
 def dialogue_engine_url() -> str:
@@ -350,11 +391,17 @@ def print_guide(
     dialogue_url: str = "",
 ) -> None:
     """启动完成后的访问指引：明确每个网址可以做什么"""
+    is_offline = offline_mode()
     lan_ip = get_lan_ip()
     ts_ip = get_tailscale_ip()      # 没接入 tailnet 时是空串，这一行就不打
     print()
     print("=" * 64)
-    print("  AI 模拟面试系统 —— 启动完成，访问指引")
+    title = (
+        "AI 模拟面试系统 · 离线版 —— 启动完成，访问指引"
+        if is_offline
+        else "AI 模拟面试系统 —— 启动完成，访问指引"
+    )
+    print(f"  {title}")
     if not server_ready:
         print("  （主后端仍在启动中，可稍等几秒再访问）")
     print("=" * 64)
@@ -372,33 +419,42 @@ def print_guide(
     print(f"      局域网:    http://{lan_ip}:{PORT}/docs")
     if ts_ip:
         print(f"      Tailscale: http://{ts_ip}:{PORT}  （前端联调就用这个地址）")
-    print("  🔍  [评估服务] P3 AI 评估健康检查")
-    print(f"      本机访问:  http://localhost:{EVALUATOR_PORT}/health")
-    print("  🧠  [RAG 语义检索] V5 知识库检索（题库未命中时的语义兜底）")
-    if rag_started:
-        print(f"      健康检查:  http://localhost:{RAG_PORT}/health")
-        print(f"      检索接口:  POST http://localhost:{RAG_PORT}/rag/search")
-        print("      注：首次启动需下载 4.5GB 模型，加载完成前该地址不可用；")
-        print("          稍后刷新 /health 看到 collection_size 即就绪。主流程不等它。")
+    if is_offline:
+        print("  🧩  [离线运行] 本地题库出题 + 确定性规则评分")
+        print("      已禁用:    大模型 / RAG / 8005 / 外部评估 / 在线语音 / 成长档案")
+        print("      作答方式:  文字作答（语音、朗读、摄像头体态分析在离线版中不可用）")
     else:
-        print("      （未启用：依赖缺失或 backend/rag 不存在，主流程不受影响）")
-    print("  🤖  [AI 对话层引擎] 整场委托出题 / 追问 / 五维评分（可选引擎模式）")
-    if dialogue_url:
-        print(f"      地址:      {dialogue_url}")
-        print(f"      健康检查:  {dialogue_url}/health")
-        if dialogue_started:
-            print("      注：评分模型在后台预热（约需数十秒），/health 的 scorer_ready 变 true 即就绪。")
-        if dialogue_url != f"http://localhost:{DIALOGUE_PORT}":
-            # 远端引擎：面试能不能跑取决于**别人的机器**在不在线，这一条要说清楚
-            print("      注：引擎跑在远端——它不在线时面试接口返 503（不回落原链路），演示前先探 /health。")
-        if read_env_value("DIALOGUE_ENGINE").strip().lower() == "a11":
-            print("      状态:      已在 .env 里启用（DIALOGUE_ENGINE=a11）")
+        print("  🔍  [评估服务] P3 AI 评估健康检查")
+        print(f"      本机访问:  http://localhost:{EVALUATOR_PORT}/health")
+        print("  🧠  [RAG 语义检索] V5 知识库检索（题库未命中时的语义兜底）")
+        if rag_started:
+            print(f"      健康检查:  http://localhost:{RAG_PORT}/health")
+            print(f"      检索接口:  POST http://localhost:{RAG_PORT}/rag/search")
+            print("      注：首次启动需下载 4.5GB 模型，加载完成前该地址不可用；")
+            print("          稍后刷新 /health 看到 collection_size 即就绪。主流程不等它。")
         else:
-            print("      启用方式:  在 backend/.env 里设 DIALOGUE_ENGINE=a11（不设则走原链路）")
-    else:
-        print("      （未启用：目录缺失或依赖未就绪，主流程不受影响）")
+            print("      （未启用：依赖缺失或 backend/rag 不存在，主流程不受影响）")
+        engine_mode = dialogue_engine_mode()
+        print("  🤖  [AI 对话层引擎] 整场委托出题 / 追问 / 五维评分")
+        if engine_mode == PRIMARY_DIALOGUE_ENGINE and dialogue_url:
+            print("      版本定位: 主版本（8005 完整链路）")
+            print(f"      地址:      {dialogue_url}")
+            print(f"      健康检查:  {dialogue_url}/health")
+            if dialogue_started:
+                print("      注：评分模型在后台预热（约需数十秒），/health 的 scorer_ready 变 true 即就绪。")
+            if dialogue_url != f"http://localhost:{DIALOGUE_PORT}":
+                # 远端引擎：面试能不能跑取决于**别人的机器**在不在线，这一条要说清楚
+                print("      注：引擎跑在远端——它不在线时面试接口返 503（不回落原链路），演示前先探 /health。")
+            print("      状态:      已在 .env 里启用（DIALOGUE_ENGINE=a11）")
+        elif engine_mode == BACKUP_DIALOGUE_ENGINE:
+            print("      版本定位: 备用版本（无 8005，原链路 7 轮制）")
+            print("      状态:      DIALOGUE_ENGINE 已显式留空，8005 不启动")
+            print("      恢复主版本: 在 backend/.env 里设 DIALOGUE_ENGINE=a11 后重启")
+        else:
+            print("      （主版本目录缺失或依赖未就绪；面试会明确返回 503，不会静默切换备用链路）")
     print("=" * 64)
-    print("  停止全部服务：在本窗口按 Ctrl+C（前端 / P3 / RAG / 对话层 / 主后端一并退出）")
+    stop_scope = "前端 / 主后端" if is_offline else "前端 / P3 / RAG / 对话层 / 主后端"
+    print(f"  停止全部服务：在本窗口按 Ctrl+C（{stop_scope} 一并退出）")
     print("=" * 64)
     print()
 
@@ -441,8 +497,12 @@ def locate_env_python() -> Path | None:
 
 
 def main() -> None:
+    is_offline = offline_mode()
+    if is_offline:
+        # 子进程（uvicorn）通过环境变量读取配置；优先级高于 backend/.env。
+        os.environ["OFFLINE_MODE"] = "1"
     print("=" * 60)
-    print("  AI 模拟面试系统 - 一键启动器")
+    print("  AI 模拟面试系统 - 离线版启动器" if is_offline else "  AI 模拟面试系统 - 一键启动器")
     print("  正在启动服务，完成后将打印访问指引（请保持本窗口打开）")
     print("=" * 60)
 
@@ -466,7 +526,12 @@ def main() -> None:
 
     # 3. install deps if missing
     print("[3/5] checking dependencies...")
-    if sh(f'"{python}" -c "{IMPORT_CHECK}"').returncode != 0:
+    import_check = (
+        "import fastapi, uvicorn, sqlalchemy, aiosqlite, pydantic, jwt, bcrypt, httpx, pypdf"
+        if is_offline
+        else IMPORT_CHECK
+    )
+    if sh(f'"{python}" -c "{import_check}"').returncode != 0:
         print("[3/5] installing dependencies (1-2 minutes, please wait)...")
         if sh(f'"{python}" -m pip install -r requirements.txt -i {PIP_INDEX}').returncode != 0:
             fail("dependency install failed. Check your network and retry.")
@@ -478,9 +543,10 @@ def main() -> None:
         )
         print("[4/5] created .env from .env.example")
 
-    # 5. port check (main backend 8001 + P3 evaluator 8002)
-    print(f"[5/5] checking ports {PORT} / {EVALUATOR_PORT}...")
-    for port in (PORT, EVALUATOR_PORT):
+    # 5. port check：离线版只占用主后端端口。
+    checked_ports = (PORT,) if is_offline else (PORT, EVALUATOR_PORT)
+    print(f"[5/5] checking ports {' / '.join(checked_ports)}...")
+    for port in checked_ports:
         if port_in_use(port):
             fail(f"port {port} is already in use. Close the other program first.")
     # RAG 端口单独判定：被占用只跳过 RAG，不 fail（增强数据源，主流程不依赖）
@@ -488,12 +554,18 @@ def main() -> None:
 
     print("-" * 60)
 
+    if is_offline:
+        print("[离线版] 检查本地题库（为空时首次导入）...")
+        if sh(f'"{python}" -m scripts.ensure_offline_question_bank').returncode != 0:
+            fail("offline question bank initialization failed.")
+
     # 6. 演示前端（frontend_test/，P4 正式前端交付前的一键入口）
     #    端口已被占用时视为用户手动启动过，直接沿用；退出时随主后端一并关闭
     frontend_dir = BASE_DIR.parent / "frontend_test"
     frontend_proc = None
     frontend_ready = False
-    print(f"启动 P3 评估服务（端口 {EVALUATOR_PORT}）...")
+    if not is_offline:
+        print(f"启动 P3 评估服务（端口 {EVALUATOR_PORT}）...")
     print(f"启动主后端服务（端口 {PORT}）...")
     # 所有子进程 spawn 与等待整体包进 try：任何退出路径（含等待窗口内 Ctrl+C）
     # 都走 finally 清理，不残留占用 8001/8002/5273 的孤儿进程
@@ -527,7 +599,8 @@ def main() -> None:
 
         # 评估服务用 evaluator_new（V5 增强版：注入单题校准锚点做按题评分；
         # 未传 materials 时行为与 3 号原版 evaluator/ 逐字一致）
-        evaluator = subprocess.Popen([str(python), "evaluator_new/app.py"], cwd=str(BASE_DIR))
+        if not is_offline:
+            evaluator = subprocess.Popen([str(python), "evaluator_new/app.py"], cwd=str(BASE_DIR))
         server = subprocess.Popen(
             [str(python), "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", PORT],
             cwd=str(BASE_DIR),
@@ -539,7 +612,9 @@ def main() -> None:
         # 依赖缺失时首次需同步安装约 2.5GB，若排在启动路径前会让主后端干等数分钟，
         # 与「RAG 可选、主流程不依赖它」的设计前提相矛盾。
         # 任何一步失败只打印，绝不 fail()。
-        if not RAG_ENTRY.exists():
+        if is_offline:
+            print("离线版已禁用 RAG 语义检索")
+        elif not RAG_ENTRY.exists():
             print("未找到 RAG 服务代码（backend/rag/），跳过")
         elif rag_port_busy:
             print(f"RAG 端口 {RAG_PORT} 已被占用，跳过拉起")
@@ -566,7 +641,11 @@ def main() -> None:
         # 就绪与否由 /health 的 scorer_ready 表达，引擎模式下面试会据此明确报错。
         dialogue_started = False
         dialogue_url = ""
-        if dialogue_engine_is_remote():
+        if is_offline:
+            print("离线版已禁用 AI 对话层 8005（不加载任何大模型）")
+        elif not dialogue_engine_enabled():
+            print("当前为备用版本（DIALOGUE_ENGINE 显式留空），跳过拉起 AI 对话层 8005")
+        elif dialogue_engine_is_remote():
             # 引擎跑在队友机器上（经 Tailscale 连 P5 的 8005 就是这种）：**不拉起本地那一份**。
             # 本地引擎没人用，却会占住 8005 端口、吃一份内存，全功能档还要预热评分器。
             dialogue_url = dialogue_engine_url()

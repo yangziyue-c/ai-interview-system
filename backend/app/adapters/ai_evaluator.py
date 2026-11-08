@@ -135,6 +135,9 @@ class AIEvaluatorAdapter(HTTPAdapterBase):
         super().__init__(settings.AI_EVALUATOR_URL, "P3-AI评估")
 
     async def evaluate(self, position: str, qa_list: list[dict]) -> dict:
+        if settings.OFFLINE_MODE:
+            # 离线版不使用 8002 或大模型，直接生成本地确定性报告。
+            return _mock_evaluate(position, qa_list)
         # 附加题目评分素材（V5 单题校准锚点/得分点）→ evaluator_new 按题评分；
         # 旧版评估服务会忽略 materials 字段，行为不变
         qa_list = await _attach_materials(position, qa_list)

@@ -158,7 +158,7 @@ class AIInterviewerAdapter(HTTPAdapterBase):
         多数场次不会被调用——它的价值是「题库缺失时的语义兜底」；主动使用的
         入口见 `POST /api/v1/rag/search`（透传 RAG 服务）。
         """
-        if not await self._rag_ready():
+        if settings.OFFLINE_MODE or not await self._rag_ready():
             return None
         job = _RAG_JOB_LABELS.get(position)
         if not job:
@@ -191,7 +191,7 @@ class AIInterviewerAdapter(HTTPAdapterBase):
 
     async def _generate_via_http(self, payload: dict) -> str | None:
         """外部 P2 服务（扩展位）：失败/契约不符返回 None（落下一级）"""
-        if not self.base_url:
+        if settings.OFFLINE_MODE or not self.base_url:
             return None
         try:
             result = await self.call("/generate", payload)
@@ -209,7 +209,7 @@ class AIInterviewerAdapter(HTTPAdapterBase):
 
     async def _generate_via_llm(self, payload: dict) -> str | None:
         """直接调用 OpenAI 兼容大模型生成问题；未配置/失败返回 None（落下一级）"""
-        if not settings.LLM_API_KEY or not settings.LLM_BASE_URL:
+        if settings.OFFLINE_MODE or not settings.LLM_API_KEY or not settings.LLM_BASE_URL:
             return None
         position_label = _POSITION_LABELS.get(payload["position"], "后端开发工程师")
         messages: list[dict] = [
@@ -274,14 +274,19 @@ class AIInterviewerAdapter(HTTPAdapterBase):
             return FOLLOW_UP_QUESTIONS[(round_no - 2) % len(FOLLOW_UP_QUESTIONS)]
 
         # 数据源链：题库策略 → RAG 语义检索 → 外部服务 → LLM 直连 → 内置 Mock
+        # 离线版只保留本地题库和内置 Mock，不探测网络地址。
         # 每级实现内自行捕获异常并返回 None（None = 落下一级），首个非空即返回
-        for source in (
+        sources = [
             lambda: self._generate_via_bank(position, round_no, history, is_follow_up),
-            lambda: self._generate_via_rag(position, history),
-            lambda: self._generate_via_http(payload),
-            lambda: self._generate_via_llm(payload),
-            _mock,
-        ):
+        ]
+        if not settings.OFFLINE_MODE:
+            sources.extend([
+                lambda: self._generate_via_rag(position, history),
+                lambda: self._generate_via_http(payload),
+                lambda: self._generate_via_llm(payload),
+            ])
+        sources.append(_mock)
+        for source in sources:
             question = await source()
             if question:
                 return question

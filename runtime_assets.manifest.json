@@ -1,0 +1,241 @@
+{
+  "schemaVersion": 1,
+  "dataVersion": "2026-09-29",
+  "generatedAt": "2026-11-07",
+  "storagePolicy": "Gitee Community Edition: one repository <= 500 MB, one file <= 50 MB, Git LFS unavailable.",
+  "assets": [
+    {
+      "path": "backend/dialogue_layer/数据/rag/all_records.pkl",
+      "bytes": 82594012,
+      "sha256": "1d9cae511fe26079fea984149f7221853e3d2a5483a084f6cf0c575ed98c2ddf",
+      "role": "8005 RAG records, 76222 entries",
+      "storage": "zstd"
+    },
+    {
+      "path": "backend/dialogue_layer/数据/rag/memory_index.npz",
+      "bytes": 250324230,
+      "sha256": "21dda9d236cf2926ed42d5ee8597e274f749fe4d937c477c16505e3f219f77b7",
+      "role": "8005 exact cosine index, 76222 x 1024",
+      "storage": "split"
+    },
+    {
+      "path": "backend/dialogue_layer/数据/rag/memory_retriever.py",
+      "bytes": 7738,
+      "sha256": "c357c64aa8cb7fbfaef3aae942b1b003e28199bc2979a7a75511f3614bc577cf",
+      "role": "8005 MemoryRetriever runtime adapter",
+      "storage": "git"
+    },
+    {
+      "path": "backend/dialogue_layer/数据/kb_index/_calib.json",
+      "bytes": 228680,
+      "sha256": "017c1607289e3237d579fc8ef96a22491fa002f23a856043bb776c4fc9bf182a",
+      "role": "KB threshold calibration evidence",
+      "storage": "git"
+    },
+    {
+      "path": "backend/dialogue_layer/数据/kb_index/_probe.json",
+      "bytes": 14371,
+      "sha256": "fa340ecd9fa72aad85895259c57aff54d081acedd39ae00d779339310a3d84c2",
+      "role": "KB probe results",
+      "storage": "git"
+    },
+    {
+      "path": "backend/dialogue_layer/数据/kb_index/build_meta.json",
+      "bytes": 1627,
+      "sha256": "3ea8b580cb0ad2dc6b63237969724c06fcf170ed08c23b38896eddbc9fca76b1",
+      "role": "KB build provenance",
+      "storage": "git"
+    },
+    {
+      "path": "backend/dialogue_layer/数据/kb_index/kb_fts_manifest.json",
+      "bytes": 156,
+      "sha256": "557b39f897ccffb365a0e557fd5177d7e07d6383445a586aea318d0162e1b8d7",
+      "role": "KB FTS manifest",
+      "storage": "git"
+    },
+    {
+      "path": "backend/dialogue_layer/数据/kb_index/kb_fts.sqlite",
+      "bytes": 46039040,
+      "sha256": "4567e67f170c487b4b6a56593a05f89712a3bcd0e81c65ac02d16078b9034d03",
+      "role": "KB full-text index",
+      "storage": "zstd"
+    },
+    {
+      "path": "backend/dialogue_layer/数据/kb_index/kb_index.npz",
+      "bytes": 77644915,
+      "sha256": "f48c59bfde58e4620d62a05e6cd5d8d2273947a9d8c58ec3f117d2c9ffd41cac",
+      "role": "KB vector index, 20396 x 1024",
+      "storage": "split"
+    },
+    {
+      "path": "backend/dialogue_layer/数据/kb_index/kb_records.pkl",
+      "bytes": 27140111,
+      "sha256": "ef835c9b9d94f7c455c532d84a532d6bdc73d665864cab7497aaa7623deee521",
+      "role": "KB chunk records, 20396 entries",
+      "storage": "zstd"
+    },
+    {
+      "path": "backend/dialogue_layer/数据/kb_index/README_START.txt",
+      "bytes": 564,
+      "sha256": "7af4871dc7be75b22e76f2077822b5c701b9872b566078ea0768d5ea2a15c75d",
+      "role": "Original KB handoff note",
+      "storage": "git"
+    },
+    {
+      "path": "frontend/ai-interview-front/public/model.tar.gz",
+      "bytes": 43867744,
+      "sha256": "52b461b1c163e08303f739e216fb5d583f559f621e832aa47fca833730d259ae",
+      "role": "Vosk Chinese speech model loaded by the browser",
+      "storage": "zstd"
+    }
+  ],
+  "packageBytes": 400533305,
+  "packageFiles": [
+    {
+      "path": "runtime-assets/all_records.pkl.zst",
+      "bytes": 4262382,
+      "sha256": "48afd295800b08cea1affa127cf97e2c7c90eb579906c3e78102452880dcf192"
+    },
+    {
+      "path": "runtime-assets/kb_fts.sqlite.zst",
+      "bytes": 18350541,
+      "sha256": "65b01c23e19d169f04626a10f461d73899a3c8f8c64177859d2c446535063741"
+    },
+    {
+      "path": "runtime-assets/kb_index.npz.part000",
+      "bytes": 47185920,
+      "sha256": "36d20058f6bbee5dfa1920e4b1b23d84e85bd2192c1275698e3d8c64d672e1fa"
+    },
+    {
+      "path": "runtime-assets/kb_index.npz.part001",
+      "bytes": 30458995,
+      "sha256": "4f0ab421b6cfe2bc81e967dd4741cb3ae85082548ad67654644e0913402aaab6"
+    },
+    {
+      "path": "runtime-assets/kb_records.pkl.zst",
+      "bytes": 5750078,
+      "sha256": "910cc4c20c477519bf505068aa08027e2cc9147b13ec6c3c44e008cdcbbb015c"
+    },
+    {
+      "path": "runtime-assets/memory_index.npz.part000",
+      "bytes": 47185920,
+      "sha256": "4f4b621a79057cdf7f2b23e32aeacda289b01813cae3e031fb11bf6400f6e42c"
+    },
+    {
+      "path": "runtime-assets/memory_index.npz.part001",
+      "bytes": 47185920,
+      "sha256": "24dac175d14ca2e2f1f6d4d21a2e8f95c7eaa691ec4fbc6a67123c6dd9e93dec"
+    },
+    {
+      "path": "runtime-assets/memory_index.npz.part002",
+      "bytes": 47185920,
+      "sha256": "6fd7a8847f25d7c666399b089a8d9aca3ce25c2355cca47a258684dd7d7cfdc7"
+    },
+    {
+      "path": "runtime-assets/memory_index.npz.part003",
+      "bytes": 47185920,
+      "sha256": "2c2ccde95f72b173ace09efd0ff9a1eb86db6405023cfc1c245fe2b46e37ea6b"
+    },
+    {
+      "path": "runtime-assets/memory_index.npz.part004",
+      "bytes": 47185920,
+      "sha256": "425c3c80a810628c9afea194eb0ed3163ac7dc8e1ad70923387fece13434a81b"
+    },
+    {
+      "path": "runtime-assets/memory_index.npz.part005",
+      "bytes": 14394630,
+      "sha256": "997f73d9987438812f586dee4f64e93bb0c77cb92621aa749ae319bfd974c8a5"
+    },
+    {
+      "path": "runtime-assets/model.tar.gz.zst",
+      "bytes": 43430740,
+      "sha256": "61421665deeee52ef712ace2e4f89e9ffad6e850804c647eb0f722422eead728"
+    },
+    {
+      "path": "tools/bin/zstd.exe",
+      "bytes": 768840,
+      "sha256": "7b89780f5cf0c8352dffe61ed19aa7e0a545f57d477062c96a6e95c28bc90ee3"
+    },
+    {
+      "path": "tools/bin/zstd-LICENSE.txt",
+      "bytes": 1579,
+      "sha256": "d3baadc2e1dd7a7e0b483633e6b39743c16a16f28d696baff507fcd451f3d4ad"
+    }
+  ],
+  "restoreJobs": [
+    {
+      "output": "backend/dialogue_layer/数据/rag/all_records.pkl",
+      "method": "zstd",
+      "sources": [
+        "runtime-assets/all_records.pkl.zst"
+      ]
+    },
+    {
+      "output": "backend/dialogue_layer/数据/rag/memory_index.npz",
+      "method": "concat",
+      "sources": [
+        "runtime-assets/memory_index.npz.part000",
+        "runtime-assets/memory_index.npz.part001",
+        "runtime-assets/memory_index.npz.part002",
+        "runtime-assets/memory_index.npz.part003",
+        "runtime-assets/memory_index.npz.part004",
+        "runtime-assets/memory_index.npz.part005"
+      ]
+    },
+    {
+      "output": "backend/dialogue_layer/数据/kb_index/kb_fts.sqlite",
+      "method": "zstd",
+      "sources": [
+        "runtime-assets/kb_fts.sqlite.zst"
+      ]
+    },
+    {
+      "output": "backend/dialogue_layer/数据/kb_index/kb_index.npz",
+      "method": "concat",
+      "sources": [
+        "runtime-assets/kb_index.npz.part000",
+        "runtime-assets/kb_index.npz.part001"
+      ]
+    },
+    {
+      "output": "backend/dialogue_layer/数据/kb_index/kb_records.pkl",
+      "method": "zstd",
+      "sources": [
+        "runtime-assets/kb_records.pkl.zst"
+      ]
+    },
+    {
+      "output": "frontend/ai-interview-front/public/model.tar.gz",
+      "method": "zstd",
+      "sources": [
+        "runtime-assets/model.tar.gz.zst"
+      ]
+    }
+  ],
+  "runtimeCopies": [
+    {
+      "source": "backend/dialogue_layer/web/vendor",
+      "targets": [
+        "frontend/ai-interview-front/public/vendor",
+        "backend/static/vendor"
+      ]
+    },
+    {
+      "source": "frontend/ai-interview-front/public/model.tar.gz",
+      "targets": [
+        "backend/static/model.tar.gz"
+      ]
+    }
+  ],
+  "excludedAssets": [
+    "backend/dialogue_layer/数据/models/",
+    "backend/.hf_cache/",
+    "backend/rag/vector_db/",
+    "backend/rag/数据/*-rag-v2.jsonl",
+    "frontend/ai-interview-front/public/vosk-model-small-cn/",
+    "Git LFS: unavailable on Gitee Community Edition",
+    ".env",
+    "backend/private/",
+    "runtime databases and uploaded media"
+  ]
+}

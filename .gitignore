@@ -45,11 +45,13 @@ backend/static/vendor/
 # AI 对话层（A11）模型缓存：bge-reranker-v2-m3 约 2.14GB，首次运行自动下载
 backend/.hf_cache/
 
-# AI 对话层 RAG 旁路数据（约 224MB，A11_RAG=0 时不加载，可由 P2 的构建产物重取）
-backend/dialogue_layer/数据/rag/
-
-# AI 对话层知识库检索索引（约 123MB，P5 的数据包提供，A11_KB_REC=0 时不加载）
-backend/dialogue_layer/数据/kb_index/
+# AI 对话层 RAG 与 KB 原始大文件是恢复脚本的输出，不入库。
+# 可提交的分片包位于 runtime-assets/，校验清单见 runtime_assets.manifest.json。
+backend/dialogue_layer/数据/rag/*.pkl
+backend/dialogue_layer/数据/rag/*.npz
+backend/dialogue_layer/数据/kb_index/*.pkl
+backend/dialogue_layer/数据/kb_index/*.npz
+backend/dialogue_layer/数据/kb_index/*.sqlite
 
 # 语音转写模型 SenseVoice（约 239MB，P5 的交接包提供，无公开下载路径）
 backend/dialogue_layer/数据/models/
@@ -78,11 +80,14 @@ htmlcov/
 # 参照材料（其他项目的模板文档，仅本地对照用，不入库）
 项目的详细分工及过程.pdf
 
-# 正式前端（Vue 3 + Vite）的依赖与大体积运行资源：代码入库，模型/构建产物不入库
-# public/model.tar.gz、vosk-model-small-cn/、vendor/ 合计约 137MB，由发布包提供
+# 正式前端（Vue 3 + Vite）的依赖与构建产物不入库；model.tar.gz 由恢复脚本生成。
+# vosk-model-small-cn/ 是 model.tar.gz 的解包副本，运行时不需要，不重复入库。
 frontend/ai-interview-front/node_modules/
 frontend/ai-interview-front/dist/
 frontend/ai-interview-front/dist.zip
 frontend/ai-interview-front/public/model.tar.gz
 frontend/ai-interview-front/public/vosk-model-small-cn/
 frontend/ai-interview-front/public/vendor/
+
+# 恢复脚本的完整中间归档不入库，只提交按 Gitee 限额切分后的分片。
+runtime-assets/*.zip

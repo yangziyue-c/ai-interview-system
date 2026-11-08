@@ -31,6 +31,8 @@ class RagSearchIn(BaseModel):
 
 @router.post("/search", response_model=dict, summary="RAG 语义检索（透传知识库服务）")
 async def rag_search(body: RagSearchIn, _: CurrentUser) -> dict:
+    if settings.OFFLINE_MODE:
+        return ok({"available": False, "results": [], "reason": "离线版未启用 RAG"})
     if not settings.RAG_API_URL:
         return ok({"available": False, "results": [], "reason": "未配置 RAG_API_URL"})
     try:

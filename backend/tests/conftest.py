@@ -21,7 +21,7 @@ os.environ["LLM_BASE_URL"] = ""
 # 不禁用会让每个「题库未命中」的用例真去连本机 8003——服务没起时每次白等 1 秒探测超时，
 # 服务起了则拿到真实题目，「空库降级 Mock」这类断言就失去了意义。
 os.environ["RAG_API_URL"] = ""
-# AI 对话层引擎同样隔离：DIALOGUE_ENGINE 默认为空（关闭），这里再显式清一遍，
+# AI 对话层引擎同样隔离：生产默认是 a11 主版本，这里显式切到无 8005 的备用链路，
 # 防止开发机的 .env 开着引擎时用例真去连 8005；URL 一并清掉更稳妥。
 os.environ["DIALOGUE_ENGINE"] = ""
 os.environ["DIALOGUE_ENGINE_URL"] = ""
