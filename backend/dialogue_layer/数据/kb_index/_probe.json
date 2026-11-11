@@ -1,0 +1,457 @@
+[
+  {
+    "岗位": "Java 后端开发工程师",
+    "query": "JVM 内存模型与垃圾回收",
+    "hits": [
+      {
+        "score": 0.7194,
+        "章节标题": "垃圾回收",
+        "来源仓库": "JavaGuide-main",
+        "来源路径": "docs/java/jvm/jvm-interview-questions.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.689,
+        "章节标题": "垃圾收集相关 / 选择垃圾回收器",
+        "来源仓库": "JavaGuide-main",
+        "来源路径": "docs/java/jvm/jvm-parameters-intro.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.6794,
+        "章节标题": "一、运行时数据区域",
+        "来源仓库": "CS-Notes",
+        "来源路径": "notes/Java 虚拟机.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      }
+    ]
+  },
+  {
+    "岗位": "Java 后端开发工程师",
+    "query": "synchronized 与 ReentrantLock 的区别",
+    "hits": [
+      {
+        "score": 0.7809,
+        "章节标题": "ReentrantLock / ⭐️ synchronized 和 ReentrantLock 有什么区别？ / ReentrantLock 比 synchronized 增加了一些高级功能",
+        "来源仓库": "JavaGuide-main",
+        "来源路径": "docs/java/concurrent/java-concurrent-questions-02.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.7785,
+        "章节标题": "ReentrantLock / ⭐️ synchronized 和 ReentrantLock 有什么区别？ / synchronized 依赖于 JVM 而 ReentrantLock 依赖于 API",
+        "来源仓库": "JavaGuide-main",
+        "来源路径": "docs/java/concurrent/java-concurrent-questions-02.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.7749,
+        "章节标题": "ReentrantLock / ⭐️ synchronized 和 ReentrantLock 有什么区别？ / ReentrantLock 比 synchronized 增加了一些高级功能",
+        "来源仓库": "JavaGuide-main",
+        "来源路径": "docs/java/concurrent/java-concurrent-questions-02.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      }
+    ]
+  },
+  {
+    "岗位": "Web 前端开发工程师",
+    "query": "浏览器事件循环与宏任务微任务",
+    "hits": [
+      {
+        "score": 0.662,
+        "章节标题": "二、宏任务与微任务 / 宏任务",
+        "来源仓库": "web-interview",
+        "来源路径": "docs/JavaScript/event_loop.md",
+        "岗位": [
+          "Web 前端开发工程师"
+        ]
+      },
+      {
+        "score": 0.6532,
+        "章节标题": "二、宏任务与微任务",
+        "来源仓库": "web-interview",
+        "来源路径": "docs/JavaScript/event_loop.md",
+        "岗位": [
+          "Web 前端开发工程师"
+        ]
+      },
+      {
+        "score": 0.6251,
+        "章节标题": "二、应用场景",
+        "来源仓库": "web-interview",
+        "来源路径": "docs/JavaScript/event_agent.md",
+        "岗位": [
+          "Web 前端开发工程师"
+        ]
+      }
+    ]
+  },
+  {
+    "岗位": "Web 前端开发工程师",
+    "query": "前端性能优化首屏加载",
+    "hits": [
+      {
+        "score": 0.7169,
+        "章节标题": "",
+        "来源仓库": "web-interview",
+        "来源路径": "docs/vue/first_page_time.md",
+        "岗位": [
+          "Web 前端开发工程师"
+        ]
+      },
+      {
+        "score": 0.711,
+        "章节标题": "二、手段 / 渲染",
+        "来源仓库": "web-interview",
+        "来源路径": "docs/applet/optimization.md",
+        "岗位": [
+          "Web 前端开发工程师"
+        ]
+      },
+      {
+        "score": 0.6979,
+        "章节标题": "三、解决方案 / 开启GZip压缩",
+        "来源仓库": "web-interview",
+        "来源路径": "docs/vue/first_page_time.md",
+        "岗位": [
+          "Web 前端开发工程师"
+        ]
+      }
+    ]
+  },
+  {
+    "岗位": "测试开发工程师",
+    "query": "接口测试用例设计方法",
+    "hits": [
+      {
+        "score": 0.7268,
+        "章节标题": "9-6--给你一个新的接口，你怎么去设计用例-",
+        "来源仓库": "testInterview",
+        "来源路径": "docs/9-6--给你一个新的接口，你怎么去设计用例-.md",
+        "岗位": [
+          "测试开发工程师"
+        ]
+      },
+      {
+        "score": 0.6739,
+        "章节标题": "9-4--接口测试的流程",
+        "来源仓库": "testInterview",
+        "来源路径": "docs/9-4--接口测试的流程.md",
+        "岗位": [
+          "测试开发工程师"
+        ]
+      },
+      {
+        "score": 0.6636,
+        "章节标题": "3-5-用例包含哪些部分，哪些用例设计方法，你一般常用哪些方法-",
+        "来源仓库": "testInterview",
+        "来源路径": "docs/3-5-用例包含哪些部分，哪些用例设计方法，你一般常用哪些方法-.md",
+        "岗位": [
+          "测试开发工程师"
+        ]
+      }
+    ]
+  },
+  {
+    "岗位": "测试开发工程师",
+    "query": "自动化测试框架选型",
+    "hits": [
+      {
+        "score": 0.6443,
+        "章节标题": "11-1-ui自动化怎么测试",
+        "来源仓库": "testInterview",
+        "来源路径": "docs/11-1-ui自动化怎么测试.md",
+        "岗位": [
+          "测试开发工程师"
+        ]
+      },
+      {
+        "score": 0.6366,
+        "章节标题": "13-1-自动化测试使用的那些库",
+        "来源仓库": "testInterview",
+        "来源路径": "docs/13-1-自动化测试使用的那些库.md",
+        "岗位": [
+          "测试开发工程师"
+        ]
+      },
+      {
+        "score": 0.6141,
+        "章节标题": "测试",
+        "来源仓库": "JavaGuide-main",
+        "来源路径": "docs/open-source-project/system-design.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      }
+    ]
+  },
+  {
+    "岗位": "算法工程师",
+    "query": "动态规划解题思路",
+    "hits": [
+      {
+        "score": 0.7667,
+        "章节标题": "",
+        "来源仓库": "fucking-algorithm",
+        "来源路径": "动态规划系列/README.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "Web 前端开发工程师",
+          "算法工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.7584,
+        "章节标题": "",
+        "来源仓库": "fucking-algorithm",
+        "来源路径": "动态规划系列/子序列问题模板.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "Web 前端开发工程师",
+          "算法工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.7463,
+        "章节标题": "思路",
+        "来源仓库": "leetcode",
+        "来源路径": "problems/198.house-robber.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "Web 前端开发工程师",
+          "算法工程师",
+          "系统设计工程师"
+        ]
+      }
+    ]
+  },
+  {
+    "岗位": "算法工程师",
+    "query": "二叉树遍历的非递归实现",
+    "hits": [
+      {
+        "score": 0.7633,
+        "章节标题": "题目地址(94. 二叉树的中序遍历)",
+        "来源仓库": "leetcode",
+        "来源路径": "problems/94.binary-tree-inorder-traversal.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "Web 前端开发工程师",
+          "算法工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.7392,
+        "章节标题": "",
+        "来源仓库": "leetcode-master",
+        "来源路径": "problems/二叉树的迭代遍历.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "Web 前端开发工程师",
+          "算法工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.7208,
+        "章节标题": "非线性结构 / 二叉树",
+        "来源仓库": "leetcode",
+        "来源路径": "thinkings/basic-data-structure.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "Web 前端开发工程师",
+          "算法工程师",
+          "系统设计工程师"
+        ]
+      }
+    ]
+  },
+  {
+    "岗位": "系统设计工程师",
+    "query": "高并发系统限流方案",
+    "hits": [
+      {
+        "score": 0.5909,
+        "章节标题": "为什么要限流？如何限流？ / 常见限流策略对比",
+        "来源仓库": "JavaGuide-main",
+        "来源路径": "docs/ai/llm-basis/llm-api-engineering.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.5842,
+        "章节标题": "工作中的使用 / spring cloud gateway",
+        "来源仓库": "advanced-java",
+        "来源路径": "docs/high-concurrency/how-to-limit-current.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.5808,
+        "章节标题": "为什么要限流？如何限流？ / 限流的四层架构",
+        "来源仓库": "JavaGuide-main",
+        "来源路径": "docs/ai/llm-basis/llm-api-engineering.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      }
+    ]
+  },
+  {
+    "岗位": "系统设计工程师",
+    "query": "缓存穿透与缓存雪崩",
+    "hits": [
+      {
+        "score": 0.7613,
+        "章节标题": "面试开始 / 那你了解缓存穿透和击穿么，可以说说他们跟雪崩的区别么？",
+        "来源仓库": "JavaFamily",
+        "来源路径": "docs/all/缓存/redis/缓存击穿、雪崩、穿透.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.7137,
+        "章节标题": "总结",
+        "来源仓库": "JavaFamily",
+        "来源路径": "docs/all/缓存/redis/缓存击穿、雪崩、穿透.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.7089,
+        "章节标题": "",
+        "来源仓库": "advanced-java",
+        "来源路径": "docs/high-concurrency/redis-caching-avalanche-and-caching-penetration.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      }
+    ]
+  },
+  {
+    "岗位": "(通用)",
+    "query": "自我介绍怎么讲",
+    "hits": [
+      {
+        "score": 0.7085,
+        "章节标题": "提前准备自我介绍",
+        "来源仓库": "JavaGuide-main",
+        "来源路径": "docs/interview-preparation/teach-you-how-to-prepare-for-the-interview-hand-in-hand.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.672,
+        "章节标题": "双方自我介绍",
+        "来源仓库": "JavaGuide-main",
+        "来源路径": "docs/high-quality-technical-articles/interview/the-experience-of-get-offer-from-over-20-big-companies.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.659,
+        "章节标题": "自我介绍范文 / 互动性强、以情动人的范文",
+        "来源仓库": "lht802-blog-Interview",
+        "来源路径": "non-technical-interview-questions.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "Web 前端开发工程师",
+          "测试开发工程师",
+          "算法工程师",
+          "系统设计工程师"
+        ]
+      }
+    ]
+  },
+  {
+    "岗位": "(通用)",
+    "query": "项目难点如何回答",
+    "hits": [
+      {
+        "score": 0.7157,
+        "章节标题": "项目难点怎么讲？",
+        "来源仓库": "JavaGuide-main",
+        "来源路径": "docs/interview-preparation/backend-project-interview-guide.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.7086,
+        "章节标题": "求职经验分享 / 面试准备 / 项目经历",
+        "来源仓库": "JavaGuide-main",
+        "来源路径": "docs/high-quality-technical-articles/interview/my-personal-experience-in-2021.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "测试开发工程师",
+          "系统设计工程师"
+        ]
+      },
+      {
+        "score": 0.6784,
+        "章节标题": "项目经验应该如何写",
+        "来源仓库": "leetcode-master",
+        "来源路径": "problems/前序/程序员简历.md",
+        "岗位": [
+          "Java 后端开发工程师",
+          "Web 前端开发工程师",
+          "算法工程师",
+          "系统设计工程师"
+        ]
+      }
+    ]
+  }
+]

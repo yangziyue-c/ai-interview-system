@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>A11 摄像头姿态测试</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: #f4f6f8;
+    color: #172033;
+    font-family: -apple-system, "Microsoft YaHei", sans-serif;
+  }
+  header {
+    height: 56px;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #172033;
+    color: #fff;
+  }
+  header h1 { margin: 0; font-size: 16px; font-weight: 650; }
+  header a { color: #cbd5e1; font-size: 13px; text-decoration: none; }
+  main {
+    display: grid;
+    grid-template-columns: minmax(420px, 1.5fr) minmax(320px, 1fr);
+    gap: 16px;
+    padding: 16px;
+  }
+  .stage {
+    position: relative;
+    min-height: 520px;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    background: #0f172a;
+    border-radius: 8px;
+  }
+  video, canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  canvas { pointer-events: none; }
+  .panel {
+    padding: 16px;
+    background: #fff;
+    border: 1px solid #dfe5ec;
+    border-radius: 8px;
+  }
+  .controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  button {
+    min-height: 38px;
+    padding: 0 16px;
+    border: 1px solid #c6cfdb;
+    border-radius: 7px;
+    background: #fff;
+    color: #172033;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button.primary {
+    color: #fff;
+    background: #2457d6;
+    border-color: #2457d6;
+  }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #status {
+    min-height: 40px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    border-radius: 6px;
+    background: #eef2f7;
+    color: #475569;
+    font-size: 13px;
+  }
+  .score {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e5eaf0;
+  }
+  .score strong { font-size: 34px; line-height: 1; }
+  .score span { color: #64748b; font-size: 13px; }
+  .metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 14px;
+    margin-top: 14px;
+  }
+  .metric {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0;
+    border-bottom: 1px solid #edf1f5;
+    font-size: 13px;
+  }
+  .metric span:first-child { color: #64748b; }
+  .metric span:last-child { font-variant-numeric: tabular-nums; }
+  .privacy {
+    margin-top: 14px;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .feedback {
+    margin: 12px 0 0;
+    padding-left: 18px;
+    color: #334155;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .feedback:empty { display: none; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; }
+    .stage { min-height: 56vh; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>A11 摄像头姿态测试</h1>
+  <a href="/ui/test_chat.html">返回面试测试页</a>
+</header>
+
+<main>
+  <section class="stage">
+    <video id="video" playsinline muted></video>
+    <canvas id="overlay"></canvas>
+  </section>
+
+  <section class="panel">
+    <div class="controls">
+      <button id="startBtn" class="primary" onclick="startCamera()">开启摄像头</button>
+      <button id="stopBtn" onclick="stopCamera()" disabled>停止</button>
+      <button id="resetBtn" onclick="resetAnalysis()" disabled>重新统计</button>
+    </div>
+    <div id="status">摄像头未开启</div>
+    <div class="score">
+      <strong id="score">--</strong>
+      <span id="confidence">等待姿态数据</span>
+    </div>
+    <div class="metrics">
+      <div class="metric"><span>画面覆盖</span><span id="mPresence">--</span></div>
+      <div class="metric"><span>姿态质量</span><span id="mQuality">--</span></div>
+      <div class="metric"><span>采样时长</span><span id="mDuration">--</span></div>
+      <div class="metric"><span>头部稳定</span><span id="mHead">--</span></div>
+      <div class="metric"><span>头部摆动</span><span id="mHeadSway">--</span></div>
+      <div class="metric"><span>肩线倾斜</span><span id="mShoulder">--</span></div>
+      <div class="metric"><span>肩线漂移</span><span id="mShoulderDelta">--</span></div>
+      <div class="metric"><span>躯干倾斜</span><span id="mTorso">--</span></div>
+      <div class="metric"><span>躯干漂移</span><span id="mTorsoDelta">--</span></div>
+      <div class="metric"><span>身体移动</span><span id="mMotion">--</span></div>
+      <div class="metric"><span>手势活动</span><span id="mGesture">--</span></div>
+      <div class="metric"><span>手势频率</span><span id="mGestureRate">--</span></div>
+      <div class="metric"><span>姿态转换</span><span id="mShifts">--</span></div>
+      <div class="metric"><span>画面稳定</span><span id="mFrame">--</span></div>
+      <div class="metric"><span>有效帧</span><span id="mFrames">0</span></div>
+      <div class="metric"><span>推理帧率</span><span id="mFps">--</span></div>
+      <div class="metric"><span>采集分辨率</span><span id="mResolution">--</span></div>
+    </div>
+    <ul id="feedback" class="feedback"></ul>
+    <div class="privacy">
+      仅请求摄像头，不请求麦克风；视频和关键点不上传。
+    </div>
+  </section>
+</main>
+
+<script src="./vendor/mediapipe/vision_bundle.js"></script>
+<script>
+const { FilesetResolver, PoseLandmarker } = Vision;
+
+const video = document.getElementById("video");
+const overlay = document.getElementById("overlay");
+const ctx = overlay.getContext("2d");
+const statusEl = document.getElementById("status");
+const scoreEl = document.getElementById("score");
+const confidenceEl = document.getElementById("confidence");
+let stream = null;
+let landmarker = null;
+let running = false;
+let lastVideoTime = -1;
+let lastDetectAt = 0;
+let detectTimestamps = [];
+let frames = [];
+let serverAnalysisInFlight = false;
+let lastServerAnalysisAt = 0;
+const MAX_FRAMES = 90;
+const DETECT_INTERVAL_MS = 120;
+const SERVER_ANALYSIS_INTERVAL_MS = 500;
+
+const POINTS = {
+  nose: 0,
+  leftShoulder: 11,
+  rightShoulder: 12,
+  leftElbow: 13,
+  rightElbow: 14,
+  leftWrist: 15,
+  rightWrist: 16,
+  leftHip: 23,
+  rightHip: 24,
+};
+
+function visible(point, threshold = 0.35) {
+  return Number(point?.visibility ?? 1) >= threshold;
+}
+
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function midpoint(a, b) {
+  return {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2};
+}
+
+function angle(a, b, vertical = false) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return Math.abs(vertical
+    ? Math.atan2(dx, dy) * 180 / Math.PI
+    : Math.atan2(dy, dx) * 180 / Math.PI);
+}
+
+function std(values) {
+  if (values.length < 2) return null;
+  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  return Math.sqrt(values.reduce((s, x) => s + (x - avg) ** 2, 0)
+    / values.length);
+}
+
+function mean(values) {
+  return values.length
+    ? values.reduce((a, b) => a + b, 0) / values.length
+    : null;
+}
+
+function median(values) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function medianSmooth(values, windowSize = 5) {
+  if (values.length < 3) return [...values];
+  const radius = Math.max(1, Math.floor(windowSize / 2));
+  return values.map((_, index) => median(values.slice(
+    Math.max(0, index - radius),
+    Math.min(values.length, index + radius + 1),
+  )));
+}
+
+function percentile(values, ratio) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.min(sorted.length - 1,
+    Math.max(0, Math.round((sorted.length - 1) * ratio)));
+  return sorted[index];
+}
+
+function analyze(inputFrames) {
+  const presence = [];
+  const tilts = [];
+  const leans = [];
+  const widths = [];
+  const centers = [];
+  const headX = [];
+  const headY = [];
+  const wristFrames = [];
+  const wristPositions = [];
+  const timestamps = [];
+
+  for (const frame of inputFrames) {
+    const lm = frame.landmarks;
+    const ls = lm[POINTS.leftShoulder];
+    const rs = lm[POINTS.rightShoulder];
+    const lh = lm[POINTS.leftHip];
+    const rh = lm[POINTS.rightHip];
+    const core = visible(ls) && visible(rs);
+    presence.push(core);
+    if (!core) continue;
+
+    const shoulderMid = midpoint(ls, rs);
+    const width = Math.max(1e-6, dist(ls, rs));
+    timestamps.push(Number(frame.timestamp_ms || 0));
+    widths.push(width);
+    tilts.push(angle(ls, rs, false));
+    const hipVisible = visible(lh) && visible(rh);
+    if (hipVisible) {
+      const hipMid = midpoint(lh, rh);
+      leans.push(angle(shoulderMid, hipMid, true));
+      centers.push(midpoint(shoulderMid, hipMid));
+    } else {
+      centers.push({...shoulderMid});
+    }
+
+    const nose = lm[POINTS.nose];
+    if (visible(nose)) {
+      headX.push((nose.x - shoulderMid.x) / width);
+      headY.push((nose.y - shoulderMid.y) / width);
+    } else {
+      headX.push(0);
+      headY.push(0);
+    }
+
+    const frameWrists = {};
+    const wrists = [];
+    for (const [wristIndex, elbowIndex] of [
+      [POINTS.leftWrist, POINTS.leftElbow],
+      [POINTS.rightWrist, POINTS.rightElbow],
+    ]) {
+      const wrist = lm[wristIndex];
+      const elbow = lm[elbowIndex];
+      if (visible(wrist) && visible(elbow)) {
+        wrists.push(dist(wrist, shoulderMid) / width);
+        frameWrists[wristIndex] = {
+          x: (wrist.x - shoulderMid.x) / width,
+          y: (wrist.y - shoulderMid.y) / width,
+        };
+      }
+    }
+    if (wrists.length) {
+      wristFrames.push(wrists.reduce((a, b) => a + b, 0) / wrists.length);
+    }
+    wristPositions.push(frameWrists);
+  }
+
+  if (!centers.length) {
+    return {
+      available: false,
+      score: null,
+      confidence: "low",
+      metrics: {frame_count: inputFrames.length, presence_rate: 0},
+    };
+  }
+
+  const smoothX = medianSmooth(centers.map(point => point.x));
+  const smoothY = medianSmooth(centers.map(point => point.y));
+  const smoothHeadX = medianSmooth(headX);
+  const smoothHeadY = medianSmooth(headY);
+  const smoothWidths = medianSmooth(widths);
+  const baseWidth = median(smoothWidths);
+  const baseCount = Math.max(1, Math.floor(centers.length / 3));
+  const baseCenterX = median(smoothX.slice(0, baseCount));
+  const baseCenterY = median(smoothY.slice(0, baseCount));
+  const motion = [];
+  for (let i = 1; i < smoothX.length; i += 1) {
+    motion.push(Math.hypot(smoothX[i] - smoothX[i - 1],
+      smoothY[i] - smoothY[i - 1]) / Math.max(1e-6, baseWidth));
+  }
+  const headShift = smoothHeadX.map((x, index) =>
+    Math.hypot(x, smoothHeadY[index]));
+  const durationSeconds = timestamps.length > 1
+    ? Math.max(0.001, (timestamps.at(-1) - timestamps[0]) / 1000)
+    : 1;
+  const headSwayRate = timestamps.length > 1
+    ? headShift.slice(1).reduce((sum, value, index) =>
+      sum + Math.abs(value - headShift[index]), 0) / durationSeconds
+    : null;
+  let gestureEvents = 0;
+  const gestureAmplitudes = [];
+  for (let i = 0; i < wristPositions.length; i += 1) {
+    const current = wristPositions[i];
+    if (i > 0) {
+      const previous = wristPositions[i - 1];
+      const movements = [];
+      for (const key of [POINTS.leftWrist, POINTS.rightWrist]) {
+        const a = previous[key];
+        const b = current[key];
+        if (a && b) movements.push(Math.hypot(b.x - a.x, b.y - a.y));
+      }
+      if (movements.length && Math.max(...movements) >= 0.08) {
+        gestureEvents += 1;
+      }
+    }
+    for (const point of Object.values(current)) {
+      gestureAmplitudes.push(point.y);
+    }
+  }
+  let postureShifts = 0;
+  let shifted = false;
+  for (let i = 0; i < smoothX.length; i += 1) {
+    const offset = Math.hypot(smoothX[i] - baseCenterX,
+      smoothY[i] - baseCenterY) / Math.max(1e-6, baseWidth);
+    if (offset >= 0.18 && !shifted) {
+      postureShifts += 1;
+      shifted = true;
+    } else if (offset < 0.10) {
+      shifted = false;
+    }
+  }
+  const headStds = [std(smoothHeadX), std(smoothHeadY)]
+    .filter(x => x !== null);
+  const headStability = headStds.length ? mean(headStds) : null;
+  const presenceRate = presence.filter(Boolean).length
+    / Math.max(1, presence.length);
+  const metrics = {
+    frame_count: inputFrames.length,
+    presence_rate: presenceRate,
+    head_stability: headStability,
+    head_sway_rate: headSwayRate,
+    shoulder_tilt_deg: mean(tilts),
+    torso_lean_deg: mean(leans),
+    upper_body_motion: motion.length ? mean(motion) : null,
+    gesture_activity: std(wristFrames),
+    gesture_rate_per_min: gestureEvents / Math.max(0.001,
+      durationSeconds / 60),
+    gesture_amplitude: percentile(gestureAmplitudes, 0.9),
+    posture_shift_count: postureShifts,
+    framing_stability: std(smoothWidths),
+  };
+
+  let score = 3;
+  score += presenceRate >= 0.9 ? 0.8 : (presenceRate < 0.6 ? -1 : 0);
+  if (headStability !== null) score += headStability <= 0.18 ? 0.5 : -0.4;
+  if (headSwayRate !== null) score += headSwayRate <= 0.12 ? 0.3 : -0.3;
+  score += metrics.shoulder_tilt_deg <= 8 ? 0.4
+    : (metrics.shoulder_tilt_deg > 18 ? -0.6 : 0);
+  if (metrics.torso_lean_deg !== null) {
+    score += metrics.torso_lean_deg <= 10 ? 0.4
+      : (metrics.torso_lean_deg > 25 ? -0.6 : 0);
+  }
+  if (metrics.upper_body_motion !== null) {
+    score += metrics.upper_body_motion >= 0.015
+      && metrics.upper_body_motion <= 0.12 ? 0.3
+      : (metrics.upper_body_motion > 0.25 ? -0.4 : 0);
+  }
+  if (metrics.gesture_activity !== null) {
+    score += metrics.gesture_activity >= 0.08
+      && metrics.gesture_activity <= 0.5 ? 0.2 : -0.1;
+  }
+  if (metrics.gesture_rate_per_min >= 3
+      && metrics.gesture_rate_per_min <= 22) {
+    score += 0.3;
+  } else if (metrics.gesture_rate_per_min > 35) {
+    score -= 0.3;
+  }
+  if (metrics.posture_shift_count > 4) score -= 0.3;
+  score = Math.max(0, Math.min(5, score));
+  const confidence = presenceRate >= 0.85 && centers.length >= 20
+    ? "high"
+    : (presenceRate >= 0.6 && centers.length >= 8 ? "medium" : "low");
+  return {available: true, score, confidence, metrics};
+}
+
+function drawPose(landmarks) {
+  const width = overlay.width;
+  const height = overlay.height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#56d6ff";
+  for (const point of landmarks) {
+    if (!visible(point, 0.35)) continue;
+    ctx.beginPath();
+    ctx.arc(point.x * width, point.y * height, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const pairs = [
+    [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
+    [11, 23], [12, 24], [23, 24],
+  ];
+  ctx.strokeStyle = "#2f8cff";
+  ctx.lineWidth = 3;
+  for (const [a, b] of pairs) {
+    const p = landmarks[a];
+    const q = landmarks[b];
+    if (!visible(p, 0.35) || !visible(q, 0.35)) continue;
+    ctx.beginPath();
+    ctx.moveTo(p.x * width, p.y * height);
+    ctx.lineTo(q.x * width, q.y * height);
+    ctx.stroke();
+  }
+}
+
+function render(result) {
+  scoreEl.textContent = result.score === null
+    ? "--" : result.score.toFixed(1);
+  const qualityLabels = {
+    warming_up: "采样中，至少 3 秒",
+    low_visibility: "画面覆盖不足",
+    no_pose: "未检测到上半身",
+  };
+  confidenceEl.textContent = qualityLabels[result.quality_status] || {
+    high: "高可信", medium: "中可信", low: "低可信",
+  }[result.confidence] || "等待姿态数据";
+  const m = result.metrics || {};
+  document.getElementById("mPresence").textContent =
+    typeof m.presence_rate === "number"
+      ? `${(m.presence_rate * 100).toFixed(0)}%` : "--";
+  document.getElementById("mQuality").textContent =
+    result.quality_status === "ready" ? "可用"
+      : (qualityLabels[result.quality_status] || "--");
+  document.getElementById("mDuration").textContent =
+    typeof m.duration_ms === "number"
+      ? `${(m.duration_ms / 1000).toFixed(1)}s` : "--";
+  document.getElementById("mHead").textContent =
+    typeof m.head_stability === "number"
+      ? m.head_stability.toFixed(3) : "--";
+  document.getElementById("mHeadSway").textContent =
+    typeof m.head_sway_rate === "number"
+      ? m.head_sway_rate.toFixed(3) : "--";
+  document.getElementById("mShoulder").textContent =
+    typeof m.shoulder_tilt_deg === "number"
+      ? `${m.shoulder_tilt_deg.toFixed(1)}°` : "--";
+  document.getElementById("mShoulderDelta").textContent =
+    typeof m.shoulder_tilt_delta_deg === "number"
+      ? `${m.shoulder_tilt_delta_deg.toFixed(1)}°` : "--";
+  document.getElementById("mTorso").textContent =
+    typeof m.torso_lean_deg === "number"
+      ? `${m.torso_lean_deg.toFixed(1)}°` : "--";
+  document.getElementById("mTorsoDelta").textContent =
+    typeof m.torso_lean_delta_deg === "number"
+      ? `${m.torso_lean_delta_deg.toFixed(1)}°` : "--";
+  document.getElementById("mMotion").textContent =
+    typeof m.upper_body_motion === "number"
+      ? m.upper_body_motion.toFixed(3) : "--";
+  document.getElementById("mGesture").textContent =
+    typeof m.gesture_activity === "number"
+      ? m.gesture_activity.toFixed(3) : "--";
+  document.getElementById("mGestureRate").textContent =
+    typeof m.gesture_rate_per_min === "number"
+      ? `${m.gesture_rate_per_min.toFixed(1)}/min` : "--";
+  document.getElementById("mShifts").textContent =
+    typeof m.posture_shift_count === "number"
+      ? `${m.posture_shift_count}` : "--";
+  document.getElementById("mFrame").textContent =
+    typeof m.framing_stability === "number"
+      ? m.framing_stability.toFixed(3) : "--";
+  document.getElementById("mFrames").textContent =
+    m.frame_count ?? 0;
+  const fps = detectTimestamps.length
+    ? 1000 / (detectTimestamps.reduce((sum, value, index) =>
+      index ? sum + (value - detectTimestamps[index - 1]) : 0, 0)
+      / Math.max(1, detectTimestamps.length - 1))
+    : null;
+  document.getElementById("mFps").textContent =
+    Number.isFinite(fps) ? fps.toFixed(1) : "--";
+  const feedback = document.getElementById("feedback");
+  feedback.replaceChildren();
+  for (const message of result.feedback || []) {
+    const item = document.createElement("li");
+    item.textContent = message;
+    feedback.appendChild(item);
+  }
+}
+
+async function analyzeViaServer(inputFrames) {
+  const response = await fetch("/body-language/analyze", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({frames: inputFrames}),
+  });
+  if (!response.ok) {
+    throw new Error(`analysis failed: HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+function scheduleServerAnalysis() {
+  const now = performance.now();
+  if (serverAnalysisInFlight
+      || now - lastServerAnalysisAt < SERVER_ANALYSIS_INTERVAL_MS
+      || !frames.length) {
+    return;
+  }
+  serverAnalysisInFlight = true;
+  lastServerAnalysisAt = now;
+  const snapshot = frames.map(frame => ({
+    timestamp_ms: frame.timestamp_ms,
+    landmarks: frame.landmarks,
+  }));
+  analyzeViaServer(snapshot)
+    .then(result => render(result))
+    .catch(error => {
+      statusEl.textContent = `本地分析服务暂时不可用：${error.message}`;
+    })
+    .finally(() => {
+      serverAnalysisInFlight = false;
+    });
+}
+
+async function createLandmarker() {
+  if (landmarker) return;
+  statusEl.textContent = "正在加载本地姿态模型...";
+  const vision = await FilesetResolver.forVisionTasks(
+    "./vendor/mediapipe/wasm");
+  const modelAssetPath = "./vendor/mediapipe/pose_landmarker_lite.task";
+  try {
+    landmarker = await PoseLandmarker.createFromOptions(vision, {
+      baseOptions: {modelAssetPath, delegate: "GPU"},
+      runningMode: "VIDEO",
+      numPoses: 1,
+      minPoseDetectionConfidence: 0.5,
+      minPosePresenceConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+  } catch (gpuError) {
+    landmarker = await PoseLandmarker.createFromOptions(vision, {
+      baseOptions: {modelAssetPath, delegate: "CPU"},
+      runningMode: "VIDEO",
+      numPoses: 1,
+      minPoseDetectionConfidence: 0.5,
+      minPosePresenceConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+  }
+}
+
+function detectionLoop() {
+  if (!running) return;
+  const now = performance.now();
+  if (video.readyState >= 2
+      && video.currentTime !== lastVideoTime
+      && now - lastDetectAt >= DETECT_INTERVAL_MS) {
+    lastDetectAt = now;
+    lastVideoTime = video.currentTime;
+    const result = landmarker.detectForVideo(video, now);
+    const landmarks = result.landmarks?.[0] || [];
+    if (landmarks.length) {
+      frames.push({timestamp_ms: now, landmarks});
+      if (frames.length > MAX_FRAMES) frames.shift();
+      drawPose(landmarks);
+      scheduleServerAnalysis();
+    }
+    detectTimestamps.push(now);
+    if (detectTimestamps.length > 20) detectTimestamps.shift();
+  }
+  if (video.requestVideoFrameCallback) {
+    video.requestVideoFrameCallback(detectionLoop);
+  } else {
+    requestAnimationFrame(detectionLoop);
+  }
+}
+
+async function startCamera() {
+  document.getElementById("startBtn").disabled = true;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: {ideal: 640},
+        height: {ideal: 360},
+        frameRate: {ideal: 15, max: 20},
+        facingMode: "user",
+      },
+      audio: false,
+    });
+    video.srcObject = stream;
+    await video.play();
+    overlay.width = video.videoWidth || 640;
+    overlay.height = video.videoHeight || 360;
+    document.getElementById("mResolution").textContent =
+      `${overlay.width}×${overlay.height}`;
+    statusEl.textContent = "摄像头已就绪，正在加载本地姿态模型...";
+    await createLandmarker();
+    running = true;
+    statusEl.textContent = "摄像头运行中，仅本地处理";
+    document.getElementById("stopBtn").disabled = false;
+    document.getElementById("resetBtn").disabled = false;
+    detectionLoop();
+  } catch (error) {
+    statusEl.textContent = `无法开启摄像头：${error.message}`;
+    if (stream) {
+      for (const track of stream.getTracks()) track.stop();
+      stream = null;
+    }
+    document.getElementById("startBtn").disabled = false;
+  }
+}
+
+function stopCamera() {
+  running = false;
+  lastVideoTime = -1;
+  lastDetectAt = 0;
+  detectTimestamps = [];
+  if (stream) {
+    for (const track of stream.getTracks()) track.stop();
+    stream = null;
+  }
+  video.srcObject = null;
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  document.getElementById("startBtn").disabled = false;
+  document.getElementById("stopBtn").disabled = true;
+  statusEl.textContent = "摄像头已停止";
+}
+
+function resetAnalysis() {
+  frames = [];
+  lastServerAnalysisAt = 0;
+  render({score: null, confidence: "low", metrics: {frame_count: 0}});
+  statusEl.textContent = running ? "已重置，继续采样" : "摄像头未开启";
+}
+
+window.startCamera = startCamera;
+window.stopCamera = stopCamera;
+window.resetAnalysis = resetAnalysis;
+</script>
+</body>
+</html>

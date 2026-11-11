@@ -1,0 +1,41 @@
+# Web 框架
+fastapi>=0.115.0,<1.0
+uvicorn[standard]>=0.30.0
+
+# 数据库（SQLite 默认开发 + MySQL 正式环境）
+sqlalchemy[asyncio]>=2.0.30,<2.1
+aiosqlite>=0.20.0
+aiomysql>=0.2.0
+
+# 缓存
+redis>=5.0.0
+
+# 配置与校验
+pydantic>=2.8.0
+pydantic-settings>=2.4.0
+
+# 鉴权
+PyJWT>=2.8.0
+bcrypt>=4.1.0
+
+# P2/P3 适配器 HTTP 调用
+httpx>=0.27.0
+
+# P3 评估服务（backend/evaluator 独立 Flask 进程，端口 8002）
+flask>=3.0.0
+flask-cors>=4.0.0
+requests>=2.31.0
+
+# 音频上传
+python-multipart>=0.0.9
+
+# PDF 文本提取（简历导入用；纯 Python 无二进制依赖，BSD-3-Clause）
+# 下限取 6.8：该版本起对 stream /Length 与压缩流加了上限保护（防解压炸弹）
+pypdf>=6.8,<7.0
+
+# （V4 时代的 openpyxl 已随 xlsx 题库流水线一并移除：
+#   导入脚本现读 backend/rag/数据/*-v5.json，全仓库无 openpyxl 引用）
+
+# 测试
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

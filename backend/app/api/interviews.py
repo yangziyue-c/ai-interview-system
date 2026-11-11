@@ -1,0 +1,567 @@
+"""面试接口：开始 / 列表 / 详情 / 提交答案 / 结束
+
+核心流程（状态机 idle → in_progress → finished）：
+1. 开始面试：创建会话 → 生成开场题（第 1 轮）
+2. 提交答案：保存答案 → 未达上限则生成追问（下一轮）→ 达上限自动结束并出报告
+3. 结束面试：手动结束 → 生成评估报告（终态）
+
+两条链路，由 `interviews.engine` 标记，**开场时定死、整场只读**：
+
+- 原链路（engine = ''）：题库策略出题 + P3 评估，7 轮制；
+- 引擎链路（engine = 'a11'）：出题/追问/评分全部委托 AI 对话层（8005），
+  本模块只做镜像落库。题数由引擎决定（10 题），追问不推进题号。
+"""
+import logging
+from datetime import datetime
+
+from fastapi import APIRouter, Query
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+
+from app.adapters import get_dialogue_adapter, get_evaluator_adapter, get_interviewer_adapter
+from app.adapters.ai_dialogue import EngineError, EngineSessionLostError
+from app.adapters.llm import LLMError
+from app.api.deps import CurrentUser, DbSession, get_owned_interview, validate_position
+from app.config import settings
+from app.core.engine_report import build_engine_meta, build_engine_report
+from app.core.exceptions import (
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
+from app.core.sample_answer import generate_sample_answer
+from app.core.state_machine import InterviewStatus, StateMachine
+from app.models import Interview, Position, QARecord, Question, Report, SampleAnswer
+from app.schemas.interview import (
+    AnswerRequest,
+    FinishInterviewOut,
+    InterviewDetailOut,
+    InterviewListItemOut,
+    InterviewOut,
+    NextQuestionOut,
+    QAOut,
+    StartInterviewOut,
+    StartInterviewRequest,
+)
+from app.schemas.report import report_out
+from app.utils.response import ok
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+# 引擎链路标记（interviews.engine 的取值）；空串 = 原链路
+ENGINE_A11 = "a11"
+
+
+def _engine_http_error(exc: EngineError) -> ServiceUnavailableError:
+    """引擎异常 → 对外错误。
+
+    引擎模式下失败就明确报错，**不静默回落原链路**：半场之后悄悄换一套口径
+    出分，是最难查的一类问题。要回原链路，显式把 DIALOGUE_ENGINE 置空。
+    """
+    return ServiceUnavailableError(f"AI 对话层不可用：{exc}")
+
+
+async def _require_engine_ready() -> None:
+    """建会话前的就绪门禁：先探测再建，别留下一个跑不动的 in_progress 会话"""
+    adapter = get_dialogue_adapter()
+    if await adapter.is_ready():
+        return
+    raise ServiceUnavailableError(
+        f"AI 对话层未就绪（{await adapter.unavailable_reason()}）。"
+        "请稍后重试，或在 backend/.env 把 DIALOGUE_ENGINE 置空以走原链路。"
+    )
+
+
+# 引擎会话失效时的对外提示。写死成一个常量，三处出口（答题 / 主动结束 / 自动结束）
+# 用同一句话——考生不该因为从哪条路撞上而看到不同的说法。
+ENGINE_SESSION_LOST_MESSAGE = (
+    "本场面试在 AI 对话层已失效：该服务的会话存在内存里，它重启之后进行中的会话就全没了。"
+    "本场已为你结束，请重新开始一场。"
+)
+
+
+async def _abandon_lost_engine_session(db: DbSession, interview: Interview) -> None:
+    """引擎侧会话丢了：把本场收尾，不让它卡成孤儿
+
+    会话一丢，本场在本项目侧会同时撞上两堵墙：继续答题是 404、主动结束也是 404
+    （两条路都要先找到会话），而「同一用户同时只能有一场进行中」又挡着新开一场
+    ——考生就此被困住，除非有人手工改库。
+
+    所以这里主动把状态收到 finished。**报告是生成不出来的**：评分得由引擎做，
+    会话没了就做不了，本项目也不会拿 P3 的评估结果去顶（那等于半场换一套口径，
+    正是这个项目一贯要避免的事）。收尾只是把路让开。
+    """
+    if interview.status == InterviewStatus.IN_PROGRESS.value:
+        StateMachine.transition(interview, InterviewStatus.FINISHED)
+        interview.finished_at = datetime.now()
+        await db.commit()
+
+
+async def _start_engine_interview(interview: Interview, resume_text: str = "") -> str:
+    """引擎链路开场：建会话 + 取第一题，返回题面。
+
+    resume_text 非空时切引擎的简历模式（考官 prompt 与开场白都会用到它）。
+    失败抛 503：此时考生还没答过任何东西，整场建不起来是干净的。
+    """
+    adapter = get_dialogue_adapter()
+    try:
+        session = await adapter.start(interview.position, resume_text=resume_text)
+        session_id = str(session.get("session_id") or "")
+        if not session_id:
+            raise EngineError("建会话未返回 session_id")
+        first = await adapter.next_question(session_id)
+    except EngineError as exc:
+        raise _engine_http_error(exc) from exc
+    if first.get("finished") or not first.get("question"):
+        raise ServiceUnavailableError("AI 对话层的题库没有可用题目")
+    interview.engine = ENGINE_A11
+    interview.engine_session_id = session_id
+    return str(first["question"])
+
+
+async def _evaluate_via_engine(
+    interview: Interview, qa_list: list[dict]
+) -> tuple[dict, dict, dict | None, dict | None]:
+    """引擎链路出报告：调 /finish，再换算成本项目 reports 口径
+
+    返回 (报告数据, 引擎明细, 成长档案摘要, 复盘清单)：明细只进 reports.engine_meta、
+    摘要只进 reports.digest、清单只进 reports.review。
+    """
+    try:
+        payload = await get_dialogue_adapter().finish(interview.engine_session_id or "")
+    except EngineSessionLostError:
+        # 会话失效不在这里处理：它要的是「收尾本场」而非「报一句不可用」，
+        # 交给 _finish_interview（那边能拿到 db）。这里放行，不做转换。
+        raise
+    except EngineError as exc:
+        raise _engine_http_error(exc) from exc
+    # digest / review 为 null 表示引擎侧关掉了对应功能（A11_GROWTH=0 / A11_REVIEW=0），
+    # 不是「有内容但是空的」——两者混同会让前端把「没开」画成一张空卡片。
+    digest = payload.get("digest")
+    review = payload.get("review")
+    return (
+        build_engine_report(interview.position, qa_list, payload),
+        build_engine_meta(payload),
+        digest if isinstance(digest, dict) else None,
+        review if isinstance(review, dict) else None,
+    )
+
+
+async def _advance_engine(
+    db: DbSession, interview: Interview, current_qa: QARecord, speech: dict | None = None
+) -> dict:
+    """引擎链路：把这次作答交给 /chat，再按它的指令决定下一步。
+
+    引擎的「一次作答」与「一道题」不是一回事：一次作答可能触发追问（题号不推进），
+    也可能收尾（去取下一题）。追问原文只记进 engine_turns，qa_records.question
+    始终保持题库原题面——学习计划与评分素材注入都靠按题干反查题库。
+
+    engine_turns 每条同时记下考生这次说的（answer/audio_url）：answer 列会被后续
+    追问覆盖、只留最后一次，而断点续答要按序重建整段对话，两头都得在。
+
+    speech（可选）：语音作答的表达读数，原样转给引擎（报告里算语速/停顿/填充词）。
+    """
+    adapter = get_dialogue_adapter()
+    try:
+        result = await adapter.answer(
+            interview.engine_session_id or "", current_qa.answer or "", speech=speech
+        )
+    except EngineSessionLostError as exc:
+        # 引擎重启过，会话没了：本场答不下去，收尾并明确告知（先于 EngineError 捕获）
+        await _abandon_lost_engine_session(db, interview)
+        raise ConflictError(ENGINE_SESSION_LOST_MESSAGE) from exc
+    except EngineError as exc:
+        raise _engine_http_error(exc) from exc
+
+    # done 事件里带着本轮判档（L1/L2/L3/degrade/swap）与判档是否成功。
+    # 原先只取 action/follow_up，报告页就无从判断「这道题答到什么程度」；
+    # judge_band 为 None = LLM 没判出来，不是「判成降级」。
+    done = result.get("done") or {}
+    current_qa.engine_turns = list(current_qa.engine_turns or []) + [
+        {
+            "answer": current_qa.answer,
+            "audio_url": current_qa.audio_url,
+            "reply": result["reply"],
+            "action": result.get("action"),
+            "follow_up": result["follow_up"],
+            "swapped": result.get("swapped"),
+            "judge_band": done.get("judge_band"),
+            "judge_ok": done.get("judge_ok"),
+        }
+    ]
+
+    if result.get("swapped"):
+        # 整轮作废（引擎口径：不占题号、不进评分、不进走势）。镜像落库同步作废
+        # 这一行；新题复用同一题号——引擎换题后 q_index 同样复用，行号因此不冲突。
+        # 注意判据是 swapped 而不是 action：本场名额用尽时引擎仍会说 swap，
+        # 但那一轮照常评分（真跑实测 15 次 judge_swap 里只有 4 次真换掉）。
+        await db.delete(current_qa)
+        await db.flush()
+
+    if result["follow_up"]:
+        # 同一题继续追问：题号不推进，面试官这句话就是前端要展示的下一条
+        await db.commit()
+        await db.refresh(interview)
+        return ok(
+            NextQuestionOut(
+                finished=False,
+                interview=InterviewOut.model_validate(interview),
+                next_question=result["reply"],
+                report=None,
+            ).model_dump()
+        )
+
+    try:
+        nxt = await adapter.next_question(interview.engine_session_id or "")
+    except EngineError as exc:
+        raise _engine_http_error(exc) from exc
+
+    if nxt.get("finished"):
+        report = await _finish_interview(db, interview)
+        await db.refresh(interview)
+        return ok(
+            NextQuestionOut(
+                finished=True,
+                interview=InterviewOut.model_validate(interview),
+                next_question=None,
+                report=report_out(report, interview, interview.qa_records),
+            ).model_dump(),
+            "面试已完成",
+        )
+
+    question = str(nxt.get("question") or "")
+    round_no = int(nxt.get("q_index") or (interview.current_round + 1))
+    interview.current_round = round_no
+    db.add(QARecord(interview_id=interview.id, round=round_no, question=question))
+    await db.commit()
+    await db.refresh(interview)
+    return ok(
+        NextQuestionOut(
+            finished=False,
+            interview=InterviewOut.model_validate(interview),
+            next_question=question,
+            report=None,
+        ).model_dump()
+    )
+
+
+def _build_history(qa_records: list[QARecord]) -> list[dict]:
+    """把问答记录转换为 P2 需要的对话历史格式"""
+    history: list[dict] = []
+    for qa in sorted(qa_records, key=lambda r: r.round):
+        history.append({"role": "interviewer", "content": qa.question})
+        if qa.answer is not None:
+            history.append({"role": "candidate", "content": qa.answer})
+    return history
+
+
+async def _finish_interview(db: DbSession, interview: Interview) -> Report:
+    """结束面试：状态转换 + 生成报告 + 持久化
+
+    两条链路的报告来源不同（原链路走 P3 适配器、引擎链路走对话层 /finish），
+    但落库形状相同——成长曲线、报告页、分享都不需要知道分数从哪来。
+    """
+    StateMachine.transition(interview, InterviewStatus.FINISHED)
+    interview.finished_at = datetime.now()
+
+    # 只把有回答的记录交给评估方
+    answered = [qa for qa in interview.qa_records if (qa.answer or "").strip()]
+    if not answered:
+        raise BadRequestError("没有任何有效回答，无法生成报告")
+
+    qa_list = [
+        {"round": qa.round, "question": qa.question, "answer": qa.answer, "audio_url": qa.audio_url}
+        for qa in answered
+    ]
+    engine_meta: dict | None = None
+    digest: dict | None = None
+    review: dict | None = None
+    if interview.engine == ENGINE_A11:
+        try:
+            data, engine_meta, digest, review = await _evaluate_via_engine(interview, qa_list)
+        except EngineSessionLostError as exc:
+            # 会话没了 → 报告出不来。但这一场必须收尾：状态转换已经在上面做过，
+            # 这里 commit 一下把它落定，否则请求回滚会让本场又卡回 in_progress。
+            await db.commit()
+            raise ConflictError(ENGINE_SESSION_LOST_MESSAGE) from exc
+    else:
+        # 5 维契约由评估适配器归一化（缺失字段在适配器层补齐），这里直接消费
+        data = await get_evaluator_adapter().evaluate(interview.position, qa_list)
+
+    report = Report(
+        interview_id=interview.id,
+        total_score=float(data["total_score"]),
+        tech_score=float(data["tech_score"]),
+        logic_score=float(data["logic_score"]),
+        expression_score=float(data["expression_score"]),
+        adaptability_score=float(data["adaptability_score"]),
+        match_score=float(data["match_score"]),
+        summary=str(data.get("summary") or ""),
+        strengths=list(data.get("strengths") or []),
+        weaknesses=list(data.get("weaknesses") or []),
+        suggestions=list(data.get("suggestions") or []),
+        engine_meta=engine_meta,
+        digest=digest,
+        review=review,
+    )
+    db.add(report)
+    await db.commit()
+    await db.refresh(report)
+    return report
+
+
+@router.post("", response_model=dict, summary="开始一场模拟面试")
+async def start_interview(req: StartInterviewRequest, user: CurrentUser, db: DbSession) -> dict:
+    await validate_position(db, req.position)
+
+    # 同一用户同时只能有一场进行中的面试
+    ongoing = await db.scalar(
+        select(Interview).where(
+            Interview.user_id == user.id,
+            Interview.status == InterviewStatus.IN_PROGRESS.value,
+        )
+    )
+    if ongoing is not None:
+        raise ConflictError("你有一场进行中的面试，请先完成或结束它")
+
+    if settings.engine_enabled:
+        # 就绪门禁放在建会话之前：否则会留下一个 in_progress 却跑不动的空会话
+        await _require_engine_ready()
+
+    interview = Interview(user_id=user.id, position=req.position, status=InterviewStatus.IDLE.value)
+    db.add(interview)
+    await db.flush()  # 拿到 interview.id 供 Mock 选题使用
+
+    StateMachine.transition(interview, InterviewStatus.IN_PROGRESS)
+    interview.started_at = datetime.now()
+    interview.current_round = 1
+
+    if settings.engine_enabled:
+        # 引擎链路：链路标记与引擎会话 ID 在这里写入，整场不再改变
+        # 简历模式只有引擎链路认（resume_text 非空 → 引擎的 resume 档）；
+        # 原链路传了会被忽略——那一条的出题只看岗位与轮次，不看简历。
+        question = await _start_engine_interview(interview, req.resume_text or "")
+    else:
+        question = await get_interviewer_adapter().generate_question(
+            position=req.position,
+            round_no=1,
+            history=[],
+            interview_id=interview.id,
+            is_follow_up=False,
+        )
+    db.add(QARecord(interview_id=interview.id, round=1, question=question))
+    await db.commit()
+    await db.refresh(interview)
+
+    return ok(
+        StartInterviewOut(
+            interview=InterviewOut.model_validate(interview), question=question
+        ).model_dump(),
+        "面试已开始",
+    )
+
+
+@router.get("", response_model=dict, summary="我的面试历史列表（按时间倒序，附综合得分）")
+async def list_interviews(
+    user: CurrentUser,
+    db: DbSession,
+    position: str | None = Query(default=None, description="按岗位筛选（不传=全部岗位）"),
+) -> dict:
+    conditions = [Interview.user_id == user.id]
+    if position:
+        # 岗位是动态集合（positions 表），非法值不报错、返回空列表即可
+        conditions.append(Interview.position == position)
+
+    # 左连报告表：已结束的面试附带 total_score，进行中/未出报告的为 null
+    result = await db.execute(
+        select(Interview, Report.total_score)
+        .outerjoin(Report, Report.interview_id == Interview.id)
+        .where(*conditions)
+        .order_by(Interview.created_at.desc())
+    )
+    items = []
+    for interview, total_score in result.all():
+        item = InterviewListItemOut.model_validate(interview)
+        item.total_score = total_score
+        items.append(item)
+    return ok([i.model_dump() for i in items])
+
+
+@router.get("/{interview_id}", response_model=dict, summary="面试详情（含全部问答）")
+async def get_interview(interview_id: int, user: CurrentUser, db: DbSession) -> dict:
+    interview = await get_owned_interview(interview_id, user, db)
+    detail = InterviewDetailOut.model_validate(interview)
+    return ok(detail.model_dump())
+
+
+def _sample_answer_payload(record: SampleAnswer, *, cached: bool) -> dict:
+    return {
+        "available": True,
+        "cached": cached,
+        "content": record.content,
+        "question_no": record.question_no,
+        "model": record.model,
+        "notice": None,
+    }
+
+
+@router.post(
+    "/{interview_id}/qa/{qa_id}/sample-answer",
+    response_model=dict,
+    summary="查看示范作答（题库题，大模型生成并缓存）",
+)
+async def get_sample_answer(
+    interview_id: int, qa_id: int, user: CurrentUser, db: DbSession
+) -> dict:
+    """按问答记录取一份示范作答
+
+    只有题库里的题才生成：题干能反查到 questions 行，才有基础/进阶得分点与
+    校准锚点作为依据；追问与现场生成题没有素材，返回 available=false，而不是
+    让模型凭空写一份。
+
+    首次调用生成并落库（qa_record 一对一），之后命中缓存秒开。大模型未配置
+    或调用失败返回 503，不返回空内容——空弹窗比一次明确报错难查得多。
+    """
+    interview = await get_owned_interview(interview_id, user, db)
+    if interview.status != InterviewStatus.FINISHED.value:
+        raise ConflictError("面试尚未结束，暂不能查看示范作答")
+    qa = next((record for record in interview.qa_records if record.id == qa_id), None)
+    if qa is None:
+        raise NotFoundError("问答记录不存在")
+
+    cached = await db.scalar(select(SampleAnswer).where(SampleAnswer.qa_record_id == qa_id))
+    if cached is not None:
+        return ok(_sample_answer_payload(cached, cached=True))
+
+    stem = (qa.question or "").strip()
+    question = await db.scalar(
+        select(Question).where(
+            Question.position_code == interview.position, Question.question == stem
+        )
+    )
+    if question is None:
+        return ok(
+            {
+                "available": False,
+                "cached": False,
+                "content": None,
+                "question_no": None,
+                "model": None,
+                "notice": "这道题不在题库中（可能是追问或现场生成题），没有得分点素材，无法生成示范作答。",
+            }
+        )
+
+    position_name = await db.scalar(
+        select(Position.name).where(Position.code == interview.position)
+    )
+    try:
+        content = await generate_sample_answer(
+            position_label=position_name or interview.position,
+            question=stem,
+            candidate_answer=qa.answer or "",
+            basic_points=question.basic_score_points,
+            advanced_points=question.advanced_score_points,
+            calibration_anchor=question.calibration_anchor,
+        )
+    except LLMError as exc:
+        raise ServiceUnavailableError(str(exc)) from exc
+
+    record = SampleAnswer(
+        qa_record_id=qa_id,
+        question_no=question.question_no,
+        content=content,
+        model=settings.LLM_MODEL,
+    )
+    db.add(record)
+    try:
+        await db.commit()
+    except IntegrityError:
+        # 并发重复点击：另一请求先落库了，回滚后直接返回它生成的那份
+        await db.rollback()
+        cached = await db.scalar(
+            select(SampleAnswer).where(SampleAnswer.qa_record_id == qa_id)
+        )
+        if cached is None:
+            raise
+        return ok(_sample_answer_payload(cached, cached=True))
+    await db.refresh(record)
+    return ok(_sample_answer_payload(record, cached=False), "示范作答已生成")
+
+
+@router.post("/{interview_id}/answers", response_model=dict, summary="提交答案并获取下一题")
+async def submit_answer(interview_id: int, req: AnswerRequest, user: CurrentUser, db: DbSession) -> dict:
+    interview = await get_owned_interview(interview_id, user, db)
+    StateMachine.require(interview, InterviewStatus.IN_PROGRESS)
+
+    # 定位当前轮次的问答记录并写入答案
+    current_qa = next(
+        (qa for qa in interview.qa_records if qa.round == interview.current_round), None
+    )
+    if current_qa is None:
+        logger.error("面试 %s 第 %s 轮问答记录缺失", interview.id, interview.current_round)
+        raise ConflictError("面试数据异常，请重新开始一场面试")
+    current_qa.answer = req.answer
+    current_qa.audio_url = req.audio_url
+    # 语音读数整条落库：引擎链路会自己消费，原链路则只有这里存下来才能进
+    # 报告页的「表达与表现分析」。不传 = 文字作答，保持 NULL。
+    current_qa.speech = req.speech
+
+    if interview.engine == ENGINE_A11:
+        # 引擎链路：下一步由对话层的 done 决定（追问 / 下一题 / 收尾）
+        return await _advance_engine(db, interview, current_qa, speech=req.speech)
+
+    # ---- 以下为原链路（题库策略 + P3），逻辑未变 ----
+
+    # 已答完最后一轮 → 自动结束并生成报告
+    if interview.current_round >= settings.total_rounds:
+        report = await _finish_interview(db, interview)
+        await db.refresh(interview)
+        return ok(
+            NextQuestionOut(
+                finished=True,
+                interview=InterviewOut.model_validate(interview),
+                next_question=None,
+                report=report_out(report, interview, interview.qa_records),
+            ).model_dump(),
+            "面试已完成",
+        )
+
+    # 生成下一轮追问
+    interview.current_round += 1
+    next_question = await get_interviewer_adapter().generate_question(
+        position=interview.position,
+        round_no=interview.current_round,
+        history=_build_history(interview.qa_records),
+        interview_id=interview.id,
+        is_follow_up=True,
+    )
+    db.add(QARecord(interview_id=interview.id, round=interview.current_round, question=next_question))
+    await db.commit()
+    await db.refresh(interview)
+
+    return ok(
+        NextQuestionOut(
+            finished=False,
+            interview=InterviewOut.model_validate(interview),
+            next_question=next_question,
+            report=None,
+        ).model_dump()
+    )
+
+
+@router.post("/{interview_id}/finish", response_model=dict, summary="主动结束面试并生成报告")
+async def finish_interview(interview_id: int, user: CurrentUser, db: DbSession) -> dict:
+    interview = await get_owned_interview(interview_id, user, db)
+    StateMachine.require(interview, InterviewStatus.IN_PROGRESS)
+
+    report = await _finish_interview(db, interview)
+    await db.refresh(interview)
+    return ok(
+        FinishInterviewOut(
+            interview=InterviewOut.model_validate(interview),
+            report=report_out(report, interview, interview.qa_records),
+        ).model_dump(),
+        "面试已结束",
+    )

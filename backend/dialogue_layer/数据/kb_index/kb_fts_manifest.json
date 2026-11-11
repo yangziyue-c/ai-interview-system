@@ -1,0 +1,6 @@
+{
+  "kb_records": "D:\\A11-Data\\kb_index\\kb_records.pkl",
+  "output": "D:\\A11-Data\\kb_index\\kb_fts.sqlite",
+  "n": 20396,
+  "elapsed_sec": 3.0
+}

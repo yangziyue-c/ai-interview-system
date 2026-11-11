@@ -1,0 +1,11 @@
+# 8003 ChromaDB RAG service
+# Python 3.12 recommended
+
+torch
+sentence-transformers
+chromadb==1.5.9
+fastapi
+uvicorn
+pydantic
+numpy
+

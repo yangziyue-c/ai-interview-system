@@ -1,0 +1,1 @@
+var e={backend:`server`,frontend:`monitor`,test_engineer:`bug`,algorithm:`brain`,system_design:`network`},t=t=>e[t]||`file`;export{t};

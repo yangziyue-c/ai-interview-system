@@ -1,0 +1,229 @@
+# AI 模拟面试与能力提升系统
+
+面向计算机专业学生的 AI 模拟面试训练系统，覆盖 5 个技术岗位：后端开发、前端开发、
+测试开发、算法工程师、系统设计工程师：
+
+- **岗位化面试对话**：题库策略出题（V5 知识库已入库 5012 题 / 5 岗位）。开场热身/核心考察/深度压轴
+  三阶段 + 锚点追问链（L1→L2→L3→降级引导，按考生回答质量动态分流）动态追问，支持语音/文本
+- **五维评估报告**：技术水平、逻辑思维、沟通表达、应变能力、岗位匹配度
+- **能力成长曲线**：历史面试得分趋势可视化，可按岗位拆分查看
+- **学习资源与练习计划**：按面试考察过的知识点给出题库自带的学习建议原文与同知识点的
+  配套练习题，并汇总练习时长；单场（报告页）与最近多场聚合（个人中心）共用一个接口
+- **报告分享与问答回顾**：报告可生成限时分享链接（对方免登录查看）、逐轮问答记录可回顾；
+  个人资料（昵称/学号/目标岗位）与头像可编辑
+
+> 仓库地址：https://github.com/yangziyue-c/ai-interview-system
+
+## 技术栈
+
+| 层 | 技术 |
+| :--- | :--- |
+| Web 框架 | Python FastAPI（异步） |
+| ORM | SQLAlchemy 2.0（异步） |
+| 数据库 | MySQL（默认开发环境用 SQLite 零配置启动，`.env` 一键切换） |
+| 缓存 | Redis（未配置时自动降级为进程内缓存） |
+| 鉴权 | JWT（PyJWT + bcrypt） |
+| 前端 | 独立仓库目录，构建产物由后端挂载（同端口，无跨域） |
+
+## 运行版本
+
+系统保留两档部署配置，正式实验、演示和评测统一使用主版本：
+
+| 版本 | 配置 | 行为 |
+| :--- | :--- | :--- |
+| **主版本（默认）** | `DIALOGUE_ENGINE=a11` | 启用 8005，出题、追问、五维评分走完整链路，一场 10 题 |
+| 备用版本 | `DIALOGUE_ENGINE=` | 不启动 8005，回到题库策略与 P3 评估的 7 轮备用链路 |
+
+只有 8005 不可用或需要离线降级时才切换到备用版本。两种版本的结果不能混合统计；
+未配置 `DIALOGUE_ENGINE` 时按主版本启动。
+
+### 无大模型离线版
+
+双击 `backend/start_offline.bat`，或以 `python start.py --offline` 启动。离线版只启动
+主后端与本地前端，不调用大模型、RAG、8005、外部评估服务、在线语音和成长档案接口。
+
+- 出题使用本地 V5 题库；题库为空时首次启动自动导入。
+- 评分使用确定性规则报告，不发送任何回答到外部服务。
+- 支持注册、选题、文字面试、报告和问答历史。
+- 语音转写、面试官朗读、摄像头体态分析和成长档案在离线版中明确禁用。
+
+## 目录结构
+
+```
+project/
+├── backend/                  # 后端（P1 负责）
+│   ├── app/
+│   │   ├── main.py           # FastAPI 入口（CORS *、静态挂载、全局异常处理）
+│   │   ├── config.py         # 配置（读取 .env）
+│   │   ├── database.py       # SQLAlchemy 异步引擎
+│   │   ├── redis_client.py   # Redis/内存缓存双实现
+│   │   ├── core/             # 异常体系、JWT 鉴权、面试状态机、评估权重、上传规则
+│   │   ├── models/           # 用户/面试/问答/报告/分享/岗位/题库 七张表（含受控词表常量）
+│   │   ├── schemas/          # Pydantic 请求响应模型
+│   │   ├── adapters/         # 出题/评估适配器（数据源链 + 超时降级）
+│   │   ├── api/              # 认证/面试/报告/分享/题库/上传 路由
+│   │   └── utils/            # 统一响应格式
+│   ├── interviewer_new/      # 面试官出题算法（P2，V5 版；旧 interviewer/ 已冻结留档）
+│   ├── evaluator_new/        # 评估服务（P3，增强版：按题评分；旧 evaluator/ 留档）
+│   ├── rag/                  # RAG 语义检索服务（P5 交付 + P1 适配，端口 8003）
+│   ├── scripts/              # 题库导入（import_question_bank.py）+ 面试流程仿真（simulate_interview.py）
+│   ├── static/               # 前端 dist 挂载目录（P4 构建产物放这里）
+│   ├── uploads/              # 面试录音与头像（公开静态挂载，勿放隐私文件）
+│   ├── private/resumes/      # 简历原件私有目录（不在静态挂载内，仅鉴权接口可读）
+│   ├── tests/                # 全流程回归测试（151 用例）
+│   ├── requirements.txt
+│   ├── .env.example          # 环境变量模板
+│   └── start.bat             # Windows 一键启动（自动拉起 RAG + 评估 + 演示前端 + 主后端）
+├── frontend/                 # 正式前端（P4 负责，构建产物拷 backend/static/）
+├── frontend_test/            # 演示前端（P1，零依赖纯 HTML/JS，start.bat 自动拉起到 5273）
+├── docs/
+│   ├── API.md                # 接口文档（唯一权威）
+│   ├── DATABASE.md           # 数据库设计文档
+│   ├── DEPLOY.md             # 内网穿透部署说明
+│   ├── COLLABORATION.md      # Git 协作指南
+│   ├── submission/           # 竞赛提交材料分册（概要介绍 / 简介 PPT / 详细方案，按模块拆分）
+│   └── reports/              # 各成员对接文档 REPORT_TO_P2~P5
+└── 评估维度.csv               # 五维评分权重定稿（机器校验与代码一致）
+```
+
+## 快速开始（Windows）
+
+首次克隆后，在仓库根目录运行
+`powershell -ExecutionPolicy Bypass -File tools/restore-runtime-assets.ps1`。
+RAG、KB 索引和浏览器 Vosk 模型经过压缩与分片后随普通 Git 保存，脚本会校验并
+还原为运行时文件。资源版本、校验值和排除项见 `docs/RUNTIME_ASSETS.md`。
+
+**方式一：一键启动（推荐）**
+
+双击 `backend/start.bat`：
+1. 自动检测/创建 conda 环境 `ai_interview`（Python 3.12）
+2. 自动安装依赖（清华镜像源）
+3. 自动生成 `.env`
+4. 启动演示前端（frontend_test/ → 5273 端口）+ P3 评估服务（8002）+ 主后端（8001）
+5. 服务就绪后打印访问指引（本机 + 局域网地址与各自用途）；Ctrl+C 一并退出三个服务
+
+> 演示前端端口 5273 特意避开了 5173（P4 联调用的 Vite dev 端口），两边互不冲突。
+
+**方式二：手动启动**
+
+```bat
+conda create -n ai_interview python=3.12 -y
+conda activate ai_interview
+cd backend
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
+```
+
+启动后（端口约定：8000 被本机 Godot AI MCP 占用，勿改回）：
+
+| 地址 | 说明 |
+| :--- | :--- |
+| http://localhost:5273 | **演示前端**：注册登录 / 模拟面试 / 评估报告 / 个人中心 |
+| http://localhost:8001/docs | Swagger 接口文档（可直接在线调试） |
+| http://localhost:8001/api/v1/health | 健康检查 |
+| http://localhost:8001 | 正式前端（P4 构建产物放入 `backend/static/` 后同端口访问） |
+
+### 故障排查：双击 start.bat 报乱码或「xxx 不是内部或外部命令」
+
+这是文件行尾损坏导致的（cmd 要求 CRLF 行尾）。在 `backend` 目录打开 PowerShell，执行：
+
+```powershell
+$c = [IO.File]::ReadAllText('start.bat')
+$c = $c -replace "`r?`n", "`r`n"
+[IO.File]::WriteAllText('start.bat', $c, (New-Object Text.UTF8Encoding($false)))
+```
+
+然后重新双击 start.bat。若问题依旧，请到 GitHub 清除浏览器缓存后重新下载仓库 zip（旧 zip 可能被浏览器/下载器缓存）。
+
+## 切换数据库与缓存
+
+编辑 `backend/.env`：
+
+```ini
+# 默认 SQLite（零配置，演示/开发推荐）
+DATABASE_URL=sqlite+aiosqlite:///./interview.db
+
+# 切换 MySQL（先在 MySQL 中执行建库）：
+#   CREATE DATABASE interview_db DEFAULT CHARACTER SET utf8mb4;
+# DATABASE_URL=mysql+aiomysql://root:你的密码@127.0.0.1:3306/interview_db
+
+# Redis：留空 = 进程内缓存；配置后自动启用
+# REDIS_URL=redis://127.0.0.1:6379/0
+```
+
+## 核心设计
+
+### 面试状态机
+
+```
+idle → in_progress → finished（终态）
+```
+
+- 开始面试：生成开场题（第 1 轮）
+- 提交答案：保存 → 未达上限生成追问 → 达上限自动结束并出报告
+- 轮次上限 = 1 道开场题 + `MAX_FOLLOW_UP_ROUNDS`（默认 6）轮追问，共 7 题
+- 非法状态操作统一返回 `409`
+
+### 统一响应格式
+
+```json
+{ "code": 0, "message": "ok", "data": { } }
+```
+
+错误码：`0` 成功；`400xx` 参数错误；`401xx` 未认证；`403xx` 无权限；`404xx` 不存在；`409xx` 状态冲突；`500xx` 内部错误。全局异常兜底，错误响应同样保持该格式。
+
+### 面试出题：题库策略优先（backend/interviewer_new/）
+
+出题数据源链（每级失败自动降级，末级为内置 Mock，不依赖外部服务）：
+
+```
+题库策略（questions 表 5012 题 / 5 岗位）> RAG 语义检索（8003）> AI_INTERVIEWER_URL（外部扩展位）> LLM 直连 > 内置 Mock
+```
+
+- P2 的面试官算法已落地在 `backend/interviewer_new/question_bank.py`：
+  开场热身/核心考察/深度压轴三阶段选题 + 追问锚点层级推断（L1→L2→L3→降级）；
+  **V5 换代要点**：三级追问直读结构化字段（废弃 119 行正则解析层）、
+  L1 触发改语义分流（追问链触达率 66%→100%）、收尾题池按「行为素质题」题型选取，
+  详见 `docs/reports/REPORT_TO_P2_INTERVIEWER_NEW.md`；
+- `AI_INTERVIEWER_URL`（外部服务）/ `LLM_API_KEY`（大模型直连）仅为题库未命中时的兜底；
+- RAG 语义检索服务在 `backend/rag/`（start.py 自动拉起 8003，首次启动需下载约 4.5GB 模型）；
+- 评估侧指向 `backend/evaluator_new/`（start.py 自动拉起 8002）：按题注入单题校准锚点评分，
+  失败降级 Mock；详见 `docs/reports/REPORT_TO_P3_EVALUATOR_NEW.md`。
+
+### 面试流程规则
+
+- 每场 7 轮 = 1 开场题（开场热身 + easy）+ 6 追问（`MAX_FOLLOW_UP_ROUNDS`，config.py 可调）
+- 最后两轮强制换新题（round 6/7）：收尾题池为「行为素质题」题型（V5 无「收尾交流」阶段）；
+  不强制则追问链会延伸到最后一轮，收尾题不会出现
+- 非法状态操作统一返回 `409`
+
+### 五维评分权重
+
+技术/逻辑/表达/应变/匹配五维按岗位加权，权重单一事实源 `backend/app/core/evaluation_weights.py`
+（与根目录《评估维度.csv》机器校验一致）。
+
+## 运行测试
+
+```bash
+cd backend
+python -m pytest    # 180 个用例（测试库 test_interview.db 与临时目录 .test_tmp/，均不污染工作区）
+```
+
+> 测试必须在 `backend/` 目录下运行（pytest.ini 的 asyncio 配置与 conftest
+> 的环境切换依赖该目录），且需先激活 `ai_interview` 环境。
+> 本机 `conda run` 有插件 bug，可直接调用该环境内的 python.exe
+> （环境真实位置用 `conda env list` 查询，各机器不同，勿照抄绝对路径）。
+
+## 内网穿透演示
+
+手机/外网访问本机服务，详见 [docs/DEPLOY.md](docs/DEPLOY.md)（Sakura Frp / NatApp 两种方案）。
+
+## 团队成员分工
+
+| 角色 | 人数 | 职责 |
+| :--- | :---: | :--- |
+| P1 后端开发A（兼技术负责人） | 1人 | 主后端 `backend/app/`：数据库设计、面试流程状态机、对话管理API、题库导入/查询接口、适配器集成、RAG 服务适配、部署运维、进度把控、功能测试与文档 |
+| P2 后端开发B（AI专项1） | 1人 | 面试官出题算法 `backend/interviewer_new/`：题库策略（开场/追问/收尾选题、追问触发 L1→L2→L3→降级） |
+| P3 后端开发C（AI专项2） | 1人 | 评估服务 `backend/evaluator_new/`：内容多维度判分（含单题校准锚点）、五维报告生成、改进建议生成 |
+| P4 前端开发（Web端） | 1人 | 页面：注册登录、岗位大厅、面试对话室（语音录制/Web Speech 转写）、五维雷达图报告/成长曲线 |
+| P5 知识库构建  | 1人 | V5 知识库（`backend/rag/数据/*-v5.json`，5012 题：含基础/进阶得分点、三级追问、降级策略、单题校准锚点）+ RAG 向量库与检索服务 |

@@ -1,0 +1,93 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 环境配置（含密钥，不入库）
+.env
+
+# 需求文档（内部资料，不入库）
+a.md
+
+# 数据库文件
+*.db
+*.sqlite3
+# 数据库备份（重建/迁移前的手工备份，不入库）
+*.db.bak*
+# SQLite WAL 模式伴随文件（运行时产物）
+*.db-shm
+*.db-wal
+
+# 上传的音频（不入库，目录保留）
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# 简历原件私有目录（含姓名/学号/联系方式等个人信息，绝不入库）
+# 只增不减地接收用户上传的简历，一旦提交就是隐私事故
+backend/private/
+
+# 测试临时目录（用例的目录隔离落点，会话结束自动清理）
+backend/.test_tmp/
+
+# 前端构建产物（由各成员本地构建，不入库）
+frontend/node_modules/
+frontend/dist/
+
+# P4 前端静态资源里的大文件：Vosk 语音模型 + mediapipe 第三方二进制（约 137MB，不入库）
+# 由 P4 的 dist 包提供，换机器部署时从该包重新拷入 backend/static/
+# （backend/static/ 下其余内容——index.html 与 assets/ 等代码本体——正常入库）
+backend/static/model.tar.gz
+backend/static/vosk-model-small-cn/
+backend/static/vendor/
+
+# AI 对话层（A11）模型缓存：bge-reranker-v2-m3 约 2.14GB，首次运行自动下载
+backend/.hf_cache/
+
+# AI 对话层 RAG 与 KB 原始大文件是恢复脚本的输出，不入库。
+# 可提交的分片包位于 runtime-assets/，校验清单见 runtime_assets.manifest.json。
+backend/dialogue_layer/数据/rag/*.pkl
+backend/dialogue_layer/数据/rag/*.npz
+backend/dialogue_layer/数据/kb_index/*.pkl
+backend/dialogue_layer/数据/kb_index/*.npz
+backend/dialogue_layer/数据/kb_index/*.sqlite
+
+# 语音转写模型 SenseVoice（约 239MB，P5 的交接包提供，无公开下载路径）
+backend/dialogue_layer/数据/models/
+
+# AI 对话层运行时日志
+backend/dialogue_layer/logs/
+
+# RAG 向量库（674MB，可由 rag/数据/*-rag-v2.jsonl 重建，不入库）
+# 目录名必须纯 ASCII：chromadb 打不开含非 ASCII 的绝对路径（详见 rag/代码/README.md）
+backend/rag/vector_db/
+# RAG 检索中间数据（约 70MB，仅重建向量库时需要；主库 *-v5.json 共 16MB 正常入库）
+backend/rag/数据/*-rag-v2.jsonl
+
+# 测试与缓存
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+.claude/settings.local.json
+
+# 参照材料（其他项目的模板文档，仅本地对照用，不入库）
+项目的详细分工及过程.pdf
+
+# 正式前端（Vue 3 + Vite）的依赖与构建产物不入库；model.tar.gz 由恢复脚本生成。
+# vosk-model-small-cn/ 是 model.tar.gz 的解包副本，运行时不需要，不重复入库。
+frontend/ai-interview-front/node_modules/
+frontend/ai-interview-front/dist/
+frontend/ai-interview-front/dist.zip
+frontend/ai-interview-front/public/model.tar.gz
+frontend/ai-interview-front/public/vosk-model-small-cn/
+frontend/ai-interview-front/public/vendor/
+
+# 恢复脚本的完整中间归档不入库，只提交按 Gitee 限额切分后的分片。
+runtime-assets/*.zip

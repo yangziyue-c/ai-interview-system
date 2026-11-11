@@ -1,0 +1,4032 @@
+{
+ "生成时间": "2026-09-24 12:43:31",
+ "索引": {
+  "块数": 20396,
+  "dim": 1024
+ },
+ "查询数": {
+  "(岗位,考点名)对": 1560,
+  "去重考点名": 1349
+ },
+ "top1分布": {
+  "min": 0.4356,
+  "p10": 0.5829,
+  "p25": 0.6305,
+  "median": 0.6813,
+  "p75": 0.7306,
+  "max": 0.8678
+ },
+ "门槛命中率": {
+  "0.20": 1.0,
+  "0.25": 1.0,
+  "0.30": 1.0,
+  "0.35": 1.0,
+  "0.40": 1.0,
+  "0.45": 0.9974,
+  "0.50": 0.9859,
+  "0.55": 0.9455,
+  "0.60": 0.8538
+ },
+ "样本": [
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "== 与 equals 对比",
+   "top1": 0.7036,
+   "top2": 0.6902,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/java-basic-questions-02.md",
+   "top1_章节": "⭐️ Object / == 和 equals() 的区别",
+   "top1_片段": "#### == 和 equals() 的区别 **`==`** 对于基本类型和引用类型的作用效果是不同的： - 对于基本数据类型来说，`==` 比较的是值。 - 对于引用数据类型来说，`==` 比较引用是否指向同一个对象（或都为 `null"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "@Enable Auto Configu…",
+   "top1": 0.5854,
+   "top2": 0.5599,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/ai-coding/practices/claudecode-tips.md",
+   "top1_章节": "权限管理要重视 / Auto Mode",
+   "top1_片段": "#### Auto Mode 如果频繁确认已经影响节奏，可以考虑 Auto Mode。 当前官方文档里，CLI 会通过 `Shift+Tab` 切换权限模式；当账号、模型、provider 和组织设置都满足要求时，`auto` 才会出现在模"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "@Lazy 能解决循环依赖吗",
+   "top1": 0.7825,
+   "top2": 0.7755,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/spring-knowledge-and-questions-summary.md",
+   "top1_章节": "⭐️Spring 的循环依赖 / @Lazy 能解决循环依赖吗？",
+   "top1_片段": "#### @Lazy 能解决循环依赖吗？ `@Lazy` 用来标识类是否需要懒加载/延迟加载，可以作用在类上、方法上、构造器上、方法参数上、成员变量中。 Spring Boot 2.2 新增了**全局懒加载属性**，开启后全局 bean 被"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "@Transactional 失效的场景…",
+   "top1": 0.664,
+   "top2": 0.6338,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/ai-coding/practices/claudecode-commands.md",
+   "top1_章节": "/simplify：代码简化与重构 / 案例：Spring 事务失效",
+   "top1_片段": "> **前提条件**：在 Spring 默认代理式 AOP 下，同类内部直接调用会绕过代理，`@Transactional` 不会生效；如果使用 AspectJ weaving 或通过代理对象调用，结论不同。 - **Quality / c"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "@Transactional注解原理与机制",
+   "top1": 0.6694,
+   "top2": 0.6383,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/spring-transaction.md",
+   "top1_章节": "详谈 Spring 对事务的支持 / @Transactional 注解使用详解 / `@Transactional` 事务注解原理",
+   "top1_片段": "如果一个类或者一个类中的 public 方法上被标注`@Transactional` 注解的话，Spring 容器就会在启动的时候为其创建一个代理类，在调用被`@Transactional` 注解的 public 方法的时候，实际调用的是，"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "ABAC 模型",
+   "top1": 0.6409,
+   "top2": 0.6162,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/security/design-of-authority-system.md",
+   "top1_章节": "业界权限系统的设计方式 / ABAC 模型",
+   "top1_片段": "#### ABAC 模型  **基于属性的访问控制（Attribute-Based Access Control，简称 ABAC）** 是一种比 `RBAC模型` 更加灵活的授权模型，它的原理是通过各种属性来动态判断一个操作是否可以被允许。"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "ACID事务特性",
+   "top1": 0.7477,
+   "top2": 0.6897,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/spring-transaction.md",
+   "top1_章节": "事务的特性（ACID）了解么?",
+   "top1_片段": "### 事务的特性（ACID）了解么? 1. **原子性**（`Atomicity`）：事务是最小的执行单位，不允许分割。事务的原子性确保动作要么全部完成，要么完全不起作用； 2. **一致性**（`Consistency`）：执行事务前后"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "AIO (Asynchronous I/O)",
+   "top1": 0.7215,
+   "top2": 0.6644,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/io/io-model.md",
+   "top1_章节": "Java 中 3 种常见 IO 模型 / AIO (Asynchronous I/O)",
+   "top1_片段": "#### AIO (Asynchronous I/O)  AIO 通常指 NIO.2 在 Java 7 中引入的异步通道 API。NIO.2 除了异步通道，还包括新的文件系统 API。  异步通道的操作会直接返回，调用者可以通过 `Futu"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "AMQP 核心概念",
+   "top1": 0.6641,
+   "top2": 0.6156,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/rabbitmq-questions.md",
+   "top1_章节": "AMQP 是什么?",
+   "top1_片段": "### AMQP 是什么?  RabbitMQ 最早围绕 AMQP 0-9-1 实现，生产者、交换器、队列、绑定、路由键这些概念都来自 AMQP 模型。RabbitMQ 还支持 AMQP 1.0、MQTT、STOMP 等协议，不同协议接入时"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "AOF 持久化方式分类与清单",
+   "top1": 0.7486,
+   "top2": 0.6905,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/redis/redis-persistence.md",
+   "top1_章节": "AOF 持久化 / AOF 持久化方式有哪些？",
+   "top1_片段": "- BASE：表示基础 AOF 文件，它一般由子进程通过重写产生，该文件最多只有一个。 - INCR：表示增量 AOF 文件，它一般会在 AOFRW 开始执行时被创建，该文件可能存在多个。 - HISTORY：表示历史 AOF 文件，它由 "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "AOP 的应用场景分类与清单",
+   "top1": 0.7299,
+   "top2": 0.6256,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/ioc-and-aop.md",
+   "top1_章节": "AOP（Aspect oriented programming） / AOP 的应用场景有哪些？",
+   "top1_片段": "#### AOP 的应用场景有哪些？  - 日志记录：自定义日志记录注解，利用 AOP，一行代码即可实现日志记录。 - 性能统计：利用 AOP 在目标方法的执行前后统计方法的执行时间，方便优化和分析。 - 事务管理：`@Transactio"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "API 增强",
+   "top1": 0.6525,
+   "top2": 0.6418,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/new-features/java10.md",
+   "top1_章节": "API 增强",
+   "top1_片段": "#### 集合增强  `List`，`Set`，`Map` 提供了静态方法 `copyOf()` 返回入参集合的一个不可变拷贝。  ```java static <E> List<E> copyOf(Collection<? extends"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "AQS 资源共享方式",
+   "top1": 0.7766,
+   "top2": 0.7616,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/aqs.md",
+   "top1_章节": "AQS 原理 / AQS 资源获取源码分析（共享模式）",
+   "top1_片段": "#### AQS 资源获取源码分析（共享模式）  AQS 中以共享模式获取资源的入口方法是 `acquireShared()`，如下：  ```JAVA // AQS public final void acquireShared(int "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "ARP地址解析协议",
+   "top1": 0.7419,
+   "top2": 0.7272,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/计算机网络 - 网络层.md",
+   "top1_章节": "地址解析协议 ARP",
+   "top1_片段": "### 地址解析协议 ARP  网络层实现主机之间的通信，而链路层实现具体每段链路之间的通信。因此在通信过程中，IP 数据报的源地址和目的地址始终不变，而 MAC 地址随着链路的改变而改变。  ARP 实现由 IP 地址得到 MAC 地址。"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Article Footer.Snippet",
+   "top1": 0.4902,
+   "top2": 0.4873,
+   "top1_仓库": "leetcode-master",
+   "top1_路径": "problems/0383.赎金信.md",
+   "top1_章节": "其他语言版本",
+   "top1_片段": "#### TypeScript:  ```typescript function canConstruct(ransomNote: string, magazine: string): boolean {     let helperArr"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Atomic 原子类",
+   "top1": 0.6469,
+   "top2": 0.6043,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/atomic-classes.md",
+   "top1_章节": "Atomic 原子类介绍",
+   "top1_片段": "### Atomic 原子类介绍 `Atomic` 翻译成中文是“原子”的意思。在化学上，原子是构成物质的最小单位，在化学反应中不可分割。在编程中，`Atomic` 指的是一个操作具有原子性，即该操作不可分割、不可中断。即使在多个线程同时执"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Auto Configuration I…",
+   "top1": 0.6073,
+   "top2": 0.588,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/spring-boot-auto-assembly-principles.md",
+   "top1_章节": "SpringBoot 是如何实现自动装配的？ / AutoConfigurationImportSelector:加载自动装配类",
+   "top1_片段": "return StringUtils.toStringArray(autoConfigurationEntry.getConfigurations());         }     } ``` 这里我们需要重点关注一下`getAutoCo"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "B+树 vs 跳表",
+   "top1": 0.7372,
+   "top2": 0.6906,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/redis/redis-skiplist.md",
+   "top1_章节": "和其余三种数据结构的比较 / B+树 vs 跳表",
+   "top1_片段": "#### B+树 vs 跳表  想必使用 MySQL 的读者都知道 B+树这个数据结构，B+树是一种常用的数据结构，具有以下特点：  1. **多叉树结构**：它是一棵多叉树，每个节点可以包含多个子节点，减小了树的高度，查询效率高。 2. "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "BASE 与 ACID 的关系",
+   "top1": 0.7693,
+   "top2": 0.7216,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/protocol/cap-and-base-theorem.md",
+   "top1_章节": "BASE 理论 / BASE 与 ACID 的关系",
+   "top1_片段": "#### BASE 与 ACID 的关系 要理解 BASE 理论，首先需要回顾 ACID 理论中的 **一致性（Consistency）**： **ACID 的一致性定义**：事务执行前后，数据库只能从一个一致状态转变为另一个一致状态。 以"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "BIO (Blocking I/O)",
+   "top1": 0.6096,
+   "top2": 0.5879,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/io/io-model.md",
+   "top1_章节": "I/O / 有哪些常见的 IO 模型？",
+   "top1_片段": "#### 有哪些常见的 IO 模型？  UNIX 系统下， IO 模型一共有 5 种：**同步阻塞 I/O**、**同步非阻塞 I/O**、**I/O 多路复用**、**信号驱动 I/O** 和**异步 I/O**。  这也是我们经常提到的"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Backend Interview Plan",
+   "top1": 0.6228,
+   "top2": 0.5922,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/interview-preparation/backend-project-interview-guide.md",
+   "top1_章节": "面试前先整理一张项目底稿",
+   "top1_片段": "### 面试前先整理一张项目底稿  给简历上的每个重点项目单独整理一份底稿，不必写成文章，自己能看懂、面试前能快速回忆即可。  | 要整理的内容 | 需要回答的问题                                      "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Basic Paxos 执行流程",
+   "top1": 0.7592,
+   "top2": 0.7197,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/protocol/paxos-algorithm.md",
+   "top1_章节": "Basic Paxos 算法 / Basic Paxos 执行流程",
+   "top1_片段": "#### Basic Paxos 执行流程  Basic Paxos 通过两个阶段达成共识：**Prepare/Promise（准备/承诺）阶段**和 **Accept/Accepted（接受/已接受）阶段**。  ```mermaid s"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Bean 作用域",
+   "top1": 0.6724,
+   "top2": 0.6373,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/spring-common-annotations.md",
+   "top1_章节": "Spring Bean / Bean 作用域",
+   "top1_片段": "#### Bean 作用域  `@Scope(\"scopeName\")` 定义 Spring Bean 的作用域，即 Bean 实例的生命周期和可见范围。常用的作用域包括：  - **singleton** : IoC 容器中只有唯一的 b"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Big Decimal 介绍",
+   "top1": 0.6972,
+   "top2": 0.6937,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/bigdecimal.md",
+   "top1_章节": "BigDecimal 介绍",
+   "top1_片段": "### BigDecimal 介绍  `BigDecimal` 可以精确表示十进制数，并提供可显式指定精度和舍入规则的运算。不过，使用有限精度的 `MathContext`、执行需要舍入的除法，或将结果转换为 `float`、`double"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Bigdecimal",
+   "top1": 0.6321,
+   "top2": 0.6253,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/bigdecimal.md",
+   "top1_章节": "BigDecimal 工具类分享",
+   "top1_片段": "if (scale < 0) {             throw new IllegalArgumentException(                     \"The scale must be a positive integ"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Binary Search",
+   "top1": 0.6517,
+   "top2": 0.6348,
+   "top1_仓库": "leetcode",
+   "top1_路径": "thinkings/binary-search-1.en.md",
+   "top1_章节": "Foreword",
+   "top1_片段": "### Foreword In order to prepare for this topic, I not only finished all the binary questions of Lixiu, but also all the"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Binlog二进制日志",
+   "top1": 0.6454,
+   "top2": 0.6412,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-logs.md",
+   "top1_章节": "两阶段提交",
+   "top1_片段": "### 两阶段提交 redo log（重做日志）让 InnoDB 存储引擎拥有了崩溃恢复能力。 binlog（归档日志）保证了 MySQL 集群架构的数据一致性。 虽然它们都属于持久化的保证，但是侧重点不同。 在执行更新语句过程，会记录 r"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Bitmap （位图）",
+   "top1": 0.6824,
+   "top2": 0.6651,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/redis/redis-data-structures-02.md",
+   "top1_章节": "Bitmap （位图）",
+   "top1_片段": "除了 5 种基本的数据类型之外，Redis 还支持 3 种特殊的数据类型：Bitmap、HyperLogLog、GEO。  ### Bitmap （位图）  #### 介绍  根据官网介绍：  > Bitmaps are not an ac"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Bloom Filter的缺点",
+   "top1": 0.6444,
+   "top2": 0.6121,
+   "top1_仓库": "JavaFamily",
+   "top1_路径": "docs/all/缓存/redis/布隆过滤器(BloomFilter).md",
+   "top1_章节": "",
+   "top1_片段": "简单来说就是你数据库的id都是1开始然后自增的，那我知道你接口是通过id查询的，我就拿负数去查询，这个时候，会发现缓存里面没这个数据，我又去数据库查也没有，一个请求这样，100个，1000个，10000个呢？你的DB基本上就扛不住了，如果在"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Broker（消息存储）",
+   "top1": 0.7872,
+   "top2": 0.5856,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/rocketmq-questions.md",
+   "top1_章节": "RocketMQ 架构 / Broker（消息存储）",
+   "top1_片段": "#### Broker（消息存储）  Broker 负责消息的存储、投递和查询以及服务高可用保证。  **存储机制：**  1. **消息写入**：收到消息后顺序追加到 CommitLog 文件 2. **文件分割**：文件超过固定大小（默"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Buffered Input Stream",
+   "top1": 0.7179,
+   "top2": 0.6781,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/io/io-basis.md",
+   "top1_章节": "字节缓冲流 / BufferedInputStream（字节缓冲输入流）",
+   "top1_片段": "#### BufferedInputStream（字节缓冲输入流）  `BufferedInputStream` 从源头（通常是文件）读取数据（字节信息）到内存的过程中不会一个字节一个字节的读取，而是会先将读取到的字节存放在缓存区，并从内部"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "CAP 理论和 BASE 理论",
+   "top1": 0.7507,
+   "top2": 0.7325,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/protocol/cap-and-base-theorem.md",
+   "top1_章节": "CAP 理论 / CAP 实际应用案例 / 总结",
+   "top1_片段": "##### 总结  选择 CP 或 AP 取决于场景：ZooKeeper 适合强一致需求，如配置管理；Eureka 适合高可用注册，如微服务发现。  Nacos 不仅支持 CP 也支持 AP。  #### 总结  CAP 理论指导我们：在分"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "CAS 操作",
+   "top1": 0.6799,
+   "top2": 0.6747,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/optimistic-lock-and-pessimistic-lock.md",
+   "top1_章节": "如何实现乐观锁？ / CAS 算法",
+   "top1_片段": "#### CAS 算法  CAS 的全称是 **Compare And Swap（比较与交换）**，用于实现乐观锁，被广泛应用于各大框架中。CAS 的思想很简单，就是用一个预期值和要更新的变量值进行比较，两值相等才会进行更新。  CAS 是"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "CAS中央认证服务",
+   "top1": 0.555,
+   "top2": 0.5501,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-quality-technical-articles/programmer/high-value-certifications-for-programmers.md",
+   "top1_章节": "AWS 认证",
+   "top1_片段": "### AWS 认证  AWS 云认证考试是 AWS 云计算服务的官方认证考试，旨在验证 IT 专业人士在设计、部署和管理 AWS 基础架构方面的技能。  AWS 认证分为多个级别，包括基础级、从业者级、助理级、专业级和专家级（Specia"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "CDN（掌握概念和原理即可）",
+   "top1": 0.6503,
+   "top2": 0.6469,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/cdn.md",
+   "top1_章节": "CDN 工作原理是什么？ / 如何找到最合适的 CDN 节点？",
+   "top1_片段": "#### 如何找到最合适的 CDN 节点？ **GSLB（Global Server Load Balance，全局负载均衡）** 是 CDN 的大脑，负责多个 CDN 节点之间的协调调度，最常用的实现方式是**基于 DNS 的 GSLB*"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "CHAR 和 VARCHAR 的区别核心概念",
+   "top1": 0.7039,
+   "top2": 0.5379,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-questions-01.md",
+   "top1_章节": "MySQL 字段类型",
+   "top1_片段": "#### CHAR 和 VARCHAR 的区别是什么？  CHAR 和 VARCHAR 是最常用到的字符串类型，两者的主要区别在于：**CHAR 是定长字符串，VARCHAR 是变长字符串。**  CHAR 在存储时会在右边填充空格以达到指"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Cache Aside Pattern",
+   "top1": 0.7132,
+   "top2": 0.7118,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/redis/3-commonly-used-cache-read-and-write-strategies.md",
+   "top1_章节": "Cache Aside Pattern（旁路缓存模式）",
+   "top1_片段": "#### Cache Aside Pattern（旁路缓存模式） 这是我们日常开发中**最常用、最经典**的一种模式，几乎是互联网应用缓存方案的事实标准，尤其适合**读多写少**的业务场景。 这个模式之所以被称为**“旁路”(Aside)*"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Callable 和 Future 有什么关系",
+   "top1": 0.7784,
+   "top2": 0.6422,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-concurrent-questions-03.md",
+   "top1_章节": "Future / Callable 和 Future 有什么关系？",
+   "top1_片段": "#### Callable 和 Future 有什么关系？  我们可以通过 `FutureTask` 来理解 `Callable` 和 `Future` 之间的关系。  `FutureTask` 提供了 `Future` 接口的基本实现，常"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Caller Runs Policy 能…",
+   "top1": 0.6639,
+   "top2": 0.6176,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-thread-pool-best-practices.md",
+   "top1_章节": "CallerRunsPolicy 能形成背压吗？",
+   "top1_片段": "### CallerRunsPolicy 能形成背压吗？  `CallerRunsPolicy` 会让调用 `execute()` 的线程执行被拒绝的任务。提交线程因此变慢，后续任务的提交速度也可能下降，所以它具备一定的反馈调节作用。  效"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Channel（通道）",
+   "top1": 0.677,
+   "top2": 0.5132,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/io/nio-basis.md",
+   "top1_章节": "NIO 核心组件 / Channel（通道）",
+   "top1_片段": "#### Channel（通道）  Channel 是一个通道，它建立了与数据源（如文件、网络套接字等）之间的连接。我们可以利用它来读取和写入数据，就像打开了一条自来水管，让数据在 Channel 中自由流动。  BIO 中的流是单向的，分"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Class 操作",
+   "top1": 0.6055,
+   "top2": 0.5976,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/Java 虚拟机.md",
+   "top1_章节": "四、类加载机制 / 双亲委派模型 / 3. 实现",
+   "top1_片段": "##### 3. 实现  以下是抽象类 java.lang.ClassLoader 的代码片段，其中的 loadClass() 方法运行过程如下：先检查类是否已经加载过，如果没有则让父类加载器去加载。当父类加载器加载失败时抛出 ClassN"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Collection",
+   "top1": 0.5206,
+   "top2": 0.5177,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/collection/java-collection-questions-02.md",
+   "top1_章节": "Collections 工具类（不重要）",
+   "top1_片段": "### Collections 工具类（不重要）  **`Collections` 工具类常用方法**:  - 排序 - 查找，替换操作 - 同步控制（不推荐，需要线程安全的集合类型时请考虑使用 JUC 包下的并发集合）  #### 排序操"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Collections 工具类（不重要）",
+   "top1": 0.6887,
+   "top2": 0.5485,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/collection/java-collection-questions-02.md",
+   "top1_章节": "Collections 工具类（不重要）",
+   "top1_片段": "### Collections 工具类（不重要）  **`Collections` 工具类常用方法**:  - 排序 - 查找，替换操作 - 同步控制（不推荐，需要线程安全的集合类型时请考虑使用 JUC 包下的并发集合）  #### 排序操"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Comparable 和 Compara…",
+   "top1": 0.6667,
+   "top2": 0.6283,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/collection/java-collection-questions-01.md",
+   "top1_章节": "Set",
+   "top1_片段": "### Set  #### Comparable 和 Comparator 的区别  `Comparable` 接口和 `Comparator` 接口都是 Java 中用于排序的接口，它们在实现类对象之间比较大小、排序等方面发挥了重要作用："
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Comparator",
+   "top1": 0.6122,
+   "top2": 0.5881,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/collection/java-collection-questions-01.md",
+   "top1_章节": "Set",
+   "top1_片段": "### Set  #### Comparable 和 Comparator 的区别  `Comparable` 接口和 `Comparator` 接口都是 Java 中用于排序的接口，它们在实现类对象之间比较大小、排序等方面发挥了重要作用："
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Completable Future 类有什么用",
+   "top1": 0.7928,
+   "top2": 0.7336,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-concurrent-questions-03.md",
+   "top1_章节": "Future / CompletableFuture 类有什么用？",
+   "top1_片段": "#### CompletableFuture 类有什么用？  `Future` 在实际使用过程中存在一些局限性，比如不支持异步任务的编排组合、获取计算结果的 `get()` 方法为阻塞调用。  Java 8 才被引入 `Completabl"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Consumer（消费者）",
+   "top1": 0.619,
+   "top2": 0.6054,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/rocketmq-questions.md",
+   "top1_章节": "消费者分组和生产者分组 / 消费者分组",
+   "top1_片段": "#### 消费者分组 消费者分组是多个消费行为一致的消费者的负载均衡分组。消费者分组不是具体实体而是一个逻辑资源。通过消费者分组实现消费性能的水平扩展以及高可用容灾。 **消费者组的核心作用：** ```mermaid flowchart "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Cookie机制",
+   "top1": 0.6523,
+   "top2": 0.6402,
+   "top1_仓库": "fucking-algorithm",
+   "top1_路径": "技术/session和cookie.md",
+   "top1_章节": "一、session 和 cookie 简介",
+   "top1_片段": "#### 一、session 和 cookie 简介 cookie 的出现是因为 HTTP 是无状态的一种协议，换句话说，服务器记不住你，可能你每刷新一次网页，就要重新输入一次账号密码进行登录。这显然是让人无法接受的，cookie 的作用就"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Count Down Latch",
+   "top1": 0.5809,
+   "top2": 0.5725,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/aqs.md",
+   "top1_章节": "常见同步工具类 / CountDownLatch（倒计时器）",
+   "top1_片段": "#### CountDownLatch（倒计时器）  ##### 介绍  `CountDownLatch` 允许 `count` 个线程阻塞在一个地方，直至所有线程的任务都执行完毕。  `CountDownLatch` 是一次性的，计数器的"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Cpu Scheduling And Load",
+   "top1": 0.6625,
+   "top2": 0.6535,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/cpu-scheduling-and-load.md",
+   "top1_章节": "面试回答要点",
+   "top1_片段": "### 面试回答要点  回答 CPU 调度时，需要交代任务为什么排队、内核何时切换任务以及切换会产生哪些成本。这比只背算法名称更完整。  #### CPU 调度  > CPU 核心数有限，可运行的进程和线程可能很多。调度器从可运行队列里挑任"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Cyclic Barrier",
+   "top1": 0.6096,
+   "top2": 0.5929,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/Java 并发.md",
+   "top1_章节": "七、J.U.C - AQS / CyclicBarrier",
+   "top1_片段": "before..before..before..before..before..before..before..before..before..before..after..after..after..after..after..after"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "DATETIME 和 TIMESTAMP 选择",
+   "top1": 0.7722,
+   "top2": 0.7387,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/some-thoughts-on-database-storage-time.md",
+   "top1_章节": "DATETIME 和 TIMESTAMP 选择",
+   "top1_片段": "### DATETIME 和 TIMESTAMP 选择  `DATETIME` 和 `TIMESTAMP` 是 MySQL 中两种非常常用的、用于存储包含日期和时间信息的数据类型。它们都可以存储精确到秒（MySQL 5.6.4+ 支持更高精"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "DDo S 攻击究竟核心概念",
+   "top1": 0.7088,
+   "top2": 0.6316,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/network-attack-means.md",
+   "top1_章节": "DDoS",
+   "top1_片段": "#### DDoS 攻击究竟是什么？  DDos 全名 Distributed Denial of Service，翻译成中文就是**分布式拒绝服务**。指的是处于不同位置的多个攻击者同时向一个或数个目标发动攻击，是一种分布的、协同的大规模"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "DDoS分布式拒绝服务攻击",
+   "top1": 0.7204,
+   "top2": 0.673,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/network-attack-means.md",
+   "top1_章节": "DDoS",
+   "top1_片段": "#### DDoS 攻击究竟是什么？  DDos 全名 Distributed Denial of Service，翻译成中文就是**分布式拒绝服务**。指的是处于不同位置的多个攻击者同时向一个或数个目标发动攻击，是一种分布的、协同的大规模"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "DML 语句和 DDL 语句区别是",
+   "top1": 0.6512,
+   "top2": 0.5971,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/basis.md",
+   "top1_章节": "DROP、DELETE、TRUNCATE 有什么区别？ / 事务和回滚",
+   "top1_片段": "#### 事务和回滚  - `DROP` 和 `TRUNCATE` 属于DDL操作，执行后立即生效，不能回滚 - `DELETE` 属于DML操作，可以回滚（在事务中）  #### 执行速度  一般来说：`DROP` > `TRUNCATE"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "DNS域名解析",
+   "top1": 0.7396,
+   "top2": 0.7182,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/the-whole-process-of-accessing-web-pages.md",
+   "top1_章节": "第二步：DNS 解析 / DNS 解析过程",
+   "top1_片段": "#### DNS 解析过程  浏览器拿到域名后，DNS 解析通常按以下步骤进行：  1. **浏览器 DNS 缓存**：浏览器自身维护了一份 DNS 缓存，先检查缓存中是否有该域名的记录且未过期。 2. **操作系统 DNS 缓存**：浏览"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "DROP、DELETE、TRUNCATE…",
+   "top1": 0.6874,
+   "top2": 0.6831,
+   "top1_仓库": "interview_internal_reference",
+   "top1_路径": "09.MySQL篇/9.1.3 drop,delete与truncate的区别.md",
+   "top1_章节": "**参考答案**：",
+   "top1_片段": "##### **参考答案**： drop直接删掉表 truncate删除表中数据，再插入时自增长id又从1开始 delete删除表中数据，可以加where字句。 （1） DELETE语句执行删除的过程是每次从表中删除一行，并且同时将该行的删"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Database Shard Method",
+   "top1": 0.6765,
+   "top2": 0.5936,
+   "top1_仓库": "system-design-primer",
+   "top1_路径": "README.md",
+   "top1_章节": "Database / Relational database management system (RDBMS) / Sharding",
+   "top1_片段": "##### Sharding   Source: Scalability, availability, stability, patterns  Sharding distributes data across different data"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Dead Lock",
+   "top1": 0.5881,
+   "top2": 0.5379,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/jvm/jdk-monitoring-and-troubleshooting-tools.md",
+   "top1_章节": "JDK 命令行工具 / **`jstack`** :生成虚拟机当前时刻的线程快照",
+   "top1_片段": "at DeadLockDemo.lambda$main$1(DeadLockDemo.java:31)         - waiting to lock <0x00000000d5efe1c0> (a java.lang.Object) "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Disruptor 核心概念",
+   "top1": 0.7474,
+   "top2": 0.6656,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/disruptor-questions.md",
+   "top1_章节": "Disruptor 核心概念有哪些？",
+   "top1_片段": "### Disruptor 核心概念有哪些？  - **Event**：你可以把 Event 理解为存放在队列中等待消费的消息对象。 - **EventFactory**：事件工厂用于生产事件，我们在初始化 `Disruptor` 类的时候"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Docker Compose 常见命令",
+   "top1": 0.7943,
+   "top2": 0.7499,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/tools/docker/docker-intro.md",
+   "top1_章节": "Docker Compose / Docker Compose 常见命令",
+   "top1_片段": "#### Docker Compose 常见命令  ##### 启动  `docker compose up` 会根据 Compose 文件中定义的服务创建并启动容器，并将它们连接到 Compose 创建的网络中。如果文件没有声明自定义网络"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Docker Intro",
+   "top1": 0.6827,
+   "top2": 0.6673,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/tools/docker/docker-intro.md",
+   "top1_章节": "总结",
+   "top1_片段": "### 总结  本文主要把 Docker 中的一些常见概念和命令做了详细的阐述。从零到上手实战可以看Docker 从入门到上手干事这篇文章，内容非常详细！  另外，再给大家推荐一本质量非常高的开源书籍《Docker 从入门到实践》 ，这本书"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Dubbo RPC框架",
+   "top1": 0.72,
+   "top2": 0.7013,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/rpc/rpc-intro.md",
+   "top1_章节": "有哪些常见的 RPC 框架？ / 总结",
+   "top1_片段": "#### 总结  gRPC 和 Thrift 虽然支持跨语言的 RPC 调用，但是它们只提供了最基本的 RPC 框架功能，缺乏一系列配套的服务化组件和服务治理功能的支撑。  Dubbo 不论是从功能完善程度、生态系统还是社区活跃度来说都是最"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "ECDHE 为什么有前向安全",
+   "top1": 0.7884,
+   "top2": 0.6964,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/https-rsa-vs-ecdhe.md",
+   "top1_章节": "前向安全与性能代价 / ECDHE 为什么有前向安全",
+   "top1_片段": "#### ECDHE 为什么有前向安全  关键在 `E`，也就是 `Ephemeral`，临时。  ECDHE 握手里的私钥不是服务器证书那把长期私钥，而是握手过程中使用的临时私钥。连接结束后，正常情况下不应该再依赖这份临时材料。  这带来"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Elastic Search",
+   "top1": 0.6861,
+   "top2": 0.686,
+   "top1_仓库": "JavaFamily",
+   "top1_路径": "docs/coderLife/记一次差点害敖丙丢工作的的线上P0事故.md",
+   "top1_章节": "前言 / 正文",
+   "top1_片段": "#### 正文 敖丙之前也负责公司的商品搜索业务，因为业务体量增速太快了，商品表中的商品数据也很快跃入千万级别，查询的RT（response time 响应时间）也越来越高了，而且产品说需要根据**更多维度去查询商品**。 因为之前我们都是"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Employee Performance",
+   "top1": 0.5926,
+   "top2": 0.543,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-quality-technical-articles/personal-experience/four-year-work-in-tencent-summary.md",
+   "top1_章节": "绩效情况",
+   "top1_片段": "### 绩效情况  我在腾讯工作四年，腾讯半年考核一次，一共考核八次，回想了下，四年来的绩效情况为:三星，三星，五星，三星，五星，四星，四星，三星。统计一下， 四五星占比刚好一半。  PS：还好以前有奖杯，不然一点念想都没了。(现在腾讯似乎"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Eureka服务注册",
+   "top1": 0.6984,
+   "top2": 0.6941,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/micro-services/how-eureka-enable-service-discovery-and-service-registration.md",
+   "top1_章节": "Eureka 是什么",
+   "top1_片段": "### Eureka 是什么  `Eureka` 在 GitHub 上对其的定义为  > Eureka is a REST (Representational State Transfer) based service that is pr"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Exception 与 Error 有什么对比",
+   "top1": 0.6838,
+   "top2": 0.6521,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/java-basic-questions-03.md",
+   "top1_章节": "异常",
+   "top1_片段": "### 异常  **Java 异常类层次结构图概览**：  #### Exception 和 Error 有什么区别？  在 Java 中，所有的异常都有一个共同的祖先 `java.lang` 包中的 `Throwable` 类。`Thro"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Exchange(交换器)",
+   "top1": 0.6478,
+   "top2": 0.5753,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/rabbitmq-questions.md",
+   "top1_章节": "RabbitMQ 有哪些重要概念？ / Exchange(交换器)",
+   "top1_片段": "#### Exchange(交换器)  在 RabbitMQ 中，消息并不是直接被投递到 **Queue(消息队列)** 中的，中间还必须经过 **Exchange(交换器)** 这一层，**Exchange(交换器)** 会把我们的消息分"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Executor执行器",
+   "top1": 0.662,
+   "top2": 0.6602,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-thread-pool-summary.md",
+   "top1_章节": "Executor 框架介绍",
+   "top1_片段": "2. 把创建完成的实现 `Runnable`/`Callable` 接口的 对象直接交给 `ExecutorService` 执行: `ExecutorService.execute（Runnable command）`）或者也可以把 `R"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Fallback 常见的坑",
+   "top1": 0.7392,
+   "top2": 0.6801,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-availability/fallback-and-circuit-breaker.md",
+   "top1_章节": "什么是 Fallback？ / Fallback 常见的坑",
+   "top1_片段": "#### Fallback 常见的坑  Fallback 本身也可能出问题，而且这种问题比正常故障更难发现。常见的坑有这几个：  - **Fallback 里面藏了远程调用**：兜底逻辑里调了 Redis、DB 或其他服务，结果这些依赖也挂"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Fast Json",
+   "top1": 0.5584,
+   "top2": 0.5557,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/algorithms/10-classical-sorting-algorithms.md",
+   "top1_章节": "快速排序（Quick Sort） / 代码实现",
+   "top1_片段": "#### 代码实现 ```java import java.util.concurrent.ThreadLocalRandom; class Solution {     public int[] sortArray(int[] a) { "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Fencing Token 的工程落地",
+   "top1": 0.7532,
+   "top2": 0.6118,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/distributed-lock-implementations.md",
+   "top1_章节": "Fencing Token 的工程落地",
+   "top1_片段": "### Fencing Token 的工程落地  Fencing Token（隔离令牌）本身只是一个单调递增的版本号，只有资源端配合校验才能发挥作用。客户端访问数据库、对象存储或外部资源时必须携带 token；资源端需要保存已见过的最大 t"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Flink CDC变更数据捕获",
+   "top1": 0.6614,
+   "top2": 0.6523,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-to-elasticsearch-sync.md",
+   "top1_章节": "基于 binlog 的 CDC",
+   "top1_片段": "### 基于 binlog 的 CDC  CDC（Change Data Capture，变更数据捕获）方案会读取 MySQL binlog，把已经提交的数据变化转换为下游可消费的事件。这类方案不需要在每个业务接口里维护 ES 写入逻辑，也"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Fork Join",
+   "top1": 0.593,
+   "top2": 0.5373,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/Java 并发.md",
+   "top1_章节": "八、J.U.C - 其它组件 / ForkJoin",
+   "top1_片段": "#### ForkJoin 主要用于并行计算中，和 MapReduce 原理类似，都是把大的计算任务拆分成多个小任务并行计算。 ```java public class ForkJoinExample extends RecursiveTa"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Full GC 的触发条件",
+   "top1": 0.6147,
+   "top2": 0.6074,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/Java 虚拟机.md",
+   "top1_章节": "三、内存分配与回收策略 / Full GC 的触发条件 / 4. JDK 1.7 及以前的永久代空间不足",
+   "top1_片段": "##### 4. JDK 1.7 及以前的永久代空间不足  在 JDK 1.7 及以前，HotSpot 虚拟机中的方法区是用永久代实现的，永久代中存放的为一些 Class 的信息、常量、静态变量等数据。  当系统中要加载的类、反射的类和调用"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Future异步编程",
+   "top1": 0.7032,
+   "top2": 0.6691,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/completablefuture-intro.md",
+   "top1_章节": "Future 介绍",
+   "top1_片段": "### Future 介绍 `Future` 接口是异步思想的典型运用，主要用在一些需要执行耗时任务的场景，避免程序一直原地等待耗时任务执行完成，执行效率太低。具体来说是这样的：当我们执行某一耗时的任务时，可以将这个耗时任务交给一个子线程去"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "G 1 收集器",
+   "top1": 0.7027,
+   "top2": 0.6677,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/jvm/jvm-garbage-collection.md",
+   "top1_章节": "垃圾收集器 / G1 收集器",
+   "top1_片段": "#### G1 收集器 **G1 (Garbage-First) 是一款面向服务器的垃圾收集器，主要针对配备多颗处理器及大容量内存的机器. 以极高概率满足 GC 停顿时间要求的同时，还具备高吞吐量性能特征。** 被视为 JDK1.7 中 H"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "GC 与 key 关系",
+   "top1": 0.6107,
+   "top2": 0.5915,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/threadlocal.md",
+   "top1_章节": "GC 之后 key 是否为 null？",
+   "top1_片段": "#### GC 之后 key 是否为 null？ 回应开头的那个问题， `ThreadLocal` 的 `key` 是弱引用，那么在 `ThreadLocal.get()` 的时候，发生 `GC` 之后，`key` 是否是 `null`？ "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Geospatial (地理位置)",
+   "top1": 0.6526,
+   "top2": 0.6398,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/redis/redis-data-structures-02.md",
+   "top1_章节": "Geospatial (地理位置) / 应用场景",
+   "top1_片段": "#### 应用场景  **需要管理使用地理空间数据的场景**  - 举例：附近的人。 - 相关命令: `GEOADD`、`GEORADIUS`、`GEORADIUSBYMEMBER` 。  ### 总结  | 数据类型         | "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Gossip 状态传播：让节点交换本地视图",
+   "top1": 0.8411,
+   "top2": 0.7229,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/protocol/centralized-and-decentralized.md",
+   "top1_章节": "Gossip 状态传播：让节点交换本地视图",
+   "top1_片段": "### Gossip 状态传播：让节点交换本地视图  Gossip 不依赖一个固定节点维护完整集群视图。每个节点保存自己的本地视图，并通过对等通信交换状态。  节点周期性选择其他节点交换信息，状态像消息扩散一样在集群里传播。一个节点知道了新"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Gradle Wrapper 介绍",
+   "top1": 0.755,
+   "top2": 0.6937,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/tools/gradle/gradle-core-concepts.md",
+   "top1_章节": "Gradle Wrapper 介绍",
+   "top1_片段": "### Gradle Wrapper 介绍  Gradle 官方文档是这样介绍的 Gradle Wrapper 的：  > The recommended way to execute any Gradle build is with th"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "HTTP TRACE请求",
+   "top1": 0.6185,
+   "top2": 0.6183,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/ai/system-design/ai-application-architecture.md",
+   "top1_章节": "可观测与评测：没有回放，就没有优化 / Trace 应该记录什么",
+   "top1_片段": "#### Trace 应该记录什么  AI 应用排查问题时，最怕只看到最终答案。  一次完整请求至少要记录可关联的元数据。原文只在确有回放需要、获得相应授权并配置加密、访问控制和保留期时保存：  | 类别   | 默认记录的元数据     "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "HTTP 响应报文结构",
+   "top1": 0.7544,
+   "top2": 0.7448,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/the-whole-process-of-accessing-web-pages.md",
+   "top1_章节": "第四步：发送 HTTP 请求 / HTTP 响应报文结构",
+   "top1_片段": "#### HTTP 响应报文结构  ```http HTTP/1.1 200 OK Content-Type: text/html; charset=UTF-8 Content-Encoding: gzip Content-Length: "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "HTTP 的 Keep Alive 核心概念",
+   "top1": 0.7228,
+   "top2": 0.7184,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/tcp-keepalive-vs-http-keepalive.md",
+   "top1_章节": "HTTP 的 Keep-Alive 是什么？",
+   "top1_片段": "### HTTP 的 Keep-Alive 是什么？ 先说问题。HTTP 1.0 的默认行为是：每个 TCP 连接只服务一次 HTTP 请求和响应。服务器发完响应，马上发起关闭连接的请求，客户端跟着关，TCP 连接就双向断开了。 你打开一个"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "HTTPS 握手里的 RSA 和 ECD…",
+   "top1": 0.7606,
+   "top2": 0.731,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/other-network-questions.md",
+   "top1_章节": "HTTP / HTTPS 握手里的 RSA 和 ECDHE，到底差在哪？（应用层）",
+   "top1_片段": "#### HTTPS 握手里的 RSA 和 ECDHE，到底差在哪？（应用层）  RSA 和 ECDHE 的核心区别在于：**会话密钥材料是“传过去的”，还是“协商出来的”**。  在 TLS 1.2 的静态 RSA 握手里，客户端生成 `"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Hyper Log Log（基数统计）",
+   "top1": 0.6897,
+   "top2": 0.6395,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/redis/redis-data-structures-02.md",
+   "top1_章节": "HyperLogLog（基数统计） / 介绍",
+   "top1_片段": "#### 介绍  HyperLogLog 是一种有名的基数计数概率算法 ，基于 LogLog Counting(LLC)优化改进得来，并不是 Redis 特有的，Redis 只是实现了这个算法并提供了一些开箱即用的 API。  Redis "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Hystrix 核心概念",
+   "top1": 0.593,
+   "top2": 0.5907,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-availability/hystrix-introduction.md",
+   "top1_章节": "Hystrix 的设计原则",
+   "top1_片段": "### Hystrix 的设计原则  -   对依赖服务调用时出现的调用延迟和调用失败进行**控制和容错保护**。 -   在复杂的分布式系统中，阻止某一个依赖服务的故障在整个系统中蔓延。比如某一个服务故障了，导致其它服务也跟着故障。 - "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "I/O",
+   "top1": 0.6545,
+   "top2": 0.6357,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/io/io-model.md",
+   "top1_章节": "I/O / 何为 I/O?",
+   "top1_片段": "#### 何为 I/O? I/O（**I**nput/**O**utput） 即**输入／输出**。 **我们先从计算机结构的角度来解读一下 I/O。** 根据冯.诺依曼结构，计算机结构分为 5 大部分：运算器、控制器、存储器、输入设备、输"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "ICMP 放行了，不代表 TCP 也放行了",
+   "top1": 0.8131,
+   "top2": 0.6977,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/can-ping-but-tcp-may-not-connect.md",
+   "top1_章节": "ICMP 放行了，不代表 TCP 也放行了",
+   "top1_片段": "### ICMP 放行了，不代表 TCP 也放行了  很多网络设备会允许 ICMP，因为它对运维很方便。机器在不在线、延迟大不大、有没有明显丢包，`ping` 一下就能看个大概。  但 TCP 规则通常收得更紧。服务器可能只开放 `22`、"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "IPC进程间通信",
+   "top1": 0.7562,
+   "top2": 0.744,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/operating-system-basic-questions-01.md",
+   "top1_章节": "进程和线程 / 进程间的通信方式有哪些？",
+   "top1_片段": "#### 进程间的通信方式有哪些？  进程默认拥有独立虚拟地址空间，不能直接访问彼此的用户态内存，所以需要 **IPC（Inter-Process Communication，进程间通信）**。  面试里先按使用场景回答即可：  - 父子进"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "IP网际协议",
+   "top1": 0.6871,
+   "top2": 0.662,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/other-network-questions.md",
+   "top1_章节": "计算机网络基础 / 常见网络协议 / 网络层有哪些常见的协议？",
+   "top1_片段": "##### 网络层有哪些常见的协议？ - **IP（Internet Protocol，网际协议）**：TCP/IP 协议中最重要的协议之一，属于网络层的协议，主要作用是定义数据包的格式、对数据包进行路由和寻址，以便它们可以跨网络传播并到达"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Inet Address",
+   "top1": 0.5776,
+   "top2": 0.5619,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/Java IO.md",
+   "top1_章节": "六、网络操作 / InetAddress",
+   "top1_片段": "#### InetAddress  没有公有的构造函数，只能通过静态方法来创建实例。  ```java InetAddress.getByName(String host); InetAddress.getByAddress(byte[] "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "InnoDB存储引擎",
+   "top1": 0.6958,
+   "top2": 0.665,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/MySQL.md",
+   "top1_章节": "三、存储引擎",
+   "top1_片段": "#### InnoDB  是 MySQL 默认的事务型存储引擎，只有在需要它不支持的特性时，才考虑使用其它存储引擎。  实现了四个标准的隔离级别，默认级别是可重复读（REPEATABLE READ）。在可重复读隔离级别下，通过多版本并发控制"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Internship Experience",
+   "top1": 0.5219,
+   "top2": 0.517,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-quality-technical-articles/interview/summary-of-spring-recruitment.md",
+   "top1_章节": "写这个帖子的目的",
+   "top1_片段": "### 写这个帖子的目的  1. 写给自己：总结反思一下大学前三年以及找工作的一些经历与感悟。 2. 写给还在找实习的朋友：希望自己的经历以及面经]能给你们一些启发和帮助。 3. 写给和我一样有着大厂梦的学弟学妹们：你们还有很长的准备时间，"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Interview Guide",
+   "top1": 0.6365,
+   "top2": 0.6096,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "README_EN.md",
+   "top1_章节": "",
+   "top1_片段": "## JavaGuide  **English** | **日本語** | **简体中文**  Recommended to read online for a better experience and faster speed: jav"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Io",
+   "top1": 0.5133,
+   "top2": 0.5063,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/io/io-model.md",
+   "top1_章节": "Java 中 3 种常见 IO 模型 / AIO (Asynchronous I/O)",
+   "top1_片段": "#### AIO (Asynchronous I/O)  AIO 通常指 NIO.2 在 Java 7 中引入的异步通道 API。NIO.2 除了异步通道，还包括新的文件系统 API。  异步通道的操作会直接返回，调用者可以通过 `Futu"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Io C 解决了什么问题",
+   "top1": 0.6481,
+   "top2": 0.6366,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/ioc-and-aop.md",
+   "top1_章节": "IoC （Inversion of control ） / IoC 解决了什么问题?",
+   "top1_片段": "#### IoC 解决了什么问题?  IoC 的思想就是两方之间不互相依赖，由第三方容器来管理相关资源。这样有什么好处呢？  1. 对象之间的耦合度或者说依赖程度降低； 2. 资源变的容易管理；比如你用 Spring 容器提供的话很容易就可"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "JDBC 和 java 8 版本",
+   "top1": 0.6943,
+   "top2": 0.6851,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/new-features/java8-common-new-features.md",
+   "top1_章节": "Date-Time API / JDBC 和 java8",
+   "top1_片段": "#### JDBC 和 java8  现在 jdbc 时间类型和 java8 时间类型对应关系是  1. `Date` ---> `LocalDate` 2. `Time` ---> `LocalTime` 3. `Timestamp` -"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "JDK版本新特性",
+   "top1": 0.7237,
+   "top2": 0.7134,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/new-features/java8-common-new-features.md",
+   "top1_章节": "",
+   "top1_片段": "> 本文来自cowbi的投稿~  JDK 8 于 2014 年 3 月 18 日发布，这是一个 LTS（长期支持版）版本，也是 Java 生态中长期广泛使用的版本之一。Oracle 当前列出的 LTS 版本包括 JDK 8、JDK 11、J"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "JIT编译与AOT编译",
+   "top1": 0.696,
+   "top2": 0.6665,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/java-basic-questions-01.md",
+   "top1_章节": "基础概念与常识 / AOT 有什么优点？为什么不全部使用 AOT 呢？",
+   "top1_片段": "#### AOT 有什么优点？为什么不全部使用 AOT 呢？ JDK 9 曾通过 JEP 295 引入实验性的 AOT（Ahead of Time Compilation）工具 `jaotc`，但该工具已在 JDK 17 中移除。因此，JD"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "JMM内存模型",
+   "top1": 0.7337,
+   "top2": 0.7126,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/jmm.md",
+   "top1_章节": "JMM(Java Memory Model) / JMM 是如何抽象线程和主内存之间的关系？",
+   "top1_片段": "#### JMM 是如何抽象线程和主内存之间的关系？ **Java 内存模型（JMM）** 抽象了线程和主内存之间的关系，就比如说线程之间的共享变量必须存储在主内存中。 Java 从早期规范开始就有内存模型；Java 5 通过 JSR-13"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "JUC 中的应用场景",
+   "top1": 0.5978,
+   "top2": 0.5819,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/reentrantlock.md",
+   "top1_章节": "4 AQS 应用 / 4.2 JUC 中的应用场景",
+   "top1_片段": "#### 4.2 JUC 中的应用场景  除了上边 ReentrantLock 的可重入性的应用，AQS 作为并发编程的框架，为很多其他同步工具提供了良好的解决方案。下面列出了 JUC 中的几种同步工具，大体介绍一下 AQS 的应用场景： "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "JVM 参数与诊断工具",
+   "top1": 0.7832,
+   "top2": 0.6878,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/jvm/jvm-interview-questions.md",
+   "top1_章节": "JVM 参数与诊断工具",
+   "top1_片段": "### JVM 参数与诊断工具 参数题考察的是配置依据。堆大小、年轻代比例、收集器和日志参数要跟部署内存、对象分配速率、延迟目标及 JDK 版本一起讨论。尤其是 G1，通常不建议照搬以固定年轻代大小为中心的旧配置。 相关内容： - JVM "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "JVM入门与体系结构",
+   "top1": 0.6671,
+   "top2": 0.6542,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/jvm/README.md",
+   "top1_章节": "核心文章",
+   "top1_片段": "#### JVM 基础与内存  - JVM 常见面试题总结：按内存、类加载、GC、参数工具和线上排查整理高频问题。 - 大白话带你认识 JVM：用整体视角理解 JVM 的定位和组成。 - Java内存区域详解（重点）：讲解程序计数器、虚拟机"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "JWT 体积太大",
+   "top1": 0.6902,
+   "top2": 0.5326,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/security/advantages-and-disadvantages-of-jwt.md",
+   "top1_章节": "JWT 身份认证常见问题及解决办法 / JWT 体积太大",
+   "top1_片段": "#### JWT 体积太大  JWT 结构复杂（Header、Payload 和 Signature），包含了更多额外的信息，还需要进行 Base64Url 编码，这会使得 JWT 体积较大，增加了网络传输的开销。  JWT 组成:  JW"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Java IO 流原理与机制",
+   "top1": 0.7607,
+   "top2": 0.6743,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/io/io-basis.md",
+   "top1_章节": "IO 流简介",
+   "top1_片段": "### IO 流简介  IO 即 `Input/Output`，输入和输出。数据输入到计算机内存的过程即输入，反之输出到外部存储（比如数据库，文件，远程主机）的过程即输出。数据传输过程类似于水流，因此称为 IO 流。IO 流在 Java 中"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Java新特性",
+   "top1": 0.7048,
+   "top2": 0.6857,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/README.md",
+   "top1_章节": "核心文章 / Java 新特性",
+   "top1_片段": "#### Java 新特性  - Java 新特性专题：按版本梳理 Java 8 之后的重要语言、标准库和 JVM 特性。 - Java8 新特性实战：掌握 Lambda、Stream、Optional、接口默认方法和新日期 API。 - "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Java版本特性",
+   "top1": 0.7304,
+   "top2": 0.6912,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/new-features/README.md",
+   "top1_章节": "",
+   "top1_片段": "Java 新特性不适合按版本机械背诵，更适合抓住“语言表达能力、标准库增强、并发模型、JVM 改进、长期支持版本”这几条主线。日常开发优先掌握 Java 8、11、17、21 等 LTS 版本中的稳定特性，再按需了解后续版本的预览和孵化特性"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Join....On",
+   "top1": 0.5108,
+   "top2": 0.5049,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/extra-page/offer.md",
+   "top1_章节": "",
+   "top1_片段": "没人要 才烦恼 希望 offer 钱是多哒 HR 超nice哒 不如跟着节奏没在怕的 努努力 别让校招季卡住你 卡住你 不拿offer不放弃 燃烧我的卡路里 拜拜 二次元 综艺直播动作片 言情玄幻宫斗剧 拿走拿走别客气 拜拜 铂金一 戒掉农"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Jre Or Jdk",
+   "top1": 0.6267,
+   "top2": 0.5611,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/java-basic-questions-01.md",
+   "top1_章节": "基础概念与常识 / ⭐️ JVM vs JDK vs JRE / JDK 和 JRE",
+   "top1_片段": "##### JDK 和 JRE JDK（Java Development Kit）是一个功能齐全的 Java 开发工具包，供开发者使用，用于创建和编译 Java 程序。它包含了 JRE（Java Runtime Environment），以"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Kafka、Active MQ、Rabb…",
+   "top1": 0.6945,
+   "top2": 0.6776,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-concurrency/why-mq.md",
+   "top1_章节": "面试题剖析 / Kafka、ActiveMQ、RabbitMQ、RocketMQ 有什么优缺点？",
+   "top1_片段": "#### Kafka、ActiveMQ、RabbitMQ、RocketMQ 有什么优缺点？ | 特性                     | ActiveMQ                              | RabbitM"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Kafka消息队列",
+   "top1": 0.7295,
+   "top2": 0.7026,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/message-queue.md",
+   "top1_章节": "分布式消息队列技术选型 / 常见的消息队列有哪些？ / Kafka",
+   "top1_片段": "##### Kafka  Kafka 是 LinkedIn 开源的一个分布式流式处理平台，已经成为 Apache 顶级项目，早期被用来用于处理海量的日志，后面才慢慢发展成了一款功能全面的高性能消息队列。  流式处理平台具有三个关键功能：  "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Kryo序列化",
+   "top1": 0.7227,
+   "top2": 0.6852,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/serialization.md",
+   "top1_章节": "常见序列化协议有哪些？ / Kryo",
+   "top1_片段": "#### Kryo Kryo 是一个高性能的序列化/反序列化工具，由于其变长存储特性并使用了字节码生成机制，拥有较高的运行速度和较小的字节码体积。 另外，Kryo 已经是一种非常成熟的序列化实现了，已经在 Twitter、Groupon、Y"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "LLM API 调用：从跑通到可用",
+   "top1": 0.7095,
+   "top2": 0.6903,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/roadmap/java-to-ai-roadmap.md",
+   "top1_章节": "阶段一：大模型对接层（1~2 周） / LLM API 调用：从跑通到可用",
+   "top1_片段": "#### LLM API 调用：从跑通到可用 先从框架选型开始。Java 侧可以看 Spring AI、LangChain4j，Go 侧可以看 LangChainGo。它们最大的价值是统一模型调用接口：底层从 OpenAI 换到 Gemin"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "LRU 和 Redis 有什么关系",
+   "top1": 0.685,
+   "top2": 0.5845,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/data-structure/lru-cache.md",
+   "top1_章节": "LRU 和 Redis 有什么关系？",
+   "top1_片段": "### LRU 和 Redis 有什么关系？  Redis 作为缓存使用时，也需要在内存达到 `maxmemory` 上限后执行淘汰策略。Redis 支持 `allkeys-lru`、`volatile-lru` 等策略：  - `allk"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "LRU 缓存",
+   "top1": 0.6889,
+   "top2": 0.6781,
+   "top1_仓库": "interview_internal_reference",
+   "top1_路径": "01.阿里篇/1.1.4 LRU缓存机制.md",
+   "top1_章节": "",
+   "top1_片段": "**题目**：LRU 缓存机制 设计和实现一个 LRU（最近最少使用）缓存数据结构，使它应该支持一下操作：get 和 put。 get(key) - 如果 key 存在于缓存中，则获取 key 的 value（总是正数），否则返回 -1。 "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Lambda 表达式",
+   "top1": 0.6856,
+   "top2": 0.6513,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/new-features/java8-common-new-features.md",
+   "top1_章节": "Lambda 表达式 / Lambda 实战",
+   "top1_片段": "##### 集合迭代  ```java void lamndaFor() {         List<String> strings = Arrays.asList(\"1\", \"2\", \"3\");         //传统foreach "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Leader/Quorum 协调会遇到哪些问题",
+   "top1": 0.8256,
+   "top2": 0.753,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/protocol/centralized-and-decentralized.md",
+   "top1_章节": "Leader/Quorum 协调会遇到哪些问题？",
+   "top1_片段": "### Leader/Quorum 协调会遇到哪些问题？  最容易想到的是 Leader 单点。  如果 Leader 的状态只存在自己内存里，Leader 一挂，集群就不知道当前任务分配、分片归属和最新元数据是什么。这种设计确实很危险。更"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Lfu Cache",
+   "top1": 0.5858,
+   "top2": 0.5557,
+   "top1_仓库": "leetcode",
+   "top1_路径": "problems/460.lfu-cache.md",
+   "top1_章节": "参考（References）",
+   "top1_片段": "### 参考（References） 1. LFU(Least frequently used) Cache 2. Leetcode discussion mylzsd-Solution-Using-Two-HashMap-and-One-"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Linux操作系统",
+   "top1": 0.6711,
+   "top2": 0.6709,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/linux-intro.md",
+   "top1_章节": "初探 Linux / 常见的 Linux 发行版本",
+   "top1_片段": "#### 常见的 Linux 发行版本  Linus Torvalds 开源的只是 Linux 内核，我们上面也提到了操作系统内核的作用。一些组织或厂商将 Linux 内核与各种软件和文档包装起来，并提供系统安装界面和系统配置、设定与管理工"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "List集合体系",
+   "top1": 0.5814,
+   "top2": 0.5552,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/collection/java-collection-questions-01.md",
+   "top1_章节": "集合概述 / 集合框架底层数据结构总结",
+   "top1_片段": "##### List  - `ArrayList`：`Object[]` 数组。详细可以查看：ArrayList 源码分析。 - `Vector`：`Object[]` 数组。 - `LinkedList`：双向链表（JDK1.6 之前为循"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Lucene 和 ES 的前世今生",
+   "top1": 0.5454,
+   "top2": 0.4858,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-concurrency/es-introduction.md",
+   "top1_章节": "",
+   "top1_片段": "## 搜索引擎介绍  ### Lucene 和 ES 的前世今生  Lucene 是最先进、功能最强大的搜索库。如果直接基于 Lucene 开发，非常复杂，即便写一些简单的功能，也要写大量的 Java 代码，需要深入理解原理。  Elast"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "MVCC➕Next key Lock 防止幻读",
+   "top1": 0.8418,
+   "top2": 0.6831,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/innodb-implementation-of-mvcc.md",
+   "top1_章节": "MVCC➕Next-key-Lock 防止幻读",
+   "top1_片段": "### MVCC➕Next-key-Lock 防止幻读  `InnoDB`存储引擎在 RR 级别下通过 `MVCC`和 `Next-key Lock` 来解决幻读问题：  **1、执行普通 `select`，此时会以 `MVCC` 快照读的"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Map集合体系",
+   "top1": 0.5969,
+   "top2": 0.5889,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/collection/java-collection-questions-01.md",
+   "top1_章节": "集合概述 / 集合框架底层数据结构总结 / Map",
+   "top1_片段": "##### Map  - `HashMap`：JDK1.8 之前 `HashMap` 由数组+链表组成的，数组是 `HashMap` 的主体，链表则是主要为了解决哈希冲突而存在的（“拉链法”解决冲突）。JDK1.8 以后在解决哈希冲突时有了"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Metrics 统计器",
+   "top1": 0.7081,
+   "top2": 0.5812,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-availability/hystrix-circuit-breaker.md",
+   "top1_章节": "Metrics 统计器",
+   "top1_片段": "#### Metrics 统计器  与 Hystrix 断路器紧密协作的，还有另一个重要组件 —— **统计器（Metrics）**。统计器中最重要的参数要数滑动窗口（metrics.rollingStats.timeInMilliseco"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Minor GC 和 Full GC",
+   "top1": 0.5895,
+   "top2": 0.5872,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/Java 虚拟机.md",
+   "top1_章节": "三、内存分配与回收策略",
+   "top1_片段": "### 三、内存分配与回收策略  #### Minor GC 和 Full GC  - Minor GC：回收新生代，因为新生代对象存活时间很短，因此 Minor GC 会频繁执行，执行的速度一般也会比较快。  - Full GC：回收老年"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Mongo DB 提供了哪几种执行聚合的方法",
+   "top1": 0.7828,
+   "top2": 0.7462,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mongodb/mongodb-questions-01.md",
+   "top1_章节": "MongoDB 聚合 / MongoDB 提供了哪几种执行聚合的方法？",
+   "top1_片段": "#### MongoDB 提供了哪几种执行聚合的方法？ MongoDB 提供了两种执行聚合的方法： - **聚合管道（Aggregation Pipeline）**：执行聚合操作的首选方法。 - **单一目的聚合方法（Single purp"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "MongoDB 事务",
+   "top1": 0.7307,
+   "top2": 0.7049,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mongodb/mongodb-questions-01.md",
+   "top1_章节": "MongoDB 事务",
+   "top1_片段": "### MongoDB 事务 > MongoDB 事务想要搞懂原理还是比较花费时间的，我自己也没有搞太明白。因此，我这里只是简单介绍一下 MongoDB 事务，想要了解原理的小伙伴，可以自行搜索查阅相关资料。 > 这里推荐几篇文章，供大家参"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "MongoDB 索引有什么用",
+   "top1": 0.8174,
+   "top2": 0.7458,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mongodb/mongodb-questions-02.md",
+   "top1_章节": "MongoDB 索引",
+   "top1_片段": "### MongoDB 索引  #### MongoDB 索引有什么用?  和关系型数据库类似，MongoDB 中也有索引。索引的目的主要是用来提高查询效率，如果没有索引的话，MongoDB 必须执行 **集合扫描** ，即扫描集合中的每个"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Mq Design",
+   "top1": 0.5049,
+   "top2": 0.5012,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/rocketmq-questions.md",
+   "top1_章节": "RocketMQ 架构",
+   "top1_片段": "classDef proxy fill:#005D7B,color:#fff,rx:10,ry:10     classDef producer fill:#00838F,color:#fff,rx:10,ry:10     classDe"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "MyBatis持久层框架",
+   "top1": 0.6658,
+   "top2": 0.6051,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/security/data-desensitization.md",
+   "top1_章节": "常用脱敏工具 / Mybatis-Mate",
+   "top1_片段": "#### Mybatis-Mate  先介绍一下 MyBatis、MyBatis-Plus 和 Mybatis-Mate 这三者的关系：  - MyBatis 是一款优秀的持久层框架，它支持定制化 SQL、存储过程以及高级映射。 - MyB"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "MyISAM存储引擎",
+   "top1": 0.6651,
+   "top2": 0.6642,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/MySQL.md",
+   "top1_章节": "三、存储引擎 / 比较",
+   "top1_片段": "#### 比较  - 事务：InnoDB 是事务型的，可以使用 Commit 和 Rollback 语句。  - 并发：MyISAM 只支持表级锁，而 InnoDB 还支持行级锁。  - 外键：InnoDB 支持外键。  - 备份：Inno"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "MySQL关系型数据库",
+   "top1": 0.7526,
+   "top2": 0.6976,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-questions-01.md",
+   "top1_章节": "MySQL 基础",
+   "top1_片段": "### MySQL 基础  #### 什么是关系型数据库？  顾名思义，关系型数据库（RDB，Relational Database）就是一种建立在关系模型的基础上的数据库。关系模型表明了数据库中所存储的数据之间的联系（一对一、一对多、多对"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "NAT网络地址转换",
+   "top1": 0.7844,
+   "top2": 0.7656,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/计算机网络 - 网络层.md",
+   "top1_章节": "网络地址转换 NAT",
+   "top1_片段": "### 网络地址转换 NAT  专用网内部的主机使用本地 IP 地址又想和互联网上的主机通信时，可以使用 NAT 来将本地 IP 转换为全球 IP。  在以前，NAT 将本地 IP 和全球 IP 一一对应，这种方式下拥有 n 个全球 IP "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "NF(第三范式)",
+   "top1": 0.6543,
+   "top2": 0.6542,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/basis.md",
+   "top1_章节": "数据库范式了解吗? / 3NF(第三范式)",
+   "top1_片段": "#### 3NF(第三范式)  3NF 在 2NF 的基础之上，消除了非主属性对于码的传递函数依赖 。符合 3NF 要求的数据库设计，**基本**上解决了数据冗余过大，插入异常，修改异常，删除异常的问题。比如在关系 R(学号 , 姓名, 系"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "NIO 和 BIO 的区别什么是 IO…",
+   "top1": 0.733,
+   "top2": 0.6836,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/io/nio-basis.md",
+   "top1_章节": "NIO 简介",
+   "top1_片段": "在学习 NIO 之前，需要先了解一下计算机 I/O 模型的基础理论知识。还不了解的话，可以参考我写的这篇文章：Java IO 模型详解。  ### NIO 简介  在传统的 Java I/O 模型（BIO）中，I/O 操作是以阻塞的方式进行"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "NULL 和 '' 的区别核心概念",
+   "top1": 0.771,
+   "top2": 0.6533,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-questions-01.md",
+   "top1_章节": "MySQL 字段类型 / NULL 和 '' 的区别是什么？",
+   "top1_片段": "#### NULL 和 '' 的区别是什么？ `NULL` 和 `''` (空字符串) 是两个完全不同的值，它们分别表示不同的含义，并在数据库中有着不同的行为。`NULL` 代表缺失或未知的数据，而 `''` 表示一个已知存在的空字符串。它"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Nacos 配置中心核心模型",
+   "top1": 0.7826,
+   "top2": 0.6582,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/distributed-configuration-center.md",
+   "top1_章节": "Nacos 配置中心核心模型",
+   "top1_片段": "### Nacos 配置中心核心模型  Nacos 同时提供配置中心和服务发现能力，这也是它与 Apollo 的主要差异之一。从配置中心角度看，Nacos 常用三层模型来定位一份配置：  - **Namespace**：通常用于环境或租户隔"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Name Server（注册中心）",
+   "top1": 0.7033,
+   "top2": 0.6265,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/rocketmq-questions.md",
+   "top1_章节": "RocketMQ 架构 / NameServer（注册中心）",
+   "top1_片段": "#### NameServer（注册中心）  NameServer 负责元数据的存储，扮演着集群“中枢神经系统”的角色，其核心作用是为生产者和消费者提供路由信息，帮助它们找到对应的 Broker 地址。  **核心功能：**  1. **B"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Netty（可选）",
+   "top1": 0.6386,
+   "top2": 0.5825,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/roadmap/java-roadmap.md",
+   "top1_章节": "常用框架 / Netty（可选）",
+   "top1_片段": "#### Netty（可选）  Netty 是 Java 网络编程最热门的框架，大家可以根据个人需要决定是否进行学习，实际企业开发中用的不多。  不过，个人建议学有余力的同学还是抽时间认真学习一下，对个人开发能力的提升还是很有帮助的。  1"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Next Key Locks",
+   "top1": 0.5948,
+   "top2": 0.5812,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/数据库系统原理.md",
+   "top1_章节": "五、多版本并发控制 / 快照读与当前读 / 2. 当前读",
+   "top1_片段": "##### 2. 当前读  MVCC 其它会对数据库进行修改的操作（INSERT、UPDATE、DELETE）需要进行加锁操作，从而读取最新的数据。可以看到 MVCC 并不是完全不用加锁，而只是避免了 SELECT 的加锁操作。  ```s"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "NoSQL非关系型数据库",
+   "top1": 0.7226,
+   "top2": 0.6906,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/nosql.md",
+   "top1_章节": "NoSQL 是什么？",
+   "top1_片段": "### NoSQL 是什么？  NoSQL（Not Only SQL 的缩写）泛指非关系型的数据库，主要针对的是键值、文档以及图形类型数据存储。并且，NoSQL 数据库天生支持分布式，数据冗余和数据分片等特性，旨在提供可扩展的高可用高性能数"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "OR 连接与 Index Merge",
+   "top1": 0.7533,
+   "top2": 0.6004,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-index-invalidation.md",
+   "top1_章节": "OR 连接与 Index Merge",
+   "top1_片段": "#### OR 连接与 Index Merge  - **核心定义**：在 `OR` 连接的多个条件中，只要有**任意一列没有索引**，MySQL 就会放弃所有索引转而执行全表扫描。 - **Index Merge 机制**：若 `OR` "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Object 类的常见方法分类与清单",
+   "top1": 0.703,
+   "top2": 0.6602,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/java-basic-questions-02.md",
+   "top1_章节": "⭐️ Object / Object 类的常见方法有哪些？",
+   "top1_片段": "#### Object 类的常见方法有哪些？ Object 类是一个特殊的类，是所有类的父类，主要提供了以下方法。需要注意，`finalize()` 自 JDK 9 起已被弃用，并在 JDK 18 中被标记为待移除，不应在新代码中使用： `"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Optional 增强",
+   "top1": 0.6871,
+   "top2": 0.6638,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/new-features/java9.md",
+   "top1_章节": "API 增强",
+   "top1_片段": "#### Optional 增强  `Optional` 类中新增了 `ifPresentOrElse()`、`or()` 和 `stream()` 等方法  `ifPresentOrElse()` 方法接受两个参数 `Consumer` "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Optional空值处理",
+   "top1": 0.6823,
+   "top2": 0.6726,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/new-features/java8-common-new-features.md",
+   "top1_章节": "Optional / 过滤值",
+   "top1_片段": "#### 过滤值  ```java /** * 1. 如果是empty返回empty * 2. predicate.test(value)==true 返回this，否则返回empty */ public Optional<T> filte"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Osi And Tcp Ip Model",
+   "top1": 0.5928,
+   "top2": 0.586,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/osi-and-tcp-ip-model.md",
+   "top1_章节": "TCP/IP 四层模型",
+   "top1_片段": "### TCP/IP 四层模型  **TCP/IP 四层模型** 是目前被广泛采用的一种模型，我们可以将 TCP/IP 模型看作是 OSI 七层模型的精简版本，由以下 4 层组成：  1. 应用层 2. 传输层 3. 网络层 4. 网络接口"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Overcommit 和 OOM 是什么关系",
+   "top1": 0.6884,
+   "top2": 0.6562,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/memory-management.md",
+   "top1_章节": "Overcommit 和 OOM：申请成功不等于物理内存已经准备好",
+   "top1_片段": "### Overcommit 和 OOM：申请成功不等于物理内存已经准备好  Linux 可以允许进程承诺的虚拟内存超过当前 RAM 和 Swap，这叫内存 overcommit。它适合那些会申请很大地址空间、但只实际使用其中一部分的程序。"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Overcommit 和 OOM：申请成…",
+   "top1": 0.735,
+   "top2": 0.6479,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/memory-management.md",
+   "top1_章节": "Overcommit 和 OOM：申请成功不等于物理内存已经准备好",
+   "top1_片段": "### Overcommit 和 OOM：申请成功不等于物理内存已经准备好  Linux 可以允许进程承诺的虚拟内存超过当前 RAM 和 Swap，这叫内存 overcommit。它适合那些会申请很大地址空间、但只实际使用其中一部分的程序。"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "P 99 能不能直接当熔断条件",
+   "top1": 0.7588,
+   "top2": 0.5539,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-availability/fallback-and-circuit-breaker.md",
+   "top1_章节": "什么是熔断？ / P99 能不能直接当熔断条件？",
+   "top1_片段": "#### P99 能不能直接当熔断条件？  不建议这么理解。  P99 是监控指标，适合用来观察接口整体表现，也适合辅助你设置熔断阈值。  但 Sentinel 触发熔断时，不是简单拿 P99 跟阈值比较。它的逻辑更接近：  1. 先看单次"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "PCB 是什么包含哪些信息",
+   "top1": 0.7671,
+   "top2": 0.746,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/operating-system-basic-questions-01.md",
+   "top1_章节": "进程和线程 / PCB 是什么？包含哪些信息？",
+   "top1_片段": "#### PCB 是什么？包含哪些信息？  **PCB（Process Control Block）** 即进程控制块，是操作系统中用来管理和跟踪进程的数据结构，每个进程都对应着一个独立的 PCB。你可以将 PCB 视为进程的大脑。  当操"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Page Cache 原因与机制",
+   "top1": 0.6659,
+   "top2": 0.6261,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/file-system.md",
+   "top1_章节": "Page Cache 为什么影响文件读写性能？",
+   "top1_片段": "### Page Cache 为什么影响文件读写性能？ 直接读写磁盘太慢。Linux 会用 **Page Cache** 缓存文件数据，把磁盘文件的一部分页保存在内存里。 读文件时，如果目标页已经在 Page Cache 中，内核可以直接从"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Paxos Vs Raft",
+   "top1": 0.7275,
+   "top2": 0.6259,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/protocol/paxos-algorithm.md",
+   "top1_章节": "Paxos vs Raft",
+   "top1_片段": "### Paxos vs Raft  在 2014 年之后，Raft 算法凭借其极致的可理解性成为了工业界的新宠。必须明确，Raft 并非 Paxos 的变体，两者在底层设计哲学上存在硬性分歧。  | **对比维度**          |"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Ping 通，只能说明 ICMP 有回应",
+   "top1": 0.8673,
+   "top2": 0.7572,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/can-ping-but-tcp-may-not-connect.md",
+   "top1_章节": "Ping 通，只能说明 ICMP 有回应",
+   "top1_片段": "### Ping 通，只能说明 ICMP 有回应  Ping 基于 ICMP（Internet Control Message Protocol，互联网控制报文协议），通过发送和接收 ICMP 报文来实现探测。  ICMP 报文分为两类：*"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Pipeline有什么好处，为什么要用p…",
+   "top1": 0.5806,
+   "top2": 0.5749,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-concurrent-questions-03.md",
+   "top1_章节": "线程池 / ⭐️ 为什么要用线程池？",
+   "top1_片段": "#### ⭐️ 为什么要用线程池？  池化技术想必大家已经屡见不鲜了，线程池、数据库连接池、HTTP 连接池等等都是对这个思想的应用。池化技术的思想主要是为了减少每次获取资源的消耗，提高对资源的利用率。  线程池提供了一种限制和管理资源（包"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Postgre SQL（可选）",
+   "top1": 0.6143,
+   "top2": 0.5888,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/zhuanlan/interview-guide.md",
+   "top1_章节": "技术选型常见问题解答 / 数据存储为什么选择 PostgreSQL + pgvector？",
+   "top1_片段": "- **全文搜索？** 内置支持（能满足基础需求），或使用 **pg_bm25** 等扩展。 - **时序数据？** 有顶级的 **TimescaleDB** 扩展。 - **地理信息？** 有行业标准的 **PostGIS** 扩展。 这"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Predicate",
+   "top1": 0.5589,
+   "top2": 0.511,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/new-features/java8-tutorial-translate.md",
+   "top1_章节": "内置函数式接口(Built-in Functional Interfaces) / Predicate",
+   "top1_片段": "#### Predicate Predicate 接口是只有一个参数的返回布尔类型值的 **断言型** 接口。该接口包含多种默认方法来将 Predicate 组合成其他复杂的逻辑（比如：与，或，非）： **译者注：** Predicate "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Producer 和 Consumer",
+   "top1": 0.6658,
+   "top2": 0.6324,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/rabbitmq-questions.md",
+   "top1_章节": "RabbitMQ 有哪些重要概念？ / Producer(生产者) 和 Consumer(消费者)",
+   "top1_片段": "#### Producer(生产者) 和 Consumer(消费者)  - **Producer(生产者)** :生产消息的一方（邮件投递者） - **Consumer(消费者)** :消费消息的一方（邮件收件人）  消息一般由 2 部分组"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Project Loom 和虚拟线程是什么关系",
+   "top1": 0.8325,
+   "top2": 0.6626,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/virtual-thread.md",
+   "top1_章节": "Project Loom 和虚拟线程是什么关系？",
+   "top1_片段": "### Project Loom 和虚拟线程是什么关系？  Project Loom 是 OpenJDK 中改进 Java 并发模型的项目，虚拟线程是 Loom 最重要的成果之一。虚拟线程先后在 JDK 19、JDK 20 中预览，最终通过"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Proto Stuff",
+   "top1": 0.5289,
+   "top2": 0.5177,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/ai-coding/practices/oh-my-pi.md",
+   "top1_章节": "工具非常丰富",
+   "top1_片段": "`github` 是我更喜欢的一块。它没有让模型再学一堆 `gh_issue_view`、`gh_pr_view`、`gh_search`，而是把 PR 当文件系统路径读。`read pr://1428` 拿到的结构，和 `read src"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Protobuf序列化",
+   "top1": 0.607,
+   "top2": 0.5333,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/serialization.md",
+   "top1_章节": "常见序列化协议有哪些？",
+   "top1_片段": "#### Protobuf  Protobuf 出自于 Google，性能还比较优秀，也支持多种语言，同时还是跨平台的。就是在使用中过于繁琐，因为你需要自己定义 IDL 文件和生成对应的序列化代码。这样虽然不灵活，但另一方面也避免了 pro"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Proxy（代理层，5.0 新增）",
+   "top1": 0.7761,
+   "top2": 0.6648,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/rocketmq-questions.md",
+   "top1_章节": "RocketMQ 架构 / Proxy（代理层，5.0 新增）",
+   "top1_片段": "#### Proxy（代理层，5.0 新增）  RocketMQ 5.0 引入了 **Proxy** 组件，这是 **计算与存储分离** 架构的核心体现。Proxy 作为客户端与 Broker 之间的代理层，将客户端协议适配、权限管理、消费"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Pull Consumer（拉模式消费者）",
+   "top1": 0.7768,
+   "top2": 0.7654,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/rocketmq-questions.md",
+   "top1_章节": "消费者分类 / PullConsumer（拉模式消费者）",
+   "top1_片段": "- **需要控制消费速率**：可以灵活调整拉取频率 - **批量消费场景**：可以一次性拉取大量消息进行批量处理 - **特殊消费需求**：如需要从特定 offset 开始消费、需要暂停消费等 **Pull 模式工作原理：** 1. **负"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Push Consumer（推模式消费者）",
+   "top1": 0.7464,
+   "top2": 0.7058,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/rocketmq-questions.md",
+   "top1_章节": "消费者分类 / PushConsumer（推模式消费者）",
+   "top1_片段": "#### PushConsumer（推模式消费者） **核心特点：** 高度封装的消费者类型，消费消息仅仅通过消费监听器监听并返回结果。消息的获取、消费状态提交以及消费重试都通过 RocketMQ 的客户端 SDK 完成。 **适用场景：*"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Quick Union",
+   "top1": 0.5906,
+   "top2": 0.5793,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/算法 - 并查集.md",
+   "top1_章节": "Quick Find",
+   "top1_片段": "### Quick Find  可以快速进行 find 操作，也就是可以快速判断两个节点是否连通。  需要保证同一连通分量的所有节点的 id 值相等，就可以通过判断两个节点的 id 值是否相等从而判断其连通性。  但是 union 操作代价"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "RBAC 模型",
+   "top1": 0.6032,
+   "top2": 0.5963,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/security/basis-of-authority-certification.md",
+   "top1_章节": "RBAC 模型了解吗？",
+   "top1_片段": "### RBAC 模型了解吗？  系统权限控制最常采用的访问控制模型就是 **RBAC 模型** 。  **什么是 RBAC 呢？** RBAC 即基于角色的权限访问控制（Role-Based Access Control）。这是一种通过角"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "RDB 和 AOF 到底该如何选择",
+   "top1": 0.7833,
+   "top2": 0.759,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-concurrency/redis-persistence.md",
+   "top1_章节": "面试题剖析 / RDB 和 AOF 到底该如何选择",
+   "top1_片段": "#### RDB 和 AOF 到底该如何选择  -   不要仅仅使用 RDB，因为那样会导致你丢失很多数据； -   也不要仅仅使用 AOF，因为那样有两个问题：第一，你通过 AOF 做冷备，没有 RDB 做冷备来的恢复速度更快；第二，RD"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "REST 中的 HATEOAS",
+   "top1": 0.7429,
+   "top2": 0.573,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/basis/RESTfulAPI.md",
+   "top1_章节": "REST 中的 HATEOAS",
+   "top1_片段": "### REST 中的 HATEOAS  > **在 Fielding 对 REST 的原始定义中，HATEOAS 是统一接口约束的一部分。不过，工程中很多被称为 REST API 的 HTTP/JSON API 并没有实现它。**  上面"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "RPC 的原理核心概念",
+   "top1": 0.7439,
+   "top2": 0.7331,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/rpc/rpc-intro.md",
+   "top1_章节": "RPC 的原理是什么?",
+   "top1_片段": "### RPC 的原理是什么? 为了能够帮助小伙伴们理解 RPC 原理，我们可以将整个 RPC 的 核心功能看作是下面 👇 5 个部分实现的： 1. **客户端（服务消费端）**：调用远程方法的一端。 1. **客户端 Stub（桩）**："
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "RTO 和 RPO 决定备份策略",
+   "top1": 0.7653,
+   "top2": 0.7538,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-backup-and-restore.md",
+   "top1_章节": "RTO 和 RPO 决定备份策略",
+   "top1_片段": "这里有个很现实的限制：恢复速度和数据量、磁盘性能、索引数量、网络带宽、导入方式都有关系。没有演练数据时，RTO 只能算愿望，不能算承诺。"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Rabbit Mq",
+   "top1": 0.5933,
+   "top2": 0.5897,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/rabbitmq-questions.md",
+   "top1_章节": "RabbitMQ 是什么？",
+   "top1_片段": "RabbitMQ 现在不能只按“Exchange + Queue”那套老答案准备。RabbitMQ 4.0 已经移除镜像队列；需要复制和高可用时，主要看 Quorum Queue；需要日志型存储、历史回放或大量堆积时，再评估 Streams"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Rabbitmq Questions",
+   "top1": 0.6465,
+   "top2": 0.6323,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/message-queue-interview-questions.md",
+   "top1_章节": "RabbitMQ 高频问题",
+   "top1_片段": "### RabbitMQ 高频问题  RabbitMQ 重点考察 AMQP 路由模型、确认机制、死信与延迟队列，以及不同队列类型的可靠性。Exchange、Routing Key、Binding 和 Queue 的关系必须先讲清楚。  相关"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Reader（字符输入流）",
+   "top1": 0.7606,
+   "top2": 0.69,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/io/io-basis.md",
+   "top1_章节": "字符流 / Reader（字符输入流）",
+   "top1_片段": "#### Reader（字符输入流） `Reader` 用于从源头（通常是文件）读取数据（字符信息）到内存中，`java.io.Reader` 抽象类是所有字符输入流的父类。 `Reader` 用于读取文本， `InputStream` 用"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Rebalance 有什么风险如何减少影响",
+   "top1": 0.7467,
+   "top2": 0.5855,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/kafka-questions-01.md",
+   "top1_章节": "Rebalance 有什么风险？如何减少影响？",
+   "top1_片段": "### Rebalance 有什么风险？如何减少影响？  Consumer Group 中消费者数量变化、订阅 Topic 变化、消费者长时间没有发送心跳，都可能触发 Rebalance。Rebalance 期间，分区会被重新分配，部分消费"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Redis ZSet 原因与机制",
+   "top1": 0.6589,
+   "top2": 0.6311,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/data-structure/skip-list.md",
+   "top1_章节": "Redis ZSet 为什么用跳表？",
+   "top1_片段": "### Redis ZSet 为什么用跳表？  ZSet 需要支持：  - 按 member 快速查 score。 - 按 score 排序。 - 按 score 范围查询。 - 获取排名。  哈希表适合按 member 查 score，跳"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Redis ZSet有序集合",
+   "top1": 0.6632,
+   "top2": 0.654,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/redis/redis-data-structures-01.md",
+   "top1_章节": "Sorted Set（有序集合） / 常用命令",
+   "top1_片段": "#### 常用命令 | 命令                                          | 介绍                                                            "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Redis cluster 介绍",
+   "top1": 0.7234,
+   "top2": 0.6773,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-concurrency/redis-cluster.md",
+   "top1_章节": "面试题剖析",
+   "top1_片段": "#### Redis cluster 介绍  -   自动将数据进行分片，每个 master 上放一部分数据 -   提供内置的高可用支持，部分 master 不可用时，还是可以继续工作的  在 Redis cluster 架构下，每个 R"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Redis 中的布隆过滤器",
+   "top1": 0.7817,
+   "top2": 0.7488,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/data-structure/bloom-filter.md",
+   "top1_章节": "Redis 中的布隆过滤器",
+   "top1_片段": "### Redis 中的布隆过滤器  #### 介绍  RedisBloom 提供布隆过滤器、布谷鸟过滤器等概率型数据结构。从 Redis 8 开始，这些能力已经包含在 Redis Open Source 中，不再需要安装旧的第三方 `re"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Redis 可以做消息队列么实现原理",
+   "top1": 0.7943,
+   "top2": 0.766,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/redis/redis-stream-mq.md",
+   "top1_章节": "第一阶段：早期用 List 数据结构",
+   "top1_片段": "#### 第一阶段：早期用 List 数据结构  **Redis 2.0 之前，如果想要使用 Redis 来做消息队列的话，只能通过 List 来实现。**  通过 `RPUSH/LPOP` 或者 `LPUSH/RPOP` 即可实现简易版消"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Redis 如何解决集群情况下分布式锁的可靠性",
+   "top1": 0.8435,
+   "top2": 0.8111,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/distributed-lock-implementations.md",
+   "top1_章节": "基于 Redis 实现分布式锁 / Redis 如何解决集群情况下分布式锁的可靠性？",
+   "top1_片段": "#### Redis 如何解决集群情况下分布式锁的可靠性？ 为了避免单点故障，生产环境下的 Redis 服务通常是集群化部署的。 Redis 集群下，上面介绍到的分布式锁的实现会存在一些问题。Redis 主从复制默认是异步的：主节点写入锁成"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Redis 的 Red Lock 算法",
+   "top1": 0.7399,
+   "top2": 0.6989,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/distributed-system/distributed-lock-redis-vs-zookeeper.md",
+   "top1_章节": "面试题剖析 / Redis 分布式锁 / RedLock 算法",
+   "top1_片段": "##### RedLock 算法  这个场景是假设有一个 Redis cluster，有 5 个 Redis master 实例。然后执行如下步骤获取一把锁：  1. 获取当前时间戳，单位是毫秒； 2. 跟上面类似，轮流尝试在每个 mast"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Redisson 延迟队列原理是什么有什么优势",
+   "top1": 0.7982,
+   "top2": 0.6226,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/redis/redis-delayed-task.md",
+   "top1_章节": "Redisson 延迟队列原理是什么？有什么优势？",
+   "top1_片段": "#### Redisson 延迟队列原理是什么？有什么优势？  Redisson 是一个开源的 Java 语言 Redis 客户端，提供了很多开箱即用的功能，比如多种分布式锁的实现、延时队列。  我们可以借助 Redisson 内置的延时队"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Redis基础",
+   "top1": 0.7212,
+   "top2": 0.6875,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/redis/redis-questions-01.md",
+   "top1_章节": "Redis 基础",
+   "top1_片段": "### Redis 基础  #### 什么是 Redis？  Redis （**RE**mote **DI**ctionary **S**erver）是一个基于 C 语言开发的开源 NoSQL 数据库（BSD 许可）。与传统数据库不同的是，"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Redis缓存数据库",
+   "top1": 0.7253,
+   "top2": 0.7193,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/redis/cache-basics.md",
+   "top1_章节": "缓存的分类",
+   "top1_片段": "##### 分布式缓存的方案有哪些？  分布式缓存的话，比较老牌同时也是使用的比较多的还是 **Memcached** 和 **Redis**。不过，现在基本没有看过还有项目使用 **Memcached** 来做缓存，都是直接用 **Red"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Redo Log重做日志",
+   "top1": 0.6647,
+   "top2": 0.6586,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-logs.md",
+   "top1_章节": "",
+   "top1_片段": "> 本文来自公号程序猿阿星投稿，JavaGuide 对其做了补充完善。  ### 前言  MySQL 日志 主要包括错误日志、查询日志、慢查询日志、事务日志、二进制日志几大类。其中，比较重要的还要属二进制日志 binlog（归档日志）和事务"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Reentrant Lock",
+   "top1": 0.6384,
+   "top2": 0.6349,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/reentrantlock.md",
+   "top1_章节": "4 AQS 应用 / 4.1 ReentrantLock 的可重入应用",
+   "top1_片段": "#### 4.1 ReentrantLock 的可重入应用 ReentrantLock 的可重入性是 AQS 很好的应用之一，在了解完上述知识点以后，我们很容易得知 ReentrantLock 实现可重入的方法。在 ReentrantLoc"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Reentrant Read Write Lock",
+   "top1": 0.7557,
+   "top2": 0.6962,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-concurrent-questions-02.md",
+   "top1_章节": "ReentrantReadWriteLock / ReentrantReadWriteLock 是什么？",
+   "top1_片段": "#### ReentrantReadWriteLock 是什么？  `ReentrantReadWriteLock` 实现了 `ReadWriteLock`，是一个可重入的读写锁，既可以保证多个线程同时读的效率，同时又可以保证有写入操作时的"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Refactoring",
+   "top1": 0.5736,
+   "top2": 0.5579,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/ai-coding/cases/kimi-k3.md",
+   "top1_章节": "案例一：搭建热点追踪系统 / 继续优化",
+   "top1_片段": "#### 继续优化  后面，我又让 Kimi 继续优化了几轮。  这轮主要是把第一版「能用」的地方继续往产品形态上推了一步。比如默认首页、新手引导、手动运行反馈、按钮 pending、防重复提交、toast、删除确认弹窗，还有更统一的中文文"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Restful Api",
+   "top1": 0.4382,
+   "top2": 0.424,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/ai/system-design/ai-voice.md",
+   "top1_章节": "语音 Agent 还能怎么演进？ / 本地模型部署",
+   "top1_片段": "#### 本地模型部署  如果你对数据合规有要求，可以考虑本地部署 ASR 和 TTS：  - **ASR**：faster-whisper、FunASR、SenseVoice - **TTS**：piper1-gpl（原 Piper 已归"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Rocket Mq",
+   "top1": 0.5968,
+   "top2": 0.5895,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/rocketmq-questions.md",
+   "top1_章节": "RocketMQ 架构",
+   "top1_片段": "classDef proxy fill:#005D7B,color:#fff,rx:10,ry:10     classDef producer fill:#00838F,color:#fff,rx:10,ry:10     classDe"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "SHOW PROFILE 已废弃，新版本别再依赖它",
+   "top1": 0.6819,
+   "top2": 0.5315,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/sql-optimization.md",
+   "top1_章节": "SHOW PROFILE 已废弃，新版本别再依赖它",
+   "top1_片段": "### SHOW PROFILE 已废弃，新版本别再依赖它  `SHOW PROFILE` 和 `SHOW PROFILES` 已被 MySQL 官方标记为 deprecated，未来版本可能删除。现在排查 SQL 性能，一般先用慢查询日志"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "SPI服务发现机制",
+   "top1": 0.6076,
+   "top2": 0.6032,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/spi.md",
+   "top1_章节": "总结",
+   "top1_片段": "### 总结  其实不难发现，SPI 机制的具体实现需要动态定位并创建服务提供者。类路径上的提供者需要在 `META-INF/services/` 配置文件中声明；命名模块中的提供者则通过模块描述符的 `provides ... with "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "SQL SELECT查询",
+   "top1": 0.689,
+   "top2": 0.6845,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/sql/sql-questions-01.md",
+   "top1_章节": "检索数据",
+   "top1_片段": "> 题目来源于：牛客题霸 - SQL 必知必会  ### 检索数据  `SELECT` 用于从数据库中查询数据。  #### 从 Customers 表中检索所有的 ID  现有表 `Customers` 如下：  | cust_id | "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "SQL TRUNCATE清空表",
+   "top1": 0.6256,
+   "top2": 0.6253,
+   "top1_仓库": "interview_internal_reference",
+   "top1_路径": "09.MySQL篇/9.1.3 drop,delete与truncate的区别.md",
+   "top1_章节": "**参考答案**：",
+   "top1_片段": "（9） 在没有备份情况下，谨慎使用 drop 与 truncate。要删除部分数据行采用delete且注意结合where来约束影响范围。回滚段要足够大。要删除表用drop;若想保留表而将表中数据删除，如果于事务无关，用truncate即可实"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "SQL UNION联合查询",
+   "top1": 0.7262,
+   "top2": 0.689,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/sql/sql-questions-01.md",
+   "top1_章节": "组合查询",
+   "top1_片段": "### 组合查询  `UNION` 运算符将两个或更多查询的结果组合起来，并生成一个结果集，其中包含来自 `UNION` 中参与查询的提取行。  `UNION` 基本规则：  - 所有查询的列数和列顺序必须相同。 - 每个查询中涉及表的列的"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "SQL WHERE条件过滤",
+   "top1": 0.693,
+   "top2": 0.6346,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/sql/sql-syntax-summary.md",
+   "top1_章节": "子查询 / WHERE",
+   "top1_片段": "#### WHERE  - `WHERE` 子句用于过滤记录，即缩小访问数据的范围。 - `WHERE` 后跟一个返回 `true` 或 `false` 的条件。 - `WHERE` 可以与 `SELECT`，`UPDATE` 和 `DEL"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "SQL 类别高难度试卷得分的截断平均值（较难）",
+   "top1": 0.8448,
+   "top2": 0.8254,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/sql/sql-questions-03.md",
+   "top1_章节": "聚合函数 / SQL 类别高难度试卷得分的截断平均值（较难）",
+   "top1_片段": "#### SQL 类别高难度试卷得分的截断平均值（较难） **描述**： 牛客的运营同学想要查看大家在 SQL 类别中高难度试卷的得分情况。 请你帮她从`exam_record`数据表中计算所有用户完成 SQL 类别高难度试卷得分的截断平均"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "SSL 与 TLS 对比",
+   "top1": 0.7271,
+   "top2": 0.6945,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/http-vs-https.md",
+   "top1_章节": "HTTPS 协议 / HTTPS 协议介绍",
+   "top1_片段": "#### HTTPS 协议介绍  HTTPS（Hypertext Transfer Protocol Secure）使用 TLS 为 HTTP 提供机密性、完整性和身份认证，默认端口号是 443。HTTP/1.1 和 HTTP/2 通常使用"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "SSO 有什么好处",
+   "top1": 0.6635,
+   "top2": 0.5597,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/security/sso-intro.md",
+   "top1_章节": "SSO 介绍",
+   "top1_片段": "### SSO 介绍  #### 什么是 SSO？  SSO 英文全称 Single Sign On，单点登录。SSO 是在多个应用系统中，用户只需要登录一次就可以访问所有相互信任的应用系统。  例如你登录网易账号中心（ ）之后访问以下站点"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "STAR 法则",
+   "top1": 0.5875,
+   "top2": 0.5148,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/interview-preparation/resume-guide.md",
+   "top1_章节": "STAR 法则和 FAB 法则 / FAB 法则（Feature Advantage Benefit）",
+   "top1_片段": "#### FAB 法则（Feature Advantage Benefit）  除了 STAR 法则，你还需要了解在销售行业经常用到的一个叫做 FAB 的法则。  FAB 法则由下面 3 个单词组成（FAB 法则的名字就是由它们的首字母组成"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Saga长事务",
+   "top1": 0.6158,
+   "top2": 0.5595,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/distributed-transaction.md",
+   "top1_章节": "分布式事务解决方案 / Saga",
+   "top1_片段": "#### Saga Saga 绝对可以说是历史非常悠久了，Saga 事务理论在 1987 年 Hector & Kenneth 在 ACM 发表的论文 《Sagas》 中就被提出了，早于分布式事务概念的提出。 Saga 属于长事务解决方案，"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Sequential Sort（串行排序）",
+   "top1": 0.5832,
+   "top2": 0.5787,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/algorithms/10-classical-sorting-algorithms.md",
+   "top1_章节": "引言",
+   "top1_片段": "### 引言  所谓排序，就是使一串记录，按照其中的某个或某些关键字的大小，递增或递减的排列起来的操作。排序算法，就是如何使得记录按照要求排列的方法。排序算法在很多领域得到相当地重视，尤其是在大量数据的处理方面。一个优秀的算法可以节省大量的"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Serializable",
+   "top1": 0.5532,
+   "top2": 0.5263,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/Java IO.md",
+   "top1_章节": "五、对象操作 / Serializable",
+   "top1_片段": "#### Serializable  序列化的类需要实现 Serializable 接口，它只是一个标准，没有任何方法需要实现，但是如果不去实现它的话而进行序列化，会抛出异常。  ```java public static void mai"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Service Loader 具体实现",
+   "top1": 0.7772,
+   "top2": 0.7434,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/spi.md",
+   "top1_章节": "ServiceLoader / ServiceLoader 具体实现",
+   "top1_片段": "#### ServiceLoader 具体实现 > 下面展示的是 JDK 8 的 `ServiceLoader` 实现。Java 9 及之后的版本增加了模块层、`stream()`、`findFirst()` 和 provider meth"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Session Replication",
+   "top1": 0.6354,
+   "top2": 0.5478,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/集群.md",
+   "top1_章节": "二、集群下的 Session 管理",
+   "top1_片段": "#### Session Replication  在服务器之间进行 Session 同步操作，每个服务器都有所有用户的 Session 信息，因此用户可以向任何一个服务器进行请求。  缺点：  - 占用过多内存； - 同步过程占用网络带宽"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Set集合体系",
+   "top1": 0.6048,
+   "top2": 0.5974,
+   "top1_仓库": "JavaFamily",
+   "top1_路径": "docs/all/缓存/redis/Redis常见面试题.md",
+   "top1_章节": "回望过去",
+   "top1_片段": "##### **Set：**  **Set** 是无序集合，会自动去重的那种。  直接基于 **Set** 将系统里需要去重的数据扔进去，自动就给去重了，如果你需要对一些数据进行快速的全局去重，你当然也可以基于 **JVM** 内存里的 *"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Simple Consumer",
+   "top1": 0.5987,
+   "top2": 0.5809,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/rocketmq-questions.md",
+   "top1_章节": "消费者分类 / SimpleConsumer",
+   "top1_片段": "#### SimpleConsumer SimpleConsumer 是一种接口原子型的消费者类型，消息的获取、消费状态提交以及消费重试都是通过消费者业务逻辑主动发起调用完成。 **消息不可见时间（Invisible Time）：** Si"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Single Thread Executor",
+   "top1": 0.7007,
+   "top2": 0.6499,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-thread-pool-summary.md",
+   "top1_章节": "几种常见的内置线程池 / SingleThreadExecutor",
+   "top1_片段": "##### 介绍  `SingleThreadExecutor` 是只有一个线程的线程池。下面看看**SingleThreadExecutor 的实现：**  ```java    /**      *返回只有一个线程的线程池      *"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Snowflake（雪花算法）",
+   "top1": 0.755,
+   "top2": 0.7069,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/distributed-id.md",
+   "top1_章节": "基于算法的生成方案（无状态） / Snowflake（雪花算法）",
+   "top1_片段": "#### Snowflake（雪花算法） Snowflake 是 Twitter 开源的分布式 ID 生成算法。Snowflake 由 64 bit 的二进制数字组成，这 64bit 的二进制被分成了几部分，每一部分存储的数据都有特定的含义"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Sorted Sets",
+   "top1": 0.6057,
+   "top2": 0.6042,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-concurrency/redis-data-types.md",
+   "top1_章节": "面试题剖析",
+   "top1_片段": "#### Sets  Sets 是无序集合，自动去重。  直接基于 set 将系统里需要去重的数据扔进去，自动就给去重了，如果你需要对一些数据进行快速的全局去重，你当然也可以基于 jvm 内存里的 HashSet 进行去重，但是如果你的某个"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Spring Boot 基础注解",
+   "top1": 0.7443,
+   "top2": 0.7335,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/spring-common-annotations.md",
+   "top1_章节": "Spring Boot 基础注解",
+   "top1_片段": "### Spring Boot 基础注解  `@SpringBootApplication` 是 Spring Boot 应用的核心注解，通常用于标注主启动类。  示例：  ```java @SpringBootApplication pu"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Spring Cloud Gateway",
+   "top1": 0.6857,
+   "top2": 0.6826,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/spring-cloud-gateway-questions.md",
+   "top1_章节": "Spring Cloud Gateway 支持限流吗？",
+   "top1_片段": "### Spring Cloud Gateway 支持限流吗？  Spring Cloud Gateway 自带了限流过滤器，对应的接口是 `RateLimiter`，`RateLimiter` 接口只有一个实现类 `RedisRateLi"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Spring Cloud Gateway…",
+   "top1": 0.7007,
+   "top2": 0.6822,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/api-gateway.md",
+   "top1_章节": "有哪些常见的网关系统？ / Spring Cloud Gateway",
+   "top1_片段": "#### Spring Cloud Gateway  Spring Cloud Gateway 属于 Spring Cloud 生态系统中的网关，其诞生的目标是为了替代老牌网关 **Zuul**（准确说是 Zuul 1.x）。值得注意的是，"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Spring MVC 中的适配器模式",
+   "top1": 0.747,
+   "top2": 0.6957,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/spring-design-patterns-summary.md",
+   "top1_章节": "适配器模式 / Spring MVC 中的适配器模式",
+   "top1_片段": "#### Spring MVC 中的适配器模式  在 Spring MVC 中，`DispatcherServlet` 根据请求信息调用 `HandlerMapping`，解析请求对应的 `Handler`。解析到对应的 `Handler`"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Sql Session Factory、…",
+   "top1": 0.5816,
+   "top2": 0.5641,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/集群.md",
+   "top1_章节": "二、集群下的 Session 管理",
+   "top1_片段": "#### Session Replication  在服务器之间进行 Session 同步操作，每个服务器都有所有用户的 Session 信息，因此用户可以向任何一个服务器进行请求。  缺点：  - 占用过多内存； - 同步过程占用网络带宽"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Stamped Lock",
+   "top1": 0.6489,
+   "top2": 0.6454,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-concurrent-questions-02.md",
+   "top1_章节": "StampedLock",
+   "top1_片段": "### StampedLock  ```mermaid flowchart TB     subgraph StampedLock[\"StampedLock(JDK1.8+)\"]         style StampedLock fill"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Streams（流）",
+   "top1": 0.7056,
+   "top2": 0.6545,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/new-features/java8-tutorial-translate.md",
+   "top1_章节": "Streams（流）",
+   "top1_片段": "### Streams（流）  `java.util.stream.Stream` 表示能应用在一组元素上依次执行的操作序列。Stream 操作分为中间操作或者最终操作两种，最终操作返回一特定类型的计算结果，而中间操作返回 Stream 本"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Stream流处理",
+   "top1": 0.677,
+   "top2": 0.6565,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/new-features/java8-tutorial-translate.md",
+   "top1_章节": "Streams（流）",
+   "top1_片段": "### Streams（流）  `java.util.stream.Stream` 表示能应用在一组元素上依次执行的操作序列。Stream 操作分为中间操作或者最终操作两种，最终操作返回一特定类型的计算结果，而中间操作返回 Stream 本"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Subscriptions For Doocs",
+   "top1": 0.543,
+   "top2": 0.5001,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "README.md",
+   "top1_章节": "Doocs 社区优质项目",
+   "top1_片段": "### Doocs 社区优质项目  Doocs 技术社区，致力于打造一个内容完整、持续成长的互联网开发者学习生态圈！以下是 Doocs 旗下的一些优秀项目，欢迎各位开发者朋友持续保持关注。  | #   | 项目              "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Synchronized",
+   "top1": 0.629,
+   "top2": 0.6224,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-concurrent-questions-02.md",
+   "top1_章节": "synchronized 关键字 / synchronized 是什么？有什么用？",
+   "top1_片段": "#### synchronized 是什么？有什么用？  `synchronized` 是 Java 中的一个关键字，翻译成中文是同步的意思，主要解决的是多个线程之间访问资源的同步性，可以保证被它修饰的方法或者代码块在任意时刻只能有一个线程"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "System Design Questions",
+   "top1": 0.654,
+   "top2": 0.645,
+   "top1_仓库": "leetcode",
+   "top1_路径": "thinkings/design.en.md",
+   "top1_章节": "Title list",
+   "top1_片段": "## Design question  System design is an open-end question with no standard answer, so the key lies in the design choice "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "TCC 方案",
+   "top1": 0.6224,
+   "top2": 0.6074,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/distributed-transaction.md",
+   "top1_章节": "分布式事务解决方案 / TCC（补偿事务）",
+   "top1_片段": "#### TCC（补偿事务） TCC 属于目前比较常见的一种柔性事务解决方案。数据库专家帕特 · 赫兰德（Pat Helland）于 2007 年发表的 《Life beyond Distributed Transactions: an A"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "TCP Keepalive 探测后会出现…",
+   "top1": 0.771,
+   "top2": 0.7709,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/tcp-keepalive-vs-http-keepalive.md",
+   "top1_章节": "TCP Keepalive 有什么局限？",
+   "top1_片段": "### TCP Keepalive 有什么局限？ 这里的 TCP Keepalive 指的是 TCP 层的 keep-alive 探测机制，不是 HTTP 的 Keep-Alive 连接复用。它能检测死连接，但在生产环境中，光靠它通常不够，"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "TCP 首部格式",
+   "top1": 0.755,
+   "top2": 0.6033,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/计算机网络 - 传输层.md",
+   "top1_章节": "TCP 首部格式",
+   "top1_片段": "### TCP 首部格式  -   **序号**   ：用于对字节流进行编号，例如序号为 301，表示第一个字节的编号为 301，如果携带的数据长度为 100 字节，那么下一个报文段的序号应为 401。  -   **确认号**   ：期望"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "TCP/IP 四层模型",
+   "top1": 0.8409,
+   "top2": 0.8016,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/osi-and-tcp-ip-model.md",
+   "top1_章节": "TCP/IP 四层模型",
+   "top1_片段": "### TCP/IP 四层模型  **TCP/IP 四层模型** 是目前被广泛采用的一种模型，我们可以将 TCP/IP 模型看作是 OSI 七层模型的精简版本，由以下 4 层组成：  1. 应用层 2. 传输层 3. 网络层 4. 网络接口"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "TIME WAIT 不只是“等一会儿再关”",
+   "top1": 0.7695,
+   "top2": 0.7482,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/tcp-time-wait.md",
+   "top1_章节": "TIME_WAIT 不只是“等一会儿再关”",
+   "top1_片段": "TCP 四次挥手的最后一步，主动关闭方发完 ACK 后不是立刻关闭，而是进入 `TIME_WAIT` 状态，默认要等上 60 秒。  这 60 秒经常被误解：有人觉得是浪费资源，有人想着用内核参数强行关掉，有人把 `CLOSE_WAIT` "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "TIMESTAMPDIFF函数返回dat…",
+   "top1": 0.7022,
+   "top2": 0.6168,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/sql/sql-questions-02.md",
+   "top1_章节": "增删改操作 / 删除记录（一）",
+   "top1_片段": "对于这题而言，可以用在 minute 函数里面，因为 TIMEDIFF 计算出来的是时间的差值，在外面套一个 MINUTE 函数，计算出来的就是分钟数。 2. `TIMESTAMPDIFF`：用于计算两个日期的时间差 ```sql TIME"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "TLB 原因与机制",
+   "top1": 0.5874,
+   "top2": 0.5806,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/virtual-memory.md",
+   "top1_章节": "TLB（快表）解决了什么？",
+   "top1_片段": "### TLB（快表）解决了什么？  多级页表省了空间，但会多花时间：原来查一次表，现在 64 位下可能要查四级。一次内存访问背后，如果还藏着四五次查表访存，代价就太高了。  还是靠局部性原理救场。程序在一段时间内反复访问的页，通常就那几批"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "TLS 握手的两个核心问题",
+   "top1": 0.8068,
+   "top2": 0.7297,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/https-rsa-vs-ecdhe.md",
+   "top1_章节": "TLS 握手的两个核心问题",
+   "top1_片段": "### TLS 握手的两个核心问题  HTTPS 仍然使用 HTTP 语义。在本文重点讨论的 TLS 1.2 场景中，HTTP 报文通过 TLS over TCP 传输；HTTP/3 则运行在集成 TLS 1.3 的 QUIC 之上，不再使"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Thread Local 有什么用",
+   "top1": 0.7506,
+   "top2": 0.7103,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-concurrent-questions-03.md",
+   "top1_章节": "ThreadLocal / ThreadLocal 有什么用？",
+   "top1_片段": "#### ThreadLocal 有什么用？ 通常情况下，我们创建的变量可以被任何一个线程访问和修改。这在多线程环境中可能导致数据竞争和线程安全问题。那么，**如果想让每个线程都有自己的专属本地变量，该如何实现呢？** JDK 中提供的 `"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Threadlocal",
+   "top1": 0.6701,
+   "top2": 0.6625,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-concurrent-questions-03.md",
+   "top1_章节": "ThreadLocal / ⭐️ 如何跨线程传递 ThreadLocal 的值？ / TransmittableThreadLocal 原理",
+   "top1_片段": "1. **标准线程池**：`java.util.concurrent.ThreadPoolExecutor` 和 `java.util.concurrent.ScheduledThreadPoolExecutor`。 2. **ForkJo"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Token Bucket 令牌桶",
+   "top1": 0.6385,
+   "top2": 0.6015,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-availability/limit-request.md",
+   "top1_章节": "常见限流算法有哪些？ / 令牌桶算法",
+   "top1_片段": "#### 令牌桶算法  令牌桶算法也比较简单。和漏桶算法一样，我们的主角还是桶（这限流算法和桶过不去啊）。不过现在桶里装的是令牌了，请求在被处理之前需要从桶中获取一个令牌（获取即消费）。如果桶中没有令牌，请求就需要等待或被拒绝。我们根据限流"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Top K 题怎么选方案",
+   "top1": 0.7074,
+   "top2": 0.6307,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/algorithms/top-k.md",
+   "top1_章节": "",
+   "top1_片段": "Top K 问题在后端面试里很常见，因为它既能考算法，也能自然追问工程场景：排行榜、热词统计、数据流中位数、日志里最常见的错误码，都能落到 Top K。  这类题不要只记一种写法。面试官常会追问：如果数据量很大怎么办？如果是数据流怎么办？如"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Transient",
+   "top1": 0.5179,
+   "top2": 0.5029,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/serialization.md",
+   "top1_章节": "常见序列化协议有哪些？ / JDK 自带的序列化方式",
+   "top1_片段": "`transient` 关键字的作用是：阻止实例中那些用此关键字修饰的变量序列化；当对象被反序列化时，被 `transient` 修饰的变量值不会被持久化和恢复。 关于 `transient` 还有几点注意： - `transient` 只"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Trie字典树",
+   "top1": 0.718,
+   "top2": 0.6814,
+   "top1_仓库": "leetcode",
+   "top1_路径": "thinkings/trie.md",
+   "top1_章节": "简介",
+   "top1_片段": "## Trie  字典树也叫前缀树、Trie。它本身就是一个树型结构，也就是一颗多叉树，学过树的朋友应该非常容易理解，它的核心操作是插入，查找。删除很少使用，因此这个讲义不包含删除操作。  截止目前（2020-02-04） 前缀树（字典树）"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "UDP Flood 攻击原理核心概念",
+   "top1": 0.7891,
+   "top2": 0.6612,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/network-attack-means.md",
+   "top1_章节": "UDP Flood（洪水） / UDP Flood 攻击原理是什么？",
+   "top1_片段": "#### UDP Flood 攻击原理是什么？  **UDP Flood** 主要通过利用服务器响应发送到其中一个端口的 **UDP** 数据包所采取的步骤。在正常情况下，当服务器在特定端口接收到 **UDP** 数据包时，会经过两个步骤："
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "UNION 结果集中的列名总是等于 UN…",
+   "top1": 0.7012,
+   "top2": 0.6818,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/sql/sql-questions-01.md",
+   "top1_章节": "组合查询",
+   "top1_片段": "### 组合查询  `UNION` 运算符将两个或更多查询的结果组合起来，并生成一个结果集，其中包含来自 `UNION` 中参与查询的提取行。  `UNION` 基本规则：  - 所有查询的列数和列顺序必须相同。 - 每个查询中涉及表的列的"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "URI 和 URL 的区别核心概念",
+   "top1": 0.7867,
+   "top2": 0.7399,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/other-network-questions.md",
+   "top1_章节": "HTTP",
+   "top1_片段": "#### URI 和 URL 的区别是什么？  - URI（Uniform Resource Identifier）是统一资源标志符，可以唯一标识一个资源。 - URL（Uniform Resource Locator）是统一资源定位符，可"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "URL统一资源定位符",
+   "top1": 0.6597,
+   "top2": 0.6207,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/HTTP.md",
+   "top1_章节": "一 、基础概念 / URL",
+   "top1_片段": "#### URL  HTTP 使用 URL（ **U** niform **R**esource **L**ocator，统一资源定位符）来定位资源，它是  URI（**U**niform **R**esource **I**dentifi"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "UUID",
+   "top1": 0.6582,
+   "top2": 0.614,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/distributed-id.md",
+   "top1_章节": "基于算法的生成方案（无状态） / UUID",
+   "top1_片段": "#### UUID UUID 是 Universally Unique Identifier（通用唯一标识符）的缩写，本质上是一个 128 bit 的标识符。它的标准字符串形式通常是 36 个字符（包含连字符），去掉连字符后是 32 个十六"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Undo Log回滚日志",
+   "top1": 0.722,
+   "top2": 0.6567,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-logs.md",
+   "top1_章节": "undo log",
+   "top1_片段": "### undo log > 这部分内容为 JavaGuide 的补充： 每一个事务对数据的修改都会被记录到 undo log ，当执行事务过程中出现错误或者需要执行回滚操作的话，MySQL 可以利用 undo log 将数据恢复到事务开始"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "VARCHAR和 VARCHAR的区别核心概念",
+   "top1": 0.6735,
+   "top2": 0.6028,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-questions-01.md",
+   "top1_章节": "MySQL 字段类型",
+   "top1_片段": "#### CHAR 和 VARCHAR 的区别是什么？  CHAR 和 VARCHAR 是最常用到的字符串类型，两者的主要区别在于：**CHAR 是定长字符串，VARCHAR 是变长字符串。**  CHAR 在存储时会在右边填充空格以达到指"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Vector可观测性管道",
+   "top1": 0.5229,
+   "top2": 0.5227,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/new-features/java26.md",
+   "top1_章节": "JEP 529: Vector API（向量 API, 第十一次孵化）",
+   "top1_片段": "### JEP 529: Vector API（向量 API, 第十一次孵化） 向量计算由对向量的一系列操作组成。向量 API 用来表达向量计算，该计算可以在运行时可靠地编译为支持的 CPU 架构上的最佳向量指令，从而实现优于等效标量计算的"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Watcher（事件监听器）",
+   "top1": 0.6775,
+   "top2": 0.6504,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/io/io-design-patterns.md",
+   "top1_章节": "观察者模式",
+   "top1_片段": "### 观察者模式 NIO 中的文件目录监听服务使用到了观察者模式。 NIO 中的文件目录监听服务基于 `WatchService` 接口和 `Watchable` 接口。`WatchService` 属于观察者，`Watchable` 属"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Web Socket：全双工通信协议",
+   "top1": 0.7579,
+   "top2": 0.7137,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/application-layer-protocol.md",
+   "top1_章节": "WebSocket：全双工通信协议",
+   "top1_片段": "### WebSocket：全双工通信协议 **WebSocket** 是一种基于 TCP 连接的全双工通信协议，客户端和服务器可以在同一条连接上同时发送和接收数据。 它的典型特点是：**连接建立后，服务端也可以主动向客户端推送消息**。这"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "WebSocket实时通信",
+   "top1": 0.7627,
+   "top2": 0.7305,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/application-layer-protocol.md",
+   "top1_章节": "WebSocket：全双工通信协议",
+   "top1_片段": "### WebSocket：全双工通信协议 **WebSocket** 是一种基于 TCP 连接的全双工通信协议，客户端和服务器可以在同一条连接上同时发送和接收数据。 它的典型特点是：**连接建立后，服务端也可以主动向客户端推送消息**。这"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Wired Tiger 基于 LSM T…",
+   "top1": 0.6171,
+   "top2": 0.562,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mongodb/mongodb-questions-01.md",
+   "top1_章节": "MongoDB 存储引擎 / WiredTiger 基于 LSM Tree 还是 B+ Tree？",
+   "top1_片段": "#### WiredTiger 基于 LSM Tree 还是 B+ Tree？ 目前绝大部分流行的数据库存储引擎都是基于 B/B+ Tree 或者 LSM(Log Structured Merge) Tree 来实现的。对于 NoSQL 数"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "Write Behind Pattern",
+   "top1": 0.6728,
+   "top2": 0.5947,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/redis/3-commonly-used-cache-read-and-write-strategies.md",
+   "top1_章节": "Write Behind Pattern（异步缓存写入）",
+   "top1_片段": "#### Write Behind Pattern（异步缓存写入）  Write Behind（也常被称为 Write-Back） Pattern 和 Read/Write Through Pattern 很相似，两者都是由 Cache 服"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "ZAB原子广播",
+   "top1": 0.6072,
+   "top2": 0.6063,
+   "top1_仓库": "interview_internal_reference",
+   "top1_路径": "12.Zookeeper篇/12.2.2 zk中zab的工作原理.md",
+   "top1_章节": "**题目**：zk中zab的工作原理",
+   "top1_片段": "##### **题目**：zk中zab的工作原理  ##### **参考答案**：  ZAB 是 ZooKeeper Atomic Broadcast （ZooKeeper 原子广播协议）的缩写，它是特别为 ZooKeeper 设计的崩溃可"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "ZGC 收集器",
+   "top1": 0.7166,
+   "top2": 0.6761,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/jvm/jvm-garbage-collection.md",
+   "top1_章节": "垃圾收集器 / ZGC 收集器",
+   "top1_片段": "#### ZGC 收集器  与 ParNew 和 G1 类似，ZGC 也采用标记-复制算法，不过 ZGC 对该算法做了重大改进。  ZGC 可以将暂停时间控制在几毫秒以内，且暂停时间不受堆内存大小的影响，出现 Stop The World "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "ZooKeeper协调服务",
+   "top1": 0.707,
+   "top2": 0.7022,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/distributed-process-coordination/zookeeper/zookeeper-intro.md",
+   "top1_章节": "ZooKeeper 介绍 / ZooKeeper 概览",
+   "top1_片段": "#### ZooKeeper 概览  ZooKeeper 是一个开源的**分布式协调服务**，它的设计目标是将那些复杂且容易出错的分布式一致性服务封装起来，构成一个高效可靠的原语集，并以一系列简单易用的接口提供给用户使用。  > **原语："
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "back end interview h…",
+   "top1": 0.5775,
+   "top2": 0.5682,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/ai/interview-questions/agent-project-interview-guide.md",
+   "top1_章节": "面试前要做哪些准备？",
+   "top1_片段": "### 面试前要做哪些准备？  每个 Agent 项目至少准备下面这些内容：  - 一份项目复盘表； - 30 秒、3 分钟和 10 分钟三个版本的介绍； - 一张能从入口讲到最终结果的架构图； - 两个有备选方案的技术选型； - 两个不同"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "clone()",
+   "top1": 0.6617,
+   "top2": 0.6417,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/Java 基础.md",
+   "top1_章节": "五、Object 通用方法 / clone()",
+   "top1_片段": "for (int i = 0; i < arr.length; i++) {             result.arr[i] = arr[i];         }         return result;     } } ``` "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "command 重写 get Cache…",
+   "top1": 0.6756,
+   "top2": 0.592,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-availability/hystrix-request-cache.md",
+   "top1_章节": "command 重写 getCacheKey() 方法",
+   "top1_片段": "### command 重写 getCacheKey() 方法 在 GetProductInfoCommand 中，重写 getCacheKey() 方法，这样的话，每一次请求的结果，都会放在 Hystrix 请求上下文中。下一次同一个 p"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "common-data-structur…",
+   "top1": 0.5818,
+   "top2": 0.5816,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/README.md",
+   "top1_章节": "核心文章 / 数据结构",
+   "top1_片段": "#### 数据结构  - 数据结构专题：按结构类型整理常见数据结构及图解。 - 线性数据结构详解：理解数组、链表、栈、队列的存储特点和操作复杂度。 - 哈希表面试题总结：理解哈希函数、哈希冲突、扩容和 Java `HashMap` 关联。 "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "configuration 传播",
+   "top1": 0.5978,
+   "top2": 0.5968,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-concurrency/redis-sentinel.md",
+   "top1_章节": "configuration epoch",
+   "top1_片段": "### configuration epoch  哨兵会对一套 Redis master+slaves 进行监控，有相应的监控的配置。  执行切换的那个哨兵，会从要切换到的新 master（salve->master）那里得到一个 conf"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "count different phon…",
+   "top1": 0.6067,
+   "top2": 0.5915,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/big-data/count-different-phone-numbers.md",
+   "top1_章节": "",
+   "top1_片段": "## 如何统计不同电话号码的个数？  ### 题目描述  已知某个文件内包含一些电话号码，每个号码为 8 位数字，统计不同号码的个数。  ### 解答思路  这道题本质还是求解**数据重复**的问题，对于这类问题，一般首先考虑位图法。  对"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "default 生命周期",
+   "top1": 0.7036,
+   "top2": 0.5837,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/tools/maven/maven-core-concepts.md",
+   "top1_章节": "Maven 生命周期 / default 生命周期",
+   "top1_片段": "#### default 生命周期 `default`生命周期是在没有任何关联插件的情况下定义的，是 Maven 的主要生命周期，用于构建应用程序，共包含 23 个阶段。 ```xml <phases>   <!-- 验证项目是否正确，并且"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "distributed system r…",
+   "top1": 0.5848,
+   "top2": 0.5797,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/distributed-system-intro.md",
+   "top1_章节": "什么是分布式系统？",
+   "top1_片段": "### 什么是分布式系统？ 《分布式系统概念与设计》这本书对分布式系统的定义是： > 分布式系统是这样一种系统：位于联网计算机上的硬件或软件组件，仅通过消息传递进行通信并协调行动。 工程里可以这样理解：**分布式系统由多个相对独立的计算单元"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "epoll IO多路复用",
+   "top1": 0.7276,
+   "top2": 0.6961,
+   "top1_仓库": "Waking-Up",
+   "top1_路径": "Operating Systems.md",
+   "top1_章节": "什么是IO多路复用？怎么实现？",
+   "top1_片段": "#### 什么是IO多路复用？怎么实现？ IO多路复用（IO Multiplexing）是指单个进程/线程就可以同时处理多个IO请求。 实现原理：用户将想要监视的文件描述符（File Descriptor）添加到select/poll/ep"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "equals()",
+   "top1": 0.6427,
+   "top2": 0.6327,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/Java 基础.md",
+   "top1_章节": "五、Object 通用方法 / hashCode()",
+   "top1_片段": "#### hashCode() hashCode() 返回哈希值，而 equals() 是用来判断两个对象是否等价。等价的两个对象散列值一定相同，但是散列值相同的两个对象不一定等价，这是因为计算哈希值具有随机性，两个值不同的对象可能计算出相"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "execution.isolation.…",
+   "top1": 0.567,
+   "top2": 0.5287,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-availability/hystrix-execution-isolation.md",
+   "top1_章节": "execution.isolation.strategy",
+   "top1_片段": "## Hystrix 隔离策略细粒度控制  Hystrix 实现资源隔离，有两种策略：  -   线程池隔离 -   信号量隔离  对资源隔离这一块东西，其实可以做一定细粒度的一些控制。  ### execution.isolation.s"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "explain()",
+   "top1": 0.6086,
+   "top2": 0.6071,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-query-execution-plan.md",
+   "top1_章节": "如何分析 EXPLAIN 结果？",
+   "top1_片段": "### 如何分析 EXPLAIN 结果？  为了分析 `EXPLAIN` 语句的执行结果，我们需要搞懂执行计划中的重要字段。  #### id  `SELECT` 标识符，用于标识每个 `SELECT` 语句的执行顺序。  `id` 列的解"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "finally最终块",
+   "top1": 0.6236,
+   "top2": 0.5592,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/java-basic-questions-03.md",
+   "top1_章节": "异常 / try-catch-finally 如何使用？",
+   "top1_片段": "#### try-catch-finally 如何使用？  - `try` 块：用于捕获异常。其后可接零个或多个 `catch` 块，如果没有 `catch` 块，则必须跟一个 `finally` 块。 - `catch` 块：用于处理 t"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "final关键字",
+   "top1": 0.6902,
+   "top2": 0.5951,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/java-keyword-summary.md",
+   "top1_章节": "final 关键字",
+   "top1_片段": "## final,static,this,super 关键字总结  ### final 关键字  **final 关键字，意思是最终的、不可修改的，最见不得变化，用来修饰类、方法和变量，具有以下特点：**  1. final 修饰的类不能被"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "get 方法",
+   "top1": 0.6912,
+   "top2": 0.6484,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/collection/linkedhashmap-source-code.md",
+   "top1_章节": "LinkedHashMap 源码解析 / get 方法",
+   "top1_片段": "#### get 方法 `get` 方法是 `LinkedHashMap` 增删改查操作中唯一一个重写的方法， `accessOrder` 为 true 的情况下， 它会在元素查询完成之后，将当前访问的元素移到链表的末尾。 ```java "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "happens before 常见规则有…",
+   "top1": 0.7847,
+   "top2": 0.6741,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/jmm.md",
+   "top1_章节": "JMM(Java Memory Model) / happens-before 常见规则有哪些？谈谈你的理解？",
+   "top1_片段": "#### happens-before 常见规则有哪些？谈谈你的理解？  happens-before 有多条规则，下面列出其中最常用的 5 条：  1. **程序顺序规则**：一个线程内，按照代码顺序，书写在前面的操作 happens-b"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "how to examine the t…",
+   "top1": 0.5427,
+   "top2": 0.54,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/sql/sql-questions-04.md",
+   "top1_章节": "专用窗口函数 / 未完成率较高的 50%用户近三个月答卷情况（困难）",
+   "top1_片段": "OR NULL)/ count(start_time)) AS ranking FROM exam_record LEFT JOIN examination_info USING (exam_id) WHERE tag = 'SQL' GR"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "iframe 流",
+   "top1": 0.7384,
+   "top2": 0.5519,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/web-real-time-message-push.md",
+   "top1_章节": "消息推送常见方案 / iframe 流",
+   "top1_片段": "#### iframe 流  iframe 流就是在页面中插入一个隐藏的`<iframe>`标签，通过在`src`中请求消息数量 API 接口，由此在服务端和客户端之间创建一条长连接，服务端持续向`iframe`传输数据。  传输的数据通常"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "inode文件索引节点",
+   "top1": 0.6371,
+   "top2": 0.6248,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/linux-intro.md",
+   "top1_章节": "Linux 文件系统 / inode 介绍",
+   "top1_片段": "- **inode**：记录文件的属性信息，可以使用 `stat` 命令查看 inode 信息。 - **block/extent**：用于保存文件内容或描述连续的数据块范围。具体分配和共享方式取决于文件系统，不能概括成“一个块永远只属于一"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "load average 和 CPU 使用率",
+   "top1": 0.8032,
+   "top2": 0.7999,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/cpu-scheduling-and-load.md",
+   "top1_章节": "load average 和 CPU 使用率不是一回事",
+   "top1_片段": "### load average 和 CPU 使用率不是一回事 `uptime` 里看到的三个 load average 数字，对应 1、5、15 分钟时间尺度上的平均负载。它们是指数衰减平均值，并不是最近 N 分钟采样值的简单算术平均。 "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "ls [ a Adf Fhilnr RS…",
+   "top1": 0.4942,
+   "top2": 0.4927,
+   "top1_仓库": "leetcode-master",
+   "top1_路径": "problems/0042.接雨水.md",
+   "top1_章节": "其他语言版本 / Rust:",
+   "top1_片段": "ans += (top - height[mid_pos]) * (right_pos - left_pos - 1) as i32;                     }                 }             "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "mac OS：查看 TIME WAIT …",
+   "top1": 0.6796,
+   "top2": 0.6143,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/tcp-time-wait.md",
+   "top1_章节": "排查时别只盯着数量，要先看谁在主动关闭",
+   "top1_片段": "### 排查时别只盯着数量，要先看谁在主动关闭 看到大量 `TIME_WAIT` 或 `CLOSE_WAIT`，可以先用下面几条命令定位方向： `ss` 是 Linux 上 `iproute2` 提供的命令，macOS 默认没有。如果你的开"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "mmap、COW 和共享内存",
+   "top1": 0.7587,
+   "top2": 0.71,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/memory-management.md",
+   "top1_章节": "mmap、COW 和共享内存",
+   "top1_片段": "### mmap、COW 和共享内存  `mmap()` 会在进程虚拟地址空间里创建一段映射。它可以映射文件，也可以创建匿名映射。映射建立时不一定马上读入数据，真正访问到某个还没驻留的页时，才可能触发缺页。  文件映射适合随机访问、共享文件"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "mysql auto increment…",
+   "top1": 0.6932,
+   "top2": 0.6709,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-auto-increment-primary-key-continuous.md",
+   "top1_章节": "自增值不连续的场景 / 自增值不连续场景 1",
+   "top1_片段": "#### 自增值不连续场景 1 在 MySQL 里面，如果字段 id 被定义为 AUTO_INCREMENT，在插入一行数据的时候，自增值的行为如下： - 如果插入数据时 id 字段指定为 0、null 或未指定值，那么就把这个表当前的 A"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "operating system bas…",
+   "top1": 0.5668,
+   "top2": 0.5635,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/operating-system-basic-questions-02.md",
+   "top1_章节": "参考",
+   "top1_片段": "### 参考  - 《计算机操作系统—汤小丹》第四版 - 《深入理解计算机系统》 - 《重学操作系统》 - 《现代操作系统原理与实现》 - 王道考研操作系统知识点整理： - 内存管理之伙伴系统与 SLAB： - 为什么 Linux 需要虚拟"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "poll IO多路复用",
+   "top1": 0.7343,
+   "top2": 0.6843,
+   "top1_仓库": "Waking-Up",
+   "top1_路径": "Operating Systems.md",
+   "top1_章节": "什么是IO多路复用？怎么实现？",
+   "top1_片段": "#### 什么是IO多路复用？怎么实现？ IO多路复用（IO Multiplexing）是指单个进程/线程就可以同时处理多个IO请求。 实现原理：用户将想要监视的文件描述符（File Descriptor）添加到select/poll/ep"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "put 方法后置操作——after No…",
+   "top1": 0.6132,
+   "top2": 0.6011,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/collection/linkedhashmap-source-code.md",
+   "top1_章节": "LinkedHashMap 源码解析 / put 方法后置操作——afterNodeInsertion",
+   "top1_片段": "#### put 方法后置操作——afterNodeInsertion 同样的 `LinkedHashMap` 并没有实现插入方法，而是直接继承 `HashMap` 的所有插入方法交由用户使用，但为了维护双向链表访问的有序性，它做了这样两件"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "quorum 和 majority",
+   "top1": 0.6225,
+   "top2": 0.5917,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/protocol/centralized-and-decentralized.md",
+   "top1_章节": "如何缓解 Leader 单点和脑裂？ / 多数派不是完整答案",
+   "top1_片段": "#### 多数派不是完整答案  多数派规则很好理解：超过半数节点同意后，才认为某个决定有效。假设集群有 `N` 个投票节点，多数派就是 `floor(N/2) + 1`。3 个节点需要 2 个同意，5 个节点需要 3 个同意。  这个公式默"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "redis common blockin…",
+   "top1": 0.5861,
+   "top2": 0.577,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/distributed-system/distributed-lock-redis-vs-zookeeper.md",
+   "top1_章节": "面试题剖析 / Redis 分布式锁 / Redis 最普通的分布式锁",
+   "top1_片段": "##### Redis 最普通的分布式锁  第一个最普通的实现方式，就是在 Redis 里使用 `SET key value [EX seconds] [PX milliseconds] NX` 创建一个 key，这样就算加锁。其中：  -"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "redis-data-structures-01",
+   "top1": 0.5998,
+   "top2": 0.5939,
+   "top1_仓库": "JavaFamily",
+   "top1_路径": "docs/all/缓存/redis/Redis基础.md",
+   "top1_章节": "前言",
+   "top1_片段": "#### 那小伙子，我再问你，Redis有哪些数据结构呀？   字符串String、字典Hash、列表List、集合Set、有序集合SortedSet。   **这里我相信99%的读者都能回答上来Redis的5个基本数据类型。如果回答不出来"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "redis-data-structures-02",
+   "top1": 0.5926,
+   "top2": 0.584,
+   "top1_仓库": "JavaFamily",
+   "top1_路径": "docs/all/缓存/redis/Redis基础.md",
+   "top1_章节": "前言",
+   "top1_片段": "#### 那小伙子，我再问你，Redis有哪些数据结构呀？   字符串String、字典Hash、列表List、集合Set、有序集合SortedSet。   **这里我相信99%的读者都能回答上来Redis的5个基本数据类型。如果回答不出来"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "remove 方法后置操作——after…",
+   "top1": 0.6839,
+   "top2": 0.6589,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/collection/linkedhashmap-source-code.md",
+   "top1_章节": "LinkedHashMap 源码解析 / remove 方法后置操作——afterNodeRemoval",
+   "top1_片段": "#### remove 方法后置操作——afterNodeRemoval `LinkedHashMap` 并没有对 `remove` 方法进行重写，而是直接继承 `HashMap` 的 `remove` 方法，为了保证键值对移除后双向链表中"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "request.get Attribut…",
+   "top1": 0.5762,
+   "top2": 0.5746,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/J2EE基础知识.md",
+   "top1_章节": "request.getAttribute()和 request.getParameter()有何区别",
+   "top1_片段": "### request.getAttribute()和 request.getParameter()有何区别  `getParameter()` 读取客户端随请求提交的参数，例如 URL 查询字符串或已解析的表单字段。它返回 `String"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "screen candidates fo…",
+   "top1": 0.5406,
+   "top2": 0.5308,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/extra-page/offer.md",
+   "top1_章节": "",
+   "top1_片段": "没人要 才烦恼 希望 offer 钱是多哒 HR 超nice哒 不如跟着节奏没在怕的 努努力 别让校招季卡住你 卡住你 不拿offer不放弃 燃烧我的卡路里 拜拜 二次元 综艺直播动作片 言情玄幻宫斗剧 拿走拿走别客气 拜拜 铂金一 戒掉农"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "sdown 和 odown 转换机制",
+   "top1": 0.5345,
+   "top2": 0.5224,
+   "top1_仓库": "leetcode-master",
+   "top1_路径": "problems/0344.反转字符串.md",
+   "top1_章节": "思路",
+   "top1_片段": "swap(s[i],s[j]);         }     } }; ``` * 时间复杂度: O(n) * 空间复杂度: O(1)"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "slave 配置的自动纠正",
+   "top1": 0.5975,
+   "top2": 0.5846,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/spring-boot-auto-assembly-principles.md",
+   "top1_章节": "SpringBoot 是如何实现自动装配的？ / AutoConfigurationImportSelector:加载自动装配类",
+   "top1_片段": "@EnableConfigurationProperties(RabbitProperties.class) @Import(RabbitAnnotationDrivenConfiguration.class) public class R"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "sleep()",
+   "top1": 0.5972,
+   "top2": 0.5744,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-concurrent-questions-01.md",
+   "top1_章节": "线程",
+   "top1_片段": "#### Thread#sleep() 方法和 Object#wait() 方法对比  **共同点**：两者都可以暂停线程的执行。  **区别**：  - **`sleep()` 方法没有释放锁，而 `wait()` 方法释放了锁**。 -"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "spring boot auto ass…",
+   "top1": 0.6138,
+   "top2": 0.5995,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/spring-boot-auto-assembly-principles.md",
+   "top1_章节": "什么是 SpringBoot 自动装配？",
+   "top1_片段": "### 什么是 SpringBoot 自动装配？  我们现在提到自动装配的时候，一般会和 Spring Boot 联系在一起。但是，实际上 Spring Framework 早就实现了这个功能。Spring Boot 只是在其基础上，通过 "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "springboot knowledge…",
+   "top1": 0.6499,
+   "top2": 0.6457,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "README_JA.md",
+   "top1_章节": "システム設計 / よく使うフレームワーク / Spring/SpringBoot (必読 :+1:)",
+   "top1_片段": "##### Spring/SpringBoot (必読 :+1:)  **知識ポイント／面接問題のまとめ**:  - Spring のよく出る知識ポイント＆面接問題まとめ - SpringBoot のよく出る知識ポイント＆面接問題まとめ -"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "static静态关键字",
+   "top1": 0.7316,
+   "top2": 0.7172,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/java-keyword-summary.md",
+   "top1_章节": "static 关键字",
+   "top1_片段": "### static 关键字  **static 关键字主要有以下四种使用场景：**  1. **修饰成员变量和成员方法:** 被 static 修饰的成员属于类，不属于单个这个类的某个对象，被类中所有对象共享，可以并且建议通过类名调用。静"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "transaction isolatio…",
+   "top1": 0.5776,
+   "top2": 0.563,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-availability/hystrix-execution-isolation.md",
+   "top1_章节": "execution.isolation.strategy",
+   "top1_片段": "## Hystrix 隔离策略细粒度控制  Hystrix 实现资源隔离，有两种策略：  -   线程池隔离 -   信号量隔离  对资源隔离这一块东西，其实可以做一定细粒度的一些控制。  ### execution.isolation.s"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "try catch finally 如何使用",
+   "top1": 0.7606,
+   "top2": 0.6757,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/java-basic-questions-03.md",
+   "top1_章节": "异常 / try-catch-finally 如何使用？",
+   "top1_片段": "#### try-catch-finally 如何使用？  - `try` 块：用于捕获异常。其后可接零个或多个 `catch` 块，如果没有 `catch` 块，则必须跟一个 `finally` 块。 - `catch` 块：用于处理 t"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "volatile 可以保证原子性么",
+   "top1": 0.7804,
+   "top2": 0.748,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-concurrent-questions-02.md",
+   "top1_章节": "⭐️ volatile 关键字 / volatile 可以保证原子性么？",
+   "top1_片段": "#### volatile 可以保证原子性么？ **`volatile` 关键字能保证变量的可见性，但不能保证对变量的操作是原子性的。** 我们通过下面的代码即可证明： ```java /**  * 微信搜 JavaGuide 回复\"面试突"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "wait()",
+   "top1": 0.6698,
+   "top2": 0.6211,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/Java 并发.md",
+   "top1_章节": "五、线程之间的协作 / wait() notify() notifyAll()",
+   "top1_片段": "#### wait() notify() notifyAll()  调用 wait() 使得线程等待某个条件满足，线程在等待时会被挂起，当其他线程的运行使得这个条件满足时，其它线程会调用 notify() 或者 notifyAll() 来唤"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "xx Success（成功状态码）",
+   "top1": 0.7637,
+   "top2": 0.715,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/http-status-codes.md",
+   "top1_章节": "2xx Success（成功状态码）",
+   "top1_片段": "#### 2xx Success（成功状态码） - **200 OK**：请求被成功处理。例如，发送一个查询用户数据的 HTTP 请求到服务端，服务端正确返回了用户数据。这个是我们平时最常见的一个 HTTP 状态码。 - **201 Cre"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "zookeeper applicatio…",
+   "top1": 0.6626,
+   "top2": 0.6573,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/distributed-process-coordination/zookeeper/zookeeper-plus.md",
+   "top1_章节": "Zookeeper 的几个典型应用场景",
+   "top1_片段": "#### 数据发布/订阅  还记得 Zookeeper 的 `Watcher` 机制吗？ Zookeeper 通过这种推拉相结合的方式实现客户端与服务端的交互：客户端向服务端注册节点，一旦相应节点的数据变更，服务端就会向“监听”该节点的客户"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "一级缓存可能造成脏读吗",
+   "top1": 0.6677,
+   "top2": 0.6347,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/mybatis/mybatis-interview.md",
+   "top1_章节": "MyBatis 缓存 / 为什么生产项目要谨慎使用 MyBatis 二级缓存？",
+   "top1_片段": "#### 为什么生产项目要谨慎使用 MyBatis 二级缓存？  - 缓存按 `namespace` 组织，跨 Mapper 修改同一张表时，其他命名空间的缓存不会自动知道。 - 数据可能被其他应用、脚本或直接 SQL 修改，MyBatis"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "一致性",
+   "top1": 0.6747,
+   "top2": 0.6598,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/protocol/cap-and-base-theorem.md",
+   "top1_章节": "BASE 理论 / BASE 理论三要素 / 最终一致性",
+   "top1_片段": "**业界比较推崇最终一致性级别，但是某些对数据一致要求十分严格的场景比如银行转账还是要保证强一致性。** 那实现最终一致性的具体方式是什么呢？ - **读时修复（Read Repair）**：在读取数据时，检测数据的不一致，进行修复。适合读"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "一致性哈希算法",
+   "top1": 0.7434,
+   "top2": 0.7157,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/protocol/consistent-hashing.md",
+   "top1_章节": "一致性哈希算法",
+   "top1_片段": "### 一致性哈希算法  一致性哈希算法在 1997 年由麻省理工学院提出（这篇论文的 PDF 在线阅读地址：），是一种特殊的哈希算法，在移除或者添加一个服务器时，能够尽可能小地改变已存在的服务请求与处理请求服务器之间的映射关系。一致性哈希"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "一致性非锁定读",
+   "top1": 0.7684,
+   "top2": 0.7272,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/innodb-implementation-of-mvcc.md",
+   "top1_章节": "一致性非锁定读和锁定读",
+   "top1_片段": "### 一致性非锁定读和锁定读  #### 一致性非锁定读  对于 **一致性非锁定读（Consistent Nonlocking Reads）**的实现，通常做法是加一个版本号或者时间戳字段，在更新数据的同时版本号 + 1 或者更新时间戳"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "七层负载均衡可以怎么做",
+   "top1": 0.7469,
+   "top2": 0.7222,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/load-balancing.md",
+   "top1_章节": "七层负载均衡可以怎么做？",
+   "top1_片段": "### 七层负载均衡可以怎么做？  简单介绍两种项目中常用的七层负载均衡解决方案：DNS 解析和反向代理。  除了我介绍的这两种解决方案之外，HTTP 重定向等手段也可以用来实现负载均衡，不过，相对来说，还是 DNS 解析和反向代理用的更多"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "三次握手过程中可以携带数据吗",
+   "top1": 0.6813,
+   "top2": 0.6725,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/tcp-connection-and-disconnection.md",
+   "top1_章节": "建立连接：TCP 三次握手 / 为什么要三次握手？",
+   "top1_片段": "#### 为什么要三次握手？  TCP 三次握手主要做两件事：**同步双方的初始序列号**，并且**确认双方的收发路径是可用的**。真正的数据可靠交付，还要依赖后续传输过程中的确认、重传、窗口控制和拥塞控制。"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "不可变",
+   "top1": 0.571,
+   "top2": 0.566,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/Java 基础.md",
+   "top1_章节": "二、String",
+   "top1_片段": "#### 不可变的好处  **1. 可以缓存 hash 值**  因为 String 的 hash 值经常被使用，例如 String 用做 HashMap 的 key。不可变的特性可以使得 hash 值也不可变，因此只需要进行一次计算。  "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "不可重复读",
+   "top1": 0.6745,
+   "top2": 0.6722,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/innodb-implementation-of-mvcc.md",
+   "top1_章节": "MVCC 解决不可重复读问题 / 在 RC 下 ReadView 生成情况",
+   "top1_片段": "- 根据 `DB_ROLL_PTR` 找到 `undo log` 中的上一版本记录，上一条记录的 `DB_TRX_ID` 为 101，满足 101 < m_up_limit_id，记录可见，所以在 `T6` 时间点查询到数据为 `name "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "业务",
+   "top1": 0.6014,
+   "top2": 0.5636,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-quality-technical-articles/work/get-into-work-mode-quickly-when-you-join-a-company.md",
+   "top1_章节": "业务",
+   "top1_片段": "### 业务  很多人可能会认为作为一个技术人，最应该了解的不应该是技术吗？于是他们在进入一家公司后，就迫不及待的研究起来了一些技术文档，系统架构，甚至抱起来源代码就开始“啃”，如果你也是这么做的，那就大错特错了！在几乎所有的公司里，技术都"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "两阶段提交",
+   "top1": 0.7316,
+   "top2": 0.721,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/distributed-transaction.md",
+   "top1_章节": "分布式事务解决方案 / 2PC（两阶段提交协议）",
+   "top1_片段": "#### 2PC（两阶段提交协议）  2PC（Two-Phase Commit）这三个字母的含义：  - **2** -> 指代事务提交的 2 个阶段 - **P** -> Prepare（准备阶段） - **C** -> Commit（提"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "个实例的定时任务到底怎么设计",
+   "top1": 0.7983,
+   "top2": 0.6973,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/protocol/centralized-and-decentralized.md",
+   "top1_章节": "3 个实例的定时任务到底怎么设计？",
+   "top1_片段": "### 3 个实例的定时任务到底怎么设计？  开头那个凌晨 2 点定时任务，常见方案不止一种。  1. 选出一个调度 Leader，由它创建任务。 2. 所有实例同时触发，但通过数据库唯一键、条件更新或分布式锁竞争执行权。 3. 调度器只产"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "临时打开 Pinning 栈追踪",
+   "top1": 0.623,
+   "top2": 0.5972,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/virtual-thread.md",
+   "top1_章节": "什么是 Pinning？",
+   "top1_片段": "### 什么是 Pinning？  Pinning 可以理解为“虚拟线程暂时没法从载体线程上卸载”。虚拟线程被固定在某个平台线程上后，它在阻塞期间会连带占住底层操作系统线程，扩展性也会跟着变差。  在 JDK 21 到 JDK 23 中，最"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "主从",
+   "top1": 0.5628,
+   "top2": 0.5373,
+   "top1_仓库": "Waking-Up",
+   "top1_路径": "Database.md",
+   "top1_章节": "什么是主从复制？实现原理是什么？",
+   "top1_片段": "#### 什么是主从复制？实现原理是什么？  主从复制（Replication）是指数据可以从一个MySQL数据库主服务器复制到一个或多个从服务器，从服务器可以复制主服务器中的所有数据库或者特定的数据库，或者特定的表。默认采用异步模式。  "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "主从复制",
+   "top1": 0.7217,
+   "top2": 0.6731,
+   "top1_仓库": "Waking-Up",
+   "top1_路径": "Database.md",
+   "top1_章节": "什么是主从复制？实现原理是什么？",
+   "top1_片段": "#### 什么是主从复制？实现原理是什么？  主从复制（Replication）是指数据可以从一个MySQL数据库主服务器复制到一个或多个从服务器，从服务器可以复制主服务器中的所有数据库或者特定的数据库，或者特定的表。默认采用异步模式。  "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "主键生成策略",
+   "top1": 0.7382,
+   "top2": 0.7285,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/spring-common-annotations.md",
+   "top1_章节": "JPA / 主键生成策略",
+   "top1_片段": "#### 主键生成策略 `@Id`声明字段为主键。`@GeneratedValue` 指定主键的生成策略。 Jakarta Persistence 3.1 提供了 5 种主键生成策略： - **`GenerationType.TABLE`*"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "乐观锁",
+   "top1": 0.7338,
+   "top2": 0.7026,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/optimistic-lock-and-pessimistic-lock.md",
+   "top1_章节": "什么是乐观锁？",
+   "top1_片段": "- 乐观锁通常多用于写比较少的情况（多读场景，竞争较少），这样可以避免频繁加锁影响性能。不过，乐观锁主要针对的对象是单个共享变量（参考 `java.util.concurrent.atomic` 包下面的原子变量类）。"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "事件的调度与执行",
+   "top1": 0.6791,
+   "top2": 0.6139,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/Redis.md",
+   "top1_章节": "十、事件 / 事件的调度与执行",
+   "top1_片段": "#### 事件的调度与执行  服务器需要不断监听文件事件的套接字才能得到待处理的文件事件，但是不能一直监听，否则时间事件无法在规定的时间内执行，因此监听时间应该根据距离现在最近的时间事件来决定。  事件调度与执行由 aeProcessEve"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "事务",
+   "top1": 0.7422,
+   "top2": 0.7331,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/a-thousand-lines-of-mysql-study-notes.md",
+   "top1_章节": "事务(transaction)",
+   "top1_片段": "#### 事务(transaction) ```sql 事务是指逻辑上的一组操作，组成这组操作的各个单元，要不全成功要不全失败。     - 支持连续SQL的集体成功或集体撤销。     - 事务是数据库在数据完整性方面的一个功能。    "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "事务消息",
+   "top1": 0.744,
+   "top2": 0.6881,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/message-queue/rocketmq-questions.md",
+   "top1_章节": "RocketMQ 消息 / 事务消息",
+   "top1_片段": "#### 事务消息 **什么是事务消息** 事务消息是 Apache RocketMQ 提供的一种高级消息类型，支持在分布式场景下保障消息生产和本地事务的最终一致性。简单来讲，就是将本地事务（数据库的 DML 操作）与发送消息合并在同一个事"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "事务隔离级别总结",
+   "top1": 0.761,
+   "top2": 0.7506,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/spring-knowledge-and-questions-summary.md",
+   "top1_章节": "⭐️Spring 事务 / Spring 事务中的隔离级别有哪几种?",
+   "top1_片段": "- **`TransactionDefinition.ISOLATION_SERIALIZABLE`** : 最高的隔离级别，完全服从 ACID 的隔离级别。所有的事务依次逐个执行，这样事务之间就完全不可能产生干扰，也就是说，**该级别可以"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "二分查找",
+   "top1": 0.7548,
+   "top2": 0.7383,
+   "top1_仓库": "leetcode",
+   "top1_路径": "91/binary-search.md",
+   "top1_章节": "",
+   "top1_片段": "## 二分查找  二分查找又称`折半搜索算法`。 狭义地来讲，二分查找是一种在有序数组查找某一特定元 素的搜索算法。这同时也是大多数人所知道的一种说法。实际上， 广义的二分查找是将问 题的规模缩小到原有的一半。类似的，三分法就是将问题规模缩"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "二叉查找树",
+   "top1": 0.7663,
+   "top2": 0.745,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-index.md",
+   "top1_章节": "索引底层数据结构选型 / 二叉查找树（BST）",
+   "top1_片段": "#### 二叉查找树（BST）  二叉查找树（Binary Search Tree）是一种基于二叉树的数据结构，它具有以下特点：  1. 左子树所有节点的值均小于根节点的值。 2. 右子树所有节点的值均大于根节点的值。 3. 左右子树也分别"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "二叉树",
+   "top1": 0.6926,
+   "top2": 0.6357,
+   "top1_仓库": "leetcode",
+   "top1_路径": "thinkings/basic-data-structure.md",
+   "top1_章节": "非线性结构 / 二叉树",
+   "top1_片段": "#### 二叉树  二叉树是节点度数不超过二的树，是树的一种特殊子集，有趣的是二叉树这种被限制的树结构却能够表示和实现所有的树， 它背后的原理正是`长子 + 兄弟`法，用邓老师的话说就是`二叉树是多叉树的特例，但在有根且有序时，其描述能力却"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "二级索引",
+   "top1": 0.6448,
+   "top2": 0.6406,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-index.md",
+   "top1_章节": "主键索引（Primary Key）",
+   "top1_片段": "### 主键索引（Primary Key）  数据表的主键列使用的就是主键索引。  一张数据表有只能有一个主键，并且主键不能为 null，不能重复。  在 MySQL 的 InnoDB 的表中，当没有显示的指定表的主键时，InnoDB 会自"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "二进制分帧层",
+   "top1": 0.6357,
+   "top2": 0.604,
+   "top1_仓库": "leetcode",
+   "top1_路径": "thinkings/basic-data-structure.md",
+   "top1_章节": "线性结构 / 队列 / 队列的实际使用",
+   "top1_片段": "为了解决`HTTP/1.1`中的服务端队首阻塞，`HTTP/2`采用了`二进制分帧` 和 `多路复用` 等方法。 帧是`HTTP/2`数据通信的最小单位。在 `HTTP/1.1` 中数据包是文本格式，而 `HTTP/2` 的数据包是二进制格"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "互斥锁：同一时刻只允许一个线程进入",
+   "top1": 0.8462,
+   "top2": 0.7232,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-lock.md",
+   "top1_章节": "互斥锁：同一时刻只允许一个线程进入",
+   "top1_片段": "### 互斥锁：同一时刻只允许一个线程进入  互斥锁（Mutex）的规则很简单：同一时刻，最多只有一个线程持有锁并进入临界区。  在 Java 中，`synchronized` 和 `ReentrantLock` 都可以作为互斥锁使用：  "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "代码质量",
+   "top1": 0.7085,
+   "top2": 0.6471,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-availability/high-availability-system-design.md",
+   "top1_章节": "有哪些提高系统可用性的方法？ / 注重代码质量，测试严格把关",
+   "top1_片段": "#### 注重代码质量，测试严格把关  **代码质量是系统可用性的根基**。代码质量有问题比如比较常见的内存泄漏、循环依赖都是对系统可用性极大的损害。大家都喜欢谈限流、降级、熔断，但是从代码质量这个源头把关是首先要做好的一件很重要的事情。 "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "代码重构",
+   "top1": 0.7229,
+   "top2": 0.7036,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/basis/refactoring.md",
+   "top1_章节": "重构有哪些注意事项？ / 不要为了重构而重构",
+   "top1_片段": "#### 不要为了重构而重构  **重构一定是要为项目带来价值的！** 某些情况下我们不应该进行重构：  - 学习了某个设计模式/工程实践之后，不顾项目实际情况，刻意使用在项目上（避免货物崇拜编程）； - 项目进展比较急的时候，重构项目调用"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "令牌桶算法",
+   "top1": 0.7275,
+   "top2": 0.6355,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-availability/limit-request.md",
+   "top1_章节": "常见限流算法有哪些？ / 令牌桶算法",
+   "top1_片段": "#### 令牌桶算法  令牌桶算法也比较简单。和漏桶算法一样，我们的主角还是桶（这限流算法和桶过不去啊）。不过现在桶里装的是令牌了，请求在被处理之前需要从桶中获取一个令牌（获取即消费）。如果桶中没有令牌，请求就需要等待或被拒绝。我们根据限流"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "任务调度",
+   "top1": 0.6869,
+   "top2": 0.6402,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/open-source-project/system-design.md",
+   "top1_章节": "任务调度",
+   "top1_片段": "### 任务调度  - Quartz：一个很火的开源任务调度框架，Java 定时任务领域的老大哥或者说参考标准， 很多其他任务调度框架都是基于 `quartz` 开发的，比如当当网的`elastic-job`就是基于`quartz`二次开发"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "优先级反转：锁也会影响调度",
+   "top1": 0.8447,
+   "top2": 0.6778,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/os-lock-and-sync.md",
+   "top1_章节": "优先级反转：锁也会影响调度",
+   "top1_片段": "### 优先级反转：锁也会影响调度  锁还会把调度问题带进来。  经典问题是优先级反转。低优先级线程 L 持有一把锁，高优先级线程 H 等这把锁；这时中优先级线程 M 持续运行，把 L 抢占掉。结果是 H 明明优先级最高，却一直等不到 L "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "优先选择符合存储需要的最小的数据类型",
+   "top1": 0.7558,
+   "top2": 0.6641,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-high-performance-optimization-specification-recommendations.md",
+   "top1_章节": "数据库字段设计规范 / 优先选择符合存储需要的最小的数据类型",
+   "top1_片段": "#### 优先选择符合存储需要的最小的数据类型  存储字节越小，占用空间也就越小，性能也越好。  **a.某些字符串可以转换成数字类型存储，比如可以将 IP 地址转换成整型数据。**  数字是连续的，性能更好，占用空间也更小。  MySQL"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "会话",
+   "top1": 0.5943,
+   "top2": 0.5791,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/J2EE基础知识.md",
+   "top1_章节": "实现会话跟踪的技术有哪些",
+   "top1_片段": "### 实现会话跟踪的技术有哪些 1. **使用 Cookie**    向客户端发送 Cookie    ```java    Cookie c =new Cookie(\"name\",\"value\"); //创建Cookie    c.s"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "会话（Session）",
+   "top1": 0.644,
+   "top2": 0.6346,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/distributed-system/distributed-session.md",
+   "top1_章节": "面试题剖析 / Spring Session + Redis",
+   "top1_片段": "上面的代码就是 ok 的，给 Spring Session 配置基于 Redis 来存储 Session 数据，然后配置了一个 Spring Session 的过滤器，这样的话，Session 相关操作都会交给 Spring Session"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "传输层（Transport layer）",
+   "top1": 0.7382,
+   "top2": 0.6979,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/osi-and-tcp-ip-model.md",
+   "top1_章节": "TCP/IP 四层模型 / 传输层（Transport layer）",
+   "top1_片段": "#### 传输层（Transport layer）  **传输层的主要任务就是负责向两台终端设备进程之间的通信提供通用的数据传输服务。** 应用进程利用该服务传送应用层报文。“通用的”是指并不针对某一个特定的网络应用，而是多种应用可以使用同"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "位运算",
+   "top1": 0.6835,
+   "top2": 0.6597,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/剑指 Offer 题解 - 目录.md",
+   "top1_章节": "位运算",
+   "top1_片段": "### 位运算  - 15. 二进制中 1 的个数 - 56. 数组中只出现一次的数字  ### 其它  - 17. 打印从 1 到最大的 n 位数 - 19. 正则表达式匹配 - 20. 表示数值的字符串 - 44. 数字序列中的某一位数"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "使用 Authorization Hea…",
+   "top1": 0.5785,
+   "top2": 0.5743,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/spring-knowledge-and-questions-summary.md",
+   "top1_章节": "Spring Security",
+   "top1_片段": "#### 有哪些控制请求访问权限的方法？  - `permitAll()`：无条件允许任何形式访问，不管你登录还是没有登录。 - `anonymous()`：允许匿名访问，也就是没有登录才可以访问。 - `denyAll()`：无条件决绝任"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "使用自定义线程池",
+   "top1": 0.7198,
+   "top2": 0.7049,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/async.md",
+   "top1_章节": "@Async 使用建议 / 自定义线程池",
+   "top1_片段": "#### 自定义线程池 如果没有显式地配置线程池，在 `@Async` 底层会先在 `BeanFactory` 中尝试获取线程池，如果获取不到，则会创建一个 `SimpleAsyncTaskExecutor` 实现。`SimpleAsync"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "依赖注入",
+   "top1": 0.7343,
+   "top2": 0.7,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/framework/spring/spring-common-annotations.md",
+   "top1_章节": "Spring Bean / 依赖注入（Dependency Injection, DI）",
+   "top1_片段": "#### 依赖注入（Dependency Injection, DI） `@Autowired` 用于自动注入依赖项（即其他 Spring Bean）。它可以标注在构造器、字段、Setter 方法或配置方法上，Spring 容器会自动查找匹"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "信号量",
+   "top1": 0.7005,
+   "top2": 0.6885,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/ipc.md",
+   "top1_章节": "信号量和信号有什么区别？",
+   "top1_片段": "### 信号量和信号有什么区别？  信号量（semaphore）经常和共享内存一起出现，但它不负责传业务数据。它更像一个计数器，用来控制有多少进程可以进入某段临界区，或者通知对方“现在有数据可读”。POSIX 信号量可以是命名的，也可以是未"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "信号量简单 Demo",
+   "top1": 0.7175,
+   "top2": 0.6454,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-availability/hystrix-semphore-isolation.md",
+   "top1_章节": "信号量简单 Demo",
+   "top1_片段": "### 信号量简单 Demo 业务背景里，比较适合信号量的是什么场景呢？ 比如说，我们一般来说，缓存服务，可能会将一些量特别少、访问又特别频繁的数据，放在自己的纯内存中。 举个栗子。一般我们在获取到商品数据之后，都要去获取商品是属于哪个地理"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "倒排索引",
+   "top1": 0.72,
+   "top2": 0.7069,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-concurrency/es-write-query-search.md",
+   "top1_章节": "面试题剖析 / 倒排索引",
+   "top1_片段": "那么，有了倒排索引，搜索引擎可以很方便地响应用户的查询。比如用户输入查询 `Facebook` ，搜索系统查找倒排索引，从中读出包含这个单词的文档，这些文档就是提供给用户的搜索结果。 要注意倒排索引的两个重要细节： -   倒排索引中的所有"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "值传递&引用传递",
+   "top1": 0.6956,
+   "top2": 0.6839,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/why-there-only-value-passing-in-java.md",
+   "top1_章节": "引用传递是怎么样的？",
+   "top1_片段": "### 引用传递是怎么样的？  看到这里，相信你已经知道了 Java 中只有值传递，是没有引用传递的。 但是，引用传递到底长什么样呢？下面以 `C++` 的代码为例，让你看一下引用传递的庐山真面目。  ```C++ #include <io"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "偏向锁",
+   "top1": 0.6777,
+   "top2": 0.6215,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/java-concurrent-questions-02.md",
+   "top1_章节": "synchronized 关键字 / synchronized 的偏向锁为什么被废弃了？",
+   "top1_片段": "#### synchronized 的偏向锁为什么被废弃了？  Open JDK 官方声明：JEP 374: Deprecate and Disable Biased Locking  在 JDK15 中，偏向锁被默认关闭（仍然可以使用 `"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "健康检查和摘流量",
+   "top1": 0.6904,
+   "top2": 0.5443,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/load-balancing.md",
+   "top1_章节": "七层负载均衡可以怎么做？ / 健康检查和摘流量",
+   "top1_片段": "#### 健康检查和摘流量  负载均衡真正上线后，健康检查比算法本身更重要。算法决定“正常情况下怎么分流”，健康检查决定“异常节点还能不能继续接流量”。  常见健康检查方式：  - **TCP 检查**：端口能连通就认为节点可用，适合四层负"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "僵尸进程",
+   "top1": 0.7044,
+   "top2": 0.6805,
+   "top1_仓库": "Waking-Up",
+   "top1_路径": "Operating Systems.md",
+   "top1_章节": "什么是僵尸进程？",
+   "top1_片段": "#### 什么是僵尸进程？ 一个子进程结束后，它的父进程并没有等待它（调用wait或者waitpid），那么这个子进程将成为一个僵尸进程。僵尸进程是一个已经死亡的进程，但是并没有真正被销毁。它已经放弃了几乎所有内存空间，没有任何可执行代码，"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "公平锁与非公平锁有什么对比",
+   "top1": 0.7282,
+   "top2": 0.7212,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/aqs.md",
+   "top1_章节": "AQS 原理 / 公平锁与非公平锁的性能差异分析 / 性能差异对比",
+   "top1_片段": "运行上面的代码通常可以观察到：非公平锁模式下，同一个线程更容易连续多次获取到锁（因为它释放锁后立即又去竞争，有机会在队列中的线程被唤醒之前抢到锁）；公平锁在存在等待者时倾向于按队列顺序分配锁。不过，公平性不等于操作系统调度公平，如果其他线程"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "共享内存：少拷贝，但同步要自己负责",
+   "top1": 0.8371,
+   "top2": 0.8203,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/ipc.md",
+   "top1_章节": "共享内存：少拷贝，但同步要自己负责",
+   "top1_片段": "### 共享内存：少拷贝，但同步要自己负责 共享内存的思路很直接：让多个进程把同一块物理内存映射到各自的虚拟地址空间里。映射建立之后，A 进程写这块内存，B 进程就能读到更新。 Linux 上常见两类接口：System V 共享内存用 `s"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "共享锁和排他锁呢",
+   "top1": 0.7837,
+   "top2": 0.6759,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-questions-01.md",
+   "top1_章节": "MySQL 锁 / 共享锁和排他锁呢？",
+   "top1_片段": "#### 共享锁和排他锁呢？  不论是表级锁还是行级锁，都存在共享锁（Share Lock，S 锁）和排他锁（Exclusive Lock，X 锁）这两类：  - **共享锁（S 锁）**：又称读锁，事务在读取记录的时候获取共享锁，允许多个"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "内存分配策略",
+   "top1": 0.7054,
+   "top2": 0.6903,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/jvm/jvm-garbage-collection.md",
+   "top1_章节": "内存分配和回收原则 / 对象优先在 Eden 区分配",
+   "top1_片段": "allocation5 = new byte[1000*1024];   } } ```"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "内存屏障",
+   "top1": 0.7332,
+   "top2": 0.7118,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/unsafe.md",
+   "top1_章节": "Unsafe 功能 / 内存屏障 / 介绍",
+   "top1_片段": "##### 介绍 在介绍内存屏障前，需要知道编译器和 CPU 会在保证程序输出结果一致的情况下，会对代码进行重排序，从指令优化角度提升性能。而指令重排序可能会带来一个不好的结果，导致 CPU 的高速缓存和内存中数据的不一致，而内存屏障（`M"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "内存映射文件",
+   "top1": 0.7025,
+   "top2": 0.6635,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/Java IO.md",
+   "top1_章节": "七、NIO / 内存映射文件",
+   "top1_片段": "#### 内存映射文件  内存映射文件 I/O 是一种读和写文件数据的方法，它可以比常规的基于流或者基于通道的 I/O 快得多。  向内存映射文件写入可能是危险的，只是改变数组的单个元素这样的简单操作，就可能会直接修改磁盘上的文件。修改数据"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "内存模型三大特性",
+   "top1": 0.6967,
+   "top2": 0.6608,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/Java 并发.md",
+   "top1_章节": "十、Java 内存模型 / 内存模型三大特性 / 1. 原子性",
+   "top1_片段": "executorService.shutdown();     System.out.println(example.get()); } ``` ```html 1000 ```"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "内存淘汰机制",
+   "top1": 0.7599,
+   "top2": 0.6736,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-concurrency/redis-expiration-policies-and-lru.md",
+   "top1_章节": "面试题剖析 / 内存淘汰机制",
+   "top1_片段": "#### 内存淘汰机制  Redis 内存淘汰机制有以下几个：  -   noeviction: 当内存不足以容纳新写入数据时，新写入操作会报错，这个一般没人用吧，实在是太恶心了。 -   **allkeys-lru**：当内存不足以容纳新"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "内存碎片清理所占用 CPU 时间的比例不…",
+   "top1": 0.6574,
+   "top2": 0.6321,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/redis/redis-memory-fragmentation.md",
+   "top1_章节": "如何清理 Redis 内存碎片？",
+   "top1_片段": "### 如何清理 Redis 内存碎片？  Redis4.0-RC3 版本以后自带了内存整理，可以避免内存碎片率过大的问题。  直接通过 `config set` 命令将 `activedefrag` 配置项设置为 `yes` 即可。  `"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "内存管理主要做了什么",
+   "top1": 0.8051,
+   "top2": 0.7752,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/operating-system-basic-questions-02.md",
+   "top1_章节": "内存管理 / 内存管理主要做了什么？",
+   "top1_片段": "#### 内存管理主要做了什么？  面试里回答“内存管理做什么”，可以从 5 件事说起：  - **分配和回收内存**：用户态分配器会通过 `brk()`、`mmap()` 等接口向内核申请或释放虚拟地址区域；内核再管理物理页和内核对象。 "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "内容系统",
+   "top1": 0.5815,
+   "top2": 0.5795,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/zhuanlan/back-end-interview-high-frequency-system-design-and-scenario-questions.md",
+   "top1_章节": "内容概览",
+   "top1_片段": "#### 📐 系统设计案例  | 主题                                   | 核心知识点                                         | | ⭐ **如何设计一个动态线程"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "冗余与容灾",
+   "top1": 0.7052,
+   "top2": 0.6627,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-availability/high-availability-system-interview-questions.md",
+   "top1_章节": "冗余与容灾",
+   "top1_片段": "### 冗余与容灾  冗余解决“备用资源在哪里”，容灾还要处理检测、切换、数据复制和恢复。对无状态服务，自动摘除故障实例通常比较容易；数据库主切、跨地域切流和资金链路涉及数据风险，往往需要更谨慎的确认与回切方案。  相关内容：冗余设计详解 "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "冷热分离",
+   "top1": 0.6845,
+   "top2": 0.6662,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/data-cold-hot-separation.md",
+   "top1_章节": "什么是数据冷热分离？ / 冷热分离的多级分层策略",
+   "top1_片段": "#### 冷热分离的多级分层策略  实际落地时，“冷”与“热”往往不是非此即彼的二分法，而是**渐进式多级分层**：  | 层级         | 数据特性             | 判定规则示例                | 存储"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "函数式接口",
+   "top1": 0.7673,
+   "top2": 0.7156,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/new-features/java8-tutorial-translate.md",
+   "top1_章节": "函数式接口(Functional Interfaces)",
+   "top1_片段": "### 函数式接口(Functional Interfaces)  **译者注：** 原文对这部分解释不太清楚，故做了修改！  Java 语言设计者们投入了大量精力来思考如何使现有的函数友好地支持 Lambda。最终采取的方法是：增加函数式"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分代收集算法",
+   "top1": 0.7087,
+   "top2": 0.6125,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/jvm/jvm-garbage-collection.md",
+   "top1_章节": "垃圾收集算法",
+   "top1_片段": "#### 标记-整理算法  标记-整理（Mark-and-Compact）算法是根据老年代的特点提出的一种标记算法，标记过程仍然与“标记-清除”算法一样，但后续步骤不是直接对可回收对象回收，而是让所有存活的对象向一端移动，然后直接清理掉端边"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分区容忍性",
+   "top1": 0.6296,
+   "top2": 0.6279,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/protocol/cap-and-base-theorem.md",
+   "top1_章节": "CAP 理论 / 简介",
+   "top1_片段": "- **分区容错性（Partition Tolerance）**：CAP 里的 P 本质上是在假设异步网络（可能延迟/丢包/分区），不是一个你「选择要不要」的功能。真正的权衡是：当分区发生时，你必须在**线性一致（CAP 的 Consist"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分布式",
+   "top1": 0.6494,
+   "top2": 0.6481,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/protocol/gossip-protocol.md",
+   "top1_章节": "背景",
+   "top1_片段": "### 背景  在分布式系统中，不同节点间共享状态是一个基本需求。  一种简单的方法是 **集中式广播**：由中心节点向所有其他节点同步信息。这种方式适合中心化系统，但存在明显缺陷：当节点数量增加时，同步效率下降（O(N) 复杂度），且过度"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分布式事务",
+   "top1": 0.744,
+   "top2": 0.7396,
+   "top1_仓库": "JavaFamily",
+   "top1_路径": "docs/all/mq/重复消费、顺序消费、分布式事务.md",
+   "top1_章节": "面试开始 / 你能跟我聊一下分布式事务么？",
+   "top1_片段": "#### 你能跟我聊一下分布式事务么？  **分布式事务**在现在遍地都是分布式部署的系统中几乎是必要的。  我们先聊一下啥是**事务**？  **分布式事务**、**事务隔离级别**、**ACID**我相信大家这些东西都耳熟能详了，那什么"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分布式理论与算法",
+   "top1": 0.6789,
+   "top2": 0.6697,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/distributed-system-interview-questions.md",
+   "top1_章节": "分布式理论与算法",
+   "top1_片段": "### 分布式理论与算法  先设想一个最常见的场景：同一份数据存了多个副本，节点可能宕机，节点之间的网络也可能中断。CAP、BASE 和共识算法讨论的，都是这个场景里的选择与约束。  相关内容：  - CAP 理论和 BASE 理论解读 -"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分布式系统怎么学",
+   "top1": 0.8124,
+   "top2": 0.7534,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/distributed-system-intro.md",
+   "top1_章节": "分布式系统怎么学？",
+   "top1_片段": "### 分布式系统怎么学？ 学习分布式系统，不建议一上来背算法名。先从工程问题往理论走，会顺很多。 第一步看网络通信。HTTP、RPC、TCP、超时、重试、连接池、序列化，这些内容决定服务之间怎么说话。没有这部分基础，后面看服务治理会很虚。"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分布式缓存",
+   "top1": 0.7046,
+   "top2": 0.6938,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/缓存.md",
+   "top1_章节": "二、缓存位置 / 分布式缓存",
+   "top1_片段": "#### 分布式缓存  使用 Redis、Memcache 等分布式缓存将数据缓存在分布式缓存系统中。  相对于本地缓存来说，分布式缓存单独部署，可以根据需求分配硬件资源。不仅如此，服务器集群都可以访问分布式缓存，而本地缓存需要在服务器集群"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分布式链路追踪",
+   "top1": 0.7003,
+   "top2": 0.6526,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/open-source-project/system-design.md",
+   "top1_章节": "分布式 / 链路追踪",
+   "top1_片段": "#### 链路追踪  - SkyWalking：面向分布式、微服务和云原生系统的应用性能监控与可观测性平台。 - OpenTelemetry Java：OpenTelemetry 的 Java API 与 SDK，用于生成和导出 Trace"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分布式锁",
+   "top1": 0.7445,
+   "top2": 0.7425,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/distributed-system/distributed-lock.md",
+   "top1_章节": "总结",
+   "top1_片段": "### 总结  这篇文章我们主要介绍了：  - 分布式锁的用途：分布式系统下，不同的服务/客户端通常运行在独立的 JVM 进程上。如果多个 JVM 进程共享同一份资源的话，使用本地锁就没办法实现资源的互斥访问了。 - 分布式锁应该具备的条件"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分布式限流怎么做",
+   "top1": 0.798,
+   "top2": 0.7568,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-availability/limit-request.md",
+   "top1_章节": "分布式限流怎么做？",
+   "top1_片段": "### 分布式限流怎么做？ 分布式限流针对的是分布式/微服务应用架构。在这种架构下，一种服务可能会被部署多份，如果需要控制全局配额，就要让多个实例共享限流状态。不过，并非所有微服务场景都必须使用分布式限流：如果配额可以按实例数均分（例如总配"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分库分表",
+   "top1": 0.7025,
+   "top2": 0.6905,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/read-and-write-separation-and-library-subtable.md",
+   "top1_章节": "分库分表",
+   "top1_片段": "#### 什么是分表？  **分表** 就是对单表的数据进行拆分，可以是垂直拆分，也可以是水平拆分。  **垂直分表** 是对数据表列的拆分，把一张列比较多的表拆分为多张表。  举个例子：我们可以将用户信息表中的一些列单独抽出来作为一个表。"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分段",
+   "top1": 0.6942,
+   "top2": 0.6845,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/virtual-memory.md",
+   "top1_章节": "分段是怎么映射的？",
+   "top1_片段": "### 分段是怎么映射的？ 分段（Segmentation）出现得比较早，思路也很符合程序员直觉。一个程序本来就由代码、数据、栈、堆这些部分组成，它们的访问权限和生命周期都不一样，那就按逻辑切成几个段。 分段下的虚拟地址由两部分组成：**段"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分段、分页与段页式有什么对比",
+   "top1": 0.7607,
+   "top2": 0.7526,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/memory-management.md",
+   "top1_章节": "分段、分页和段页式有什么区别？",
+   "top1_片段": "### 分段、分页和段页式有什么区别？  地址空间不一定只能按一种方式拆。操作系统教材里常见三种：分段、分页、段页式。  | 方式   | 划分依据                               | 地址结构         "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分治算法",
+   "top1": 0.6835,
+   "top2": 0.6816,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/big-data/find-mid-value-in-500-millions.md",
+   "top1_章节": "解答思路 / 方法二：分治法",
+   "top1_片段": "#### 方法二：分治法  分治法的思想是把一个大的问题逐渐转换为规模较小的问题来求解。  对于这道题，顺序读取这 5 亿个数字，对于读取到的数字 num，如果它对应的二进制中最高位为 1，则把这个数字写到 f1 中，否则写入 f0 中。通"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分片键如何选择",
+   "top1": 0.7549,
+   "top2": 0.7112,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-performance/read-and-write-separation-and-library-subtable.md",
+   "top1_章节": "分库分表 / 分片键如何选择？",
+   "top1_片段": "#### 分片键如何选择？ 分片键（Sharding Key）是数据分片的关键字段，直接影响数据分布和查询效率。一般来说，分片键应该具备以下特点： - 具有共性，即能够覆盖绝大多数的查询场景，尽量减少单次查询所涉及的分片数量，降低数据库压力"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分片集群",
+   "top1": 0.6443,
+   "top2": 0.6323,
+   "top1_仓库": "system-design-primer",
+   "top1_路径": "README-zh-Hans.md",
+   "top1_章节": "数据库 / 关系型数据库管理系统（RDBMS）",
+   "top1_片段": "###### 来源及延伸阅读：联合  - 扩展你的用户数到第一个一千万  ##### 分片   资料来源：可扩展性、可用性、稳定性、模式  分片将数据分配在不同的数据库上，使得每个数据库仅管理整个数据集的一个子集。以用户数据库为例，随着用户"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分页性能优化",
+   "top1": 0.756,
+   "top2": 0.7367,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-concurrency/es-optimizing-query-performance.md",
+   "top1_章节": "面试题剖析 / 分页性能优化",
+   "top1_片段": "#### 分页性能优化  es 的分页是较坑的，为啥呢？举个例子吧，假如你每页是 10 条数据，你现在要查询第 100 页，实际上是会把每个 shard 上存储的前 1000 条数据都查到一个协调节点上，如果你有个 5 个 shard，那么"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "分页机制",
+   "top1": 0.758,
+   "top2": 0.7076,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/operating-system-basic-questions-02.md",
+   "top1_章节": "内存管理 / 分页机制",
+   "top1_片段": "#### 分页机制  **分页机制（Paging）** 把虚拟地址空间和物理内存都切成固定大小的块。虚拟地址空间里的块叫虚拟页，物理内存里的块叫物理页或者页帧。Linux 下，一页通常是 4 KB。  **注意：这里的页是连续等长的，不同于"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "初始化",
+   "top1": 0.6785,
+   "top2": 0.663,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/jvm/class-loading-process.md",
+   "top1_章节": "类加载过程 / 初始化",
+   "top1_片段": "5. 首次调用解析结果为 `REF_getStatic`、`REF_putStatic`、`REF_invokeStatic` 或 `REF_newInvokeSpecial` 的 `MethodHandle` 时，需要初始化声明该目标的类"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "删除缓存",
+   "top1": 0.6869,
+   "top2": 0.6803,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-concurrency/redis-consistence.md",
+   "top1_章节": "面试题剖析 / 最初级的缓存不一致问题及解决方案",
+   "top1_片段": "#### 最初级的缓存不一致问题及解决方案  问题：先更新数据库，再删除缓存。如果删除缓存失败了，那么会导致数据库中是新数据，缓存中是旧数据，数据就出现了不一致。  解决思路 1：先删除缓存，再更新数据库。如果数据库更新失败了，那么数据库中"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "利用 Google 开源的 Guava …",
+   "top1": 0.6667,
+   "top2": 0.6655,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/data-structure/bloom-filter.md",
+   "top1_章节": "编码实战 / 利用 Google 开源的 Guava 中自带的布隆过滤器",
+   "top1_片段": "**Guava 的布隆过滤器保存在当前进程内存中，使用简单，适合单进程或不需要跨节点共享的场景。如果多个节点需要共享同一份过滤器状态，可以考虑 RedisBloom 等集中式方案。**"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "刷盘时机",
+   "top1": 0.684,
+   "top2": 0.6646,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/database/mysql/mysql-logs.md",
+   "top1_章节": "redo log / 刷盘时机",
+   "top1_片段": "#### 刷盘时机 在 InnoDB 存储引擎中，**redo log buffer**（重做日志缓冲区）是一块用于暂存 redo log 的内存区域。为了确保事务的持久性和数据的一致性，InnoDB 会在特定时机将这块缓冲区中的日志数据刷"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "削峰/限流",
+   "top1": 0.6159,
+   "top2": 0.6051,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/high-concurrency/how-to-limit-current.md",
+   "top1_章节": "工作中的使用 / spring cloud gateway",
+   "top1_片段": "#### spring cloud gateway  -   spring cloud gateway 默认使用 redis 进行限流，笔者一般只是修改修改参数属于拿来即用，并没有去从头实现上述那些算法。  ```xml <dependen"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "加密",
+   "top1": 0.7093,
+   "top2": 0.6799,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/security/encryption-algorithms.md",
+   "top1_章节": "",
+   "top1_片段": "加密算法是一种用数学方法对数据进行变换的技术，目的是保护数据的安全，防止被未经授权的人读取或修改。加密算法可以分为三大类：对称加密算法、非对称加密算法和哈希算法（也叫摘要算法）。  日常开发中常见的需要用到加密算法的场景：  1. 保存在数"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "加权 Quick Union",
+   "top1": 0.7182,
+   "top2": 0.6224,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/算法 - 并查集.md",
+   "top1_章节": "加权 Quick Union",
+   "top1_片段": "### 加权 Quick Union  为了解决 quick-union 的树通常会很高的问题，加权 quick-union 在 union 操作时会让较小的树连接较大的树上面。  理论研究证明，加权 quick-union 算法构造的树深"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "动态主机配置协议",
+   "top1": 0.7429,
+   "top2": 0.5821,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/计算机网络 - 应用层.md",
+   "top1_章节": "动态主机配置协议",
+   "top1_片段": "### 动态主机配置协议  DHCP (Dynamic Host Configuration Protocol) 提供了即插即用的连网方式，用户不再需要手动配置 IP 地址等信息。  DHCP 配置的内容不仅是 IP 地址，还包括子网掩码、"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "动态规划",
+   "top1": 0.7525,
+   "top2": 0.734,
+   "top1_仓库": "fucking-algorithm",
+   "top1_路径": "动态规划系列/子序列问题模板.md",
+   "top1_章节": "",
+   "top1_片段": "既然要用动态规划，那就要定义 `dp` 数组，找状态转移关系。我们说的两种思路模板，就是 `dp` 数组的定义思路。不同的问题可能需要不同的 `dp` 数组定义来解决。"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "包装类型",
+   "top1": 0.56,
+   "top2": 0.5569,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/basis/java-basic-questions-01.md",
+   "top1_章节": "⭐️ 基本数据类型 / 包装类型的缓存机制了解么？",
+   "top1_片段": "#### 包装类型的缓存机制了解么？ Java 基本数据类型的包装类型的大部分都用到了缓存机制来提升性能。 `Byte`,`Short`,`Integer`,`Long` 这 4 种包装类默认创建了数值 **[-128，127]** 的相应"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "匹配空白字符",
+   "top1": 0.6409,
+   "top2": 0.638,
+   "top1_仓库": "leetcode-master",
+   "top1_路径": "problems/0020.有效的括号.md",
+   "top1_章节": "思路 / 进入正题",
+   "top1_片段": "for (int i = 0; i < s.size(); i++) {             if (s[i] == '(') st.push(')');             else if (s[i] == '{') st.pus"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "协议名",
+   "top1": 0.6269,
+   "top2": 0.6136,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/network/application-layer-protocol.md",
+   "top1_章节": "",
+   "top1_片段": "应用层协议很多，HTTP、WebSocket、SMTP、POP3/IMAP、FTP、Telnet、SSH、RTP、DNS 这些名字也经常一起出现。  这些协议不需要每一个都学到实现细节，但如果只记协议名，很容易在“用途、底层传输协议、典型场"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "单主机多服务实例模式",
+   "top1": 0.802,
+   "top2": 0.7628,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/micro-services/choose-microservice-deployment-strategy.md",
+   "top1_章节": "单主机多服务实例模式",
+   "top1_片段": "### 单主机多服务实例模式 部署微服务的一种方法就是单主机多服务实例模式，使用这种模式，需要提供若干台物理或者虚拟机，每台机器上运行多个服务实例。很多情况下，这是传统的应用部署方法。每个服务实例运行一个或者多个主机的 well-known"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "单体式应用的不足",
+   "top1": 0.7033,
+   "top2": 0.6892,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/micro-services/advantages-and-disadvantages-of-microservice.md",
+   "top1_章节": "单体式应用的不足",
+   "top1_片段": "### 单体式应用的不足 不幸的是，这种简单方法却有很大的局限性。一个简单的应用会随着时间推移逐渐变大。在每次的 sprint 中， 开发团队都会面对新“故事”，然后开发许多新代码。几年后，这个小而简单的应用会变成了一个巨大的怪物。这儿有一"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "单例（Singleton）",
+   "top1": 0.6801,
+   "top2": 0.6737,
+   "top1_仓库": "CS-Notes",
+   "top1_路径": "notes/设计模式  - 单例.md",
+   "top1_章节": "单例（Singleton）",
+   "top1_片段": "### 单例（Singleton）  #### Intent  确保一个类只有一个实例，并提供该实例的全局访问点。  #### Class Diagram  使用一个私有构造函数、一个私有静态变量以及一个公有静态函数来实现。  私有构造函数"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "单点登录友好",
+   "top1": 0.6654,
+   "top2": 0.6093,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/system-design/security/sso-intro.md",
+   "top1_章节": "SSO 介绍",
+   "top1_片段": "### SSO 介绍  #### 什么是 SSO？  SSO 英文全称 Single Sign On，单点登录。SSO 是在多个应用系统中，用户只需要登录一次就可以访问所有相互信任的应用系统。  例如你登录网易账号中心（ ）之后访问以下站点"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "压力测试",
+   "top1": 0.6283,
+   "top2": 0.6259,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-availability/high-availability-system-interview-questions.md",
+   "top1_章节": "性能测试与故障治理",
+   "top1_片段": "### 性能测试与故障治理  没有容量数据和演练结果，高可用方案只能停留在设计稿。压测用于观察系统在不同流量下的延迟、吞吐和资源变化，故障演练则验证节点宕机、依赖变慢或网络分区后，保护和恢复机制是否按预期工作。  相关内容：性能测试入门  "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "压测",
+   "top1": 0.6439,
+   "top2": 0.608,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/high-availability/performance-test.md",
+   "top1_章节": "全链路压测",
+   "top1_片段": "### 全链路压测  单接口压测只能告诉你某个接口在当前脚本下能跑到多少吞吐。复杂系统出问题时，瓶颈经常不在入口接口本身：网关鉴权没问题，库存服务开始排队；订单接口还能返回，MQ 已经堆积；应用 CPU 不高，数据库连接池先被打满。一次下单"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "原子性",
+   "top1": 0.6044,
+   "top2": 0.595,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/concurrent/atomic-classes.md",
+   "top1_章节": "Atomic 原子类介绍",
+   "top1_片段": "### Atomic 原子类介绍 `Atomic` 翻译成中文是“原子”的意思。在化学上，原子是构成物质的最小单位，在化学反应中不可分割。在编程中，`Atomic` 指的是一个操作具有原子性，即该操作不可分割、不可中断。即使在多个线程同时执"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "原子指令：锁总得有一个不可拆的起点",
+   "top1": 0.7839,
+   "top2": 0.6161,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/cs-basics/operating-system/os-lock-and-sync.md",
+   "top1_章节": "原子指令：锁总得有一个不可拆的起点",
+   "top1_片段": "### 原子指令：锁总得有一个不可拆的起点  无论 mutex、spinlock 还是 futex，最后都要落到某种硬件支持的原子操作上。否则“检查锁是否空闲”和“把锁标记为已占用”之间仍然会被别的线程插进来。  常见原子指令包括 test"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "去中心化的治理",
+   "top1": 0.6815,
+   "top2": 0.5955,
+   "top1_仓库": "advanced-java",
+   "top1_路径": "docs/micro-services/microservices-introduction.md",
+   "top1_章节": "微服务架构的特征 / 去中心化的治理",
+   "top1_片段": "#### 去中心化的治理 集中治理的一个后果是单一技术平台的标准化发展趋势。经验表明，这种方法正在收缩 ——不是每个问题都是钉子，不是每个问题都是锤子。我们更喜欢使用正确的工具来完成工作，而单体应用程序在一定程度上可以利用语言的优势，这是不"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "去重怎么做",
+   "top1": 0.6293,
+   "top2": 0.6156,
+   "top1_仓库": "leetcode-master",
+   "top1_路径": "problems/0047.全排列II.md",
+   "top1_章节": "拓展",
+   "top1_片段": "### 拓展  大家发现，去重最为关键的代码为：  ```cpp if (i > 0 && nums[i] == nums[i - 1] && used[i - 1] == false) {     continue; } ```  **如"
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "参数",
+   "top1": 0.622,
+   "top2": 0.6198,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/jvm/jvm-interview-questions.md",
+   "top1_章节": "JVM 参数与诊断工具",
+   "top1_片段": "### JVM 参数与诊断工具 参数题考察的是配置依据。堆大小、年轻代比例、收集器和日志参数要跟部署内存、对象分配速率、延迟目标及 JDK 版本一起讨论。尤其是 G1，通常不建议照搬以固定年轻代大小为中心的旧配置。 相关内容： - JVM "
+  },
+  {
+   "岗位": "Java 后端开发工程师",
+   "考点名": "双亲委派模型介绍",
+   "top1": 0.7453,
+   "top2": 0.7082,
+   "top1_仓库": "JavaGuide-main",
+   "top1_路径": "docs/java/jvm/classloader.md",
+   "top1_章节": "双亲委派模型 / 双亲委派模型介绍",
+   "top1_片段": "其实这个双亲翻译的容易让别人误解，我们一般理解的双亲都是父母，这里的双亲更多地表达的是“父母这一辈”的人而已，并不是说真的有一个 `MotherClassLoader` 和一个 `FatherClassLoader`。个人觉得翻译成单亲委派"
+  }
+ ]
+}
