@@ -34,6 +34,7 @@ backend/.test_tmp/
 # 前端构建产物（由各成员本地构建，不入库）
 frontend/node_modules/
 frontend/dist/
+frontend/dist.zip
 
 # P4 前端静态资源里的大文件：Vosk 语音模型 + mediapipe 第三方二进制（约 137MB，不入库）
 # 由 P4 的 dist 包提供，换机器部署时从该包重新拷入 backend/static/
