@@ -356,7 +356,20 @@ onMounted(async () => {
     radarData.value = dimensionRows.value.map(item => item.value)
     missingDimensions.value = missing
     scoreAvailable.value = data.score_available !== false
-    scoreStatus.value = data.score_status || (data.partial ? 'partial' : 'valid')
+    // 与报告页保持一致：优先用 score_status，旧接口没有时按五维 null 推导。
+    const statusDims = [
+      data.tech_score, data.logic_score, data.expression_score,
+      data.adaptability_score, data.match_score
+    ]
+    if (['valid', 'partial', 'unavailable'].includes(data.score_status)) {
+      scoreStatus.value = data.score_status
+    } else if (statusDims.some(v => v === null || v === undefined)) {
+      scoreStatus.value = statusDims.every(v => v === null || v === undefined)
+        ? 'unavailable'
+        : 'partial'
+    } else {
+      scoreStatus.value = 'valid'
+    }
     behavioralRoleFit.value = data.behavioral_role_fit ?? null
 
     isPartial.value = data.partial === true

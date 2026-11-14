@@ -1,5 +1,0 @@
-<<<<<<<< HEAD:backend/static/assets/settings-Coh_S7B6.js
-import{P as e}from"./_plugin-vue_export-helper-CHIF6JTv.js";import{u as t}from"./index-Dx_1kv0O.js";var n={default_position:``,voice_answer:!0,auto_tts:!0,body_language:!0,report_preference:`detailed`,theme:`system`,career_anchor_result:null},r=e({...n}),i=async()=>{let e=await t.get(`/settings`);return r.value={...n,...e},r.value},a=async e=>{let i=await t.put(`/settings`,e);return r.value={...n,...i},r.value};export{r as n,a as r,i as t};
-========
-import{P as e}from"./_plugin-vue_export-helper-CHIF6JTv.js";import{u as t}from"./index-DzZmFSf1.js";var n={default_position:``,voice_answer:!0,auto_tts:!0,body_language:!0,report_preference:`detailed`,theme:`system`,career_anchor_result:null},r=e({...n}),i=async()=>{let e=await t.get(`/settings`);return r.value={...n,...e},r.value},a=async e=>{let i=await t.put(`/settings`,e);return r.value={...n,...i},r.value};export{r as n,a as r,i as t};
->>>>>>>> gitee/main:backend/static/assets/settings-WWkNt1IT.js

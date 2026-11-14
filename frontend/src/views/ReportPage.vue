@@ -888,7 +888,21 @@ onMounted(async () => {
     partialReasons.value = report.partial_reasons || []
     effectiveRate.value = report.effective_rate ?? null
     scoreAvailable.value = report.score_available !== false
-    scoreStatus.value = report.score_status || (isPartial.value ? 'partial' : 'valid')
+    // 优先用后端 score_status；旧接口没有该字段时，按五维是否为 null 推导，
+    // 避免把「没评出分」误显示成「0 分」或「完整评分」。
+    const statusDims = [
+      report.tech_score, report.logic_score, report.expression_score,
+      report.adaptability_score, report.match_score
+    ]
+    if (['valid', 'partial', 'unavailable'].includes(report.score_status)) {
+      scoreStatus.value = report.score_status
+    } else if (statusDims.some(v => v === null || v === undefined)) {
+      scoreStatus.value = statusDims.every(v => v === null || v === undefined)
+        ? 'unavailable'
+        : 'partial'
+    } else {
+      scoreStatus.value = 'valid'
+    }
 
     summary.value = report.summary || ''
     strengths.value = report.strengths || []
