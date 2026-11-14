@@ -41,6 +41,7 @@ blindspot.py · 知识盲区诊断（纯结构化，不加 LLM 调用）
      新口径两个信号都按**整轮**取「任意一次」，且 LLM 判档器单独也能给出「答到了」。
      字段含义变了 ⇒ `review.py` 的 `REVIEW_VERSION` 同步升到 2。
 """
+import math
 from typing import Optional
 
 from app import config
@@ -125,6 +126,7 @@ def _round_facts(rec) -> dict:
         "last_score": (float(att.reranker_score) if (att and att.reranker_ok) else None),
         "judge_hit": (any(a.judge_band in HIT_BANDS for a in judged) if judged else None),
         "five_dim": (dict(rec.five_dim) if rec.five_dim else None),
+        "dim1_label": getattr(rec, "dim1_label", config.DIMENSIONS[0]),
         "degrade_used": int(rec.degrade_used or 0),
         "follow_ups_used": int(rec.follow_ups_used or 0),
         # 未命中的点取**最后一次回答**的 —— 追问到底之后的那份才反映最终状态
@@ -138,7 +140,14 @@ def _avg_five_dim(rounds_facts: list[dict]) -> dict:
     out = {}
     for d in config.DIMENSIONS:
         vals = [f["five_dim"][d] for f in rounds_facts
-                if f["five_dim"] and isinstance(f["five_dim"].get(d), (int, float))]
+                if f["five_dim"]
+                and not (
+                    d == config.DIMENSIONS[0]
+                    and f.get("dim1_label") != config.DIMENSIONS[0]
+                )
+                and isinstance(f["five_dim"].get(d), (int, float))
+                and not isinstance(f["five_dim"].get(d), bool)
+                and math.isfinite(float(f["five_dim"][d]))]
         out[d] = round(sum(vals) / len(vals), 2) if vals else None
     return out
 

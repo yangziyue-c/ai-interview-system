@@ -24,14 +24,23 @@
       <div v-else class="report-grid">
         <div class="score-card animate-card">
           <span class="score-number">{{ totalScore ?? '—' }}</span>
-          <span class="score-label">综合得分</span>
+          <span class="score-label">{{ scoreAvailable ? '综合得分' : '本场未形成正式分数' }}</span>
         </div>
 
         <!-- 左侧列 -->
         <div class="report-col">
           <div class="card chart-card animate-card">
             <h3 class="card-title">能力维度评估</h3>
-            <div ref="radarChartRef" class="chart-container"></div>
+            <div v-if="hasCompleteScores" ref="radarChartRef" class="chart-container"></div>
+            <div v-else class="dimension-list">
+              <div v-for="item in radarData" :key="item.name" class="dimension-row">
+                <span>{{ item.name }}</span>
+                <strong>{{ item.value == null ? '本场未评出' : formatDecimal(item.value) }}</strong>
+              </div>
+            </div>
+            <p v-if="behavioralRoleFit != null" class="dimension-footnote">
+              行为题岗位胜任力：{{ formatDecimal(behavioralRoleFit) }}（单独统计，不混入技术水平）
+            </p>
           </div>
 
           <div class="card chart-card animate-card" v-if="growthData.length > 0">
@@ -50,6 +59,42 @@
               <span class="section-title">综合评语</span>
             </div>
             <p class="section-body">{{ summary }}</p>
+          </div>
+
+          <div v-if="objectiveAudit && objectiveAudit.available" class="card animate-card">
+            <div class="section-header">
+              <AppIcon name="check-circle" :size="16" />
+              <span class="section-title">客观核验</span>
+            </div>
+            <div class="metric-grid">
+              <div class="metric-item">
+                <div class="metric-value">{{ formatDecimal(objectiveAudit.score) }}</div>
+                <div class="metric-label">事实正确性 / 5</div>
+              </div>
+              <div class="metric-item">
+                <div class="metric-value">{{ objectiveAudit.claim_counts?.contradicted || 0 }}</div>
+                <div class="metric-label">矛盾主张</div>
+              </div>
+              <div class="metric-item">
+                <div class="metric-value">{{ objectiveAudit.independent ? '独立' : '回退' }}</div>
+                <div class="metric-label">覆盖率来源</div>
+              </div>
+            </div>
+            <p class="objective-note">
+              <template v-if="techFusion && techFusion.enabled">
+                技术维按 {{ Math.round((techFusion.weight || 0) * 100) }}% 权重融合千问核验分。
+              </template>
+              <template v-else>
+                本次仅展示客观核验，技术维仍采用主观评分。
+              </template>
+              <template v-if="scoringEvidence">
+                知识库证据：{{ (scoringEvidence.kb_rounds?.length || 0) > 0 ? '参与' : '未参与' }}；
+                KG：{{ (scoringEvidence.kg_rounds?.length || 0) > 0 ? '参与' : '未参与' }}。
+              </template>
+              <template v-if="objectiveScoreGuard.length">
+                已按高置信客观矛盾触发技术分封顶。
+              </template>
+            </p>
           </div>
 
           <div class="sw-wrapper animate-card">
@@ -347,12 +392,21 @@ const qaCount = ref(0)
 
 const isPartial = ref(false)
 const missingDimensions = ref([])
+const partialReasons = ref([])
+const effectiveRate = ref(null)
+const scoreAvailable = ref(true)
+const scoreStatus = ref('valid')
+const behavioralRoleFit = ref(null)
+const objectiveScoreGuard = ref([])
 
 const studyPlanList = ref([])
 const studyPlanNotice = ref('')
 const studyPlanLoading = ref(false)
 
 const expressionAnalysis = ref(null)
+const objectiveAudit = ref(null)
+const scoringEvidence = ref(null)
+const techFusion = ref(null)
 
 const qaReviewList = ref([])
 
@@ -381,9 +435,16 @@ const showShareModal = ref(false)
 const showShareMenu = ref(false)
 
 const canViewQaHistory = computed(() => qaCount.value > 0)
+const hasCompleteScores = computed(() =>
+  scoreAvailable.value &&
+  missingDimensions.value.length === 0 &&
+  radarData.value.length === 5 &&
+  radarData.value.every(item => item.value !== null && item.value !== undefined)
+)
 
 const hasMissingData = computed(() => {
   return (
+    !scoreAvailable.value ||
     isPartial.value ||
     missingDimensions.value.length > 0 ||
     totalScore.value === null
@@ -397,8 +458,11 @@ const partialMessage = computed(() => {
   if (missingDimensions.value.length > 0) {
     return `本次评分不完整（${missingDimensions.value.join('、')}未评出）`
   }
-  if (isPartial.value) {
-    return '本次评分不完整，部分轮次未能完成评分'
+  if (isPartial.value || partialReasons.value.length > 0) {
+    const rate = effectiveRate.value == null
+      ? ''
+      : `，有效回答率 ${Math.round(effectiveRate.value * 100)}%`
+    return `本次评分不完整${rate}`
   }
   return ''
 })
@@ -802,17 +866,21 @@ onMounted(async () => {
       { name: '岗位匹配', value: report.match_score }
     ]
 
-    const missing = []
+    const missing = [...(report.missing_dimensions || [])]
     radarData.value = DIMENSIONS.map(d => {
       if (d.value === null || d.value === undefined) {
-        missing.push(d.name)
-        return { name: d.name, value: 0 }
+        if (!missing.includes(d.name)) missing.push(d.name)
+        return { name: d.name, value: null }
       }
       return { name: d.name, value: d.value }
     })
     missingDimensions.value = missing
 
     isPartial.value = report.partial === true
+    partialReasons.value = report.partial_reasons || []
+    effectiveRate.value = report.effective_rate ?? null
+    scoreAvailable.value = report.score_available !== false
+    scoreStatus.value = report.score_status || (isPartial.value ? 'partial' : 'valid')
 
     summary.value = report.summary || ''
     strengths.value = report.strengths || []
@@ -820,6 +888,11 @@ onMounted(async () => {
     reportDate.value = formatDate(report.created_at)
 
     expressionAnalysis.value = report.expression_analysis || null
+    objectiveAudit.value = report.objective_audit || null
+    scoringEvidence.value = report.scoring_evidence || null
+    techFusion.value = report.tech_objective_fusion || null
+    behavioralRoleFit.value = report.behavioral_role_fit ?? null
+    objectiveScoreGuard.value = report.objective_score_guard || []
     qaReviewList.value = report.qa_review || []
     qaCount.value =
       qaReviewList.value.length ||
@@ -830,7 +903,7 @@ onMounted(async () => {
 
     loading.value = false
     await nextTick()
-    initRadarChart()
+    if (hasCompleteScores.value) initRadarChart()
     initGrowthChart()
 
     loadStudyPlan()
@@ -901,6 +974,11 @@ onUnmounted(() => {
 .card-title { margin: 0 0 var(--space-3) 0; font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--text-primary); }
 .card-title-sub { font-size: var(--text-xs); font-weight: var(--font-normal); color: var(--text-tertiary); }
 .chart-container { width: 100%; height: 240px; }
+.dimension-list { display: grid; gap: var(--space-2); padding: var(--space-2) 0; }
+.dimension-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); font-size: var(--text-sm); color: var(--text-secondary); }
+.dimension-row:last-child { border-bottom: none; }
+.dimension-row strong { color: var(--text-primary); font-weight: var(--font-semibold); }
+.dimension-footnote { margin: var(--space-2) 0 0; font-size: var(--text-xs); line-height: var(--leading-relaxed); color: var(--text-tertiary); }
 .section-header { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); color: var(--text-primary); }
 .section-title { font-size: var(--text-sm); font-weight: var(--font-semibold); }
 .section-title-extra { margin-left: auto; font-size: var(--text-xs); font-weight: var(--font-normal); color: var(--gray-400); }
@@ -930,6 +1008,7 @@ onUnmounted(() => {
 .metric-item { padding: var(--space-3); background: var(--gray-50); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); text-align: center; }
 .metric-value { font-size: var(--text-xl); font-weight: var(--font-bold); color: var(--text-primary); line-height: 1.1; letter-spacing: var(--tracking-tight); }
 .metric-label { margin-top: var(--space-1); font-size: var(--text-xs); color: var(--text-tertiary); }
+.objective-note { margin: var(--space-3) 0 0; font-size: var(--text-xs); line-height: var(--leading-relaxed); color: var(--text-tertiary); }
 .expr-summary { margin: 0; font-size: var(--text-sm); line-height: var(--leading-relaxed); color: var(--text-secondary); }
 .expr-score-line { font-size: var(--text-sm); color: var(--text-secondary); }
 .expr-score-line strong { color: var(--text-primary); font-size: var(--text-lg); font-weight: var(--font-bold); }

@@ -5,13 +5,15 @@
 
 两件事必须记住：
 - 引擎是 **1~5 分制**，本项目 reports 表是 **0~100**，换算在 _to_100 一处完成；
-- 引擎的维度键**恒为「技术水平」**——行为素质题只换 dim1 标签、不换键
-  （见 A11 交付说明第七节），所以按标签而非键去映射会丢分。
+- 引擎逐轮记录的维度键**恒为「技术水平」**——行为素质题只换 dim1 标签；
+  顶层 five_dim_avg 已由引擎按技术题口径聚合，不能再把行为题混入技术列。
 """
 import logging
 from typing import Any
 
-from app.core.evaluation_weights import build_fallback_report, weights_for
+import math
+
+from app.core.evaluation_weights import weights_for
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +36,9 @@ _NO_DOMAIN = "未归类"      # 引擎在 KG 不可用时的兜底桶，不能�
 def build_engine_report(position: str, qa_list: list[dict], payload: dict) -> dict:
     """引擎 /finish 的 payload → reports 表口径的 dict
 
-    整场没有任何有效维度分时回退 build_fallback_report：报告必须能生成，
-    「引擎没评出分」不该变成 500（reports 六列都是 NOT NULL）。
+    整场没有任何有效维度分时仍生成一条可持久化的报告记录，但五维和总分只
+    写 0.0 作为 NOT NULL 兼容占位；engine_meta 会标成 score_unavailable，
+    API 对外统一返回 null。绝不能按回答长度伪造一份可比较的成绩。
     """
     dims = payload.get("five_dim_avg") or {}
     scores: dict[str, float | None] = {
@@ -43,20 +46,36 @@ def build_engine_report(position: str, qa_list: list[dict], payload: dict) -> di
     }
     available = [v for v in scores.values() if v is not None]
     if not available:
-        logger.warning("对话层引擎未产出任何有效维度分，回退兜底报告")
-        return build_fallback_report(
-            position, qa_list, summary_prefix="面试引擎未产出有效评分，以下为兜底评估"
-        )
+        logger.warning("对话层引擎未产出任何有效维度分，标记评分不可用")
+        return {
+            "total_score": 0.0,
+            "tech_score": 0.0,
+            "logic_score": 0.0,
+            "expression_score": 0.0,
+            "adaptability_score": 0.0,
+            "match_score": 0.0,
+            "summary": (
+                "本场 AI 评分未完成，系统没有生成可比较的五维分数。"
+                "问答记录和表达分析仍已保存，可稍后重试评分。"
+            ),
+            "strengths": [],
+            "weaknesses": ["本场没有形成可验证的五维评分"],
+            "suggestions": ["保留本次问答记录，稍后重新发起评分或再完成一场面试"],
+        }
 
     # 单维缺失（引擎的 null 是「没有数据」，不是 0 分）用可用维度均值回填：
     # 留 0 会把雷达图拖塌，而 reports 六列又不允许 NULL。
     fill = round(sum(available) / len(available), 1)
+    measured_fields = {
+        field for field, value in scores.items() if value is not None
+    }
     for field, value in scores.items():
         if value is None:
             scores[field] = fill
 
     report: dict[str, Any] = {
-        "total_score": _total_score(position, scores, payload),
+        "total_score": _total_score(
+            position, scores, payload, measured_fields=measured_fields),
         "summary": _summary_of(payload),
         "strengths": _strengths(payload, dims),
         "weaknesses": _weaknesses(payload, dims),
@@ -74,16 +93,58 @@ def build_engine_meta(payload: dict) -> dict:
     """
     raw = payload.get("raw") or {}
     blindspots = raw.get("blindspots") or {}
+    dims = payload.get("five_dim_avg") or {}
+    missing_dimensions = [
+        dim for dim in _DIM_TO_FIELD
+        if _to_100(dims.get(dim)) is None
+    ]
+    objective_raw = raw.get("objective") or {}
+    measured_dimensions = [
+        dim for dim in _DIM_TO_FIELD
+        if _to_100(dims.get(dim)) is not None
+    ]
+    score_available = bool(measured_dimensions)
+    engine_partial = bool(payload.get("partial"))
+    if not score_available:
+        score_status = "unavailable"
+    elif engine_partial or missing_dimensions:
+        score_status = "partial"
+    else:
+        score_status = "valid"
+    objective_audit = {
+        "available": bool(objective_raw.get("available")),
+        "score": objective_raw.get("score"),
+        "confidence": objective_raw.get("confidence"),
+        "coverage_sources": list(objective_raw.get("coverage_sources") or []),
+        "independent": bool(objective_raw.get("independent")),
+        "claim_counts": objective_raw.get("claim_counts") or {},
+        "error_count": len(objective_raw.get("errors") or []),
+    }
     return {
         "engine": "a11",
         "session_id": payload.get("session_id"),
         "rounds": payload.get("rounds"),
         "questions_asked": raw.get("questions_asked"),
-        "partial": bool(payload.get("partial")),
+        "partial": bool(engine_partial or score_status != "valid"),
+        "score_status": score_status,
+        "score_available": score_available,
+        "measured_dimensions": measured_dimensions,
         "notes": list(payload.get("notes") or []),
         "scoring": raw.get("scoring"),
+        "objective_audit": objective_audit,
+        "scoring_evidence": raw.get("scoring_evidence"),
+        "tech_objective_fusion": raw.get("tech_objective_fusion"),
         "swaps_used": raw.get("swaps_used"),
         "scoring_failed_rounds": list(raw.get("scoring_failed_rounds") or []),
+        "missing_dimensions": missing_dimensions,
+        "imputed_dimensions": list(missing_dimensions),
+        "effective_rounds": raw.get("effective_rounds"),
+        "effective_rate": raw.get("effective_rate"),
+        "minimum_effective_rounds": raw.get("minimum_effective_rounds"),
+        "partial_reasons": list(raw.get("partial_reasons") or []),
+        "behavioral_role_fit": raw.get("behavioral_role_fit"),
+        "difficulty_adjusted_meta": raw.get("difficulty_adjusted_meta"),
+        "objective_score_guard": raw.get("objective_score_guard"),
         "blindspots_summary": blindspots.get("summary"),
     }
 
@@ -104,7 +165,13 @@ def _to_100(raw: Any) -> float | None:
     return round(value, 1)
 
 
-def _total_score(position: str, scores: dict[str, float], payload: dict) -> float:
+def _total_score(
+    position: str,
+    scores: dict[str, float],
+    payload: dict,
+    *,
+    measured_fields: set[str] | None = None,
+) -> float:
     """总分优先采信引擎的百分制值，再用本项目权重表算一遍做漂移检查
 
     两侧权重表同源（都出自主库《评估维度.csv》，已逐格核对一致），正常差异在
@@ -112,11 +179,28 @@ def _total_score(position: str, scores: dict[str, float], payload: dict) -> floa
     毕竟分数是它评的）。
     """
     weights = weights_for(position)
+    measured = measured_fields or set(scores)
+    measured_weights = {
+        key: weights[key]
+        for field, key in _DIM_TO_FIELD.values()
+        if field in measured
+    }
+    weight_sum = sum(measured_weights.values())
     recomputed = round(
-        sum(scores[field] * weights[key] for field, key in _DIM_TO_FIELD.values()), 1
-    )
+        sum(
+            scores[field] * weights[key]
+            for field, key in _DIM_TO_FIELD.values()
+            if field in measured
+        ) / weight_sum,
+        1,
+    ) if weight_sum else 0.0
     engine_total = payload.get("total_score_100")
-    if isinstance(engine_total, bool) or not isinstance(engine_total, (int, float)):
+    if (
+        isinstance(engine_total, bool)
+        or not isinstance(engine_total, (int, float))
+        or not math.isfinite(float(engine_total))
+        or not 0.0 <= float(engine_total) <= 100.0
+    ):
         return recomputed
     value = round(float(engine_total), 1)
     if abs(value - recomputed) > 1.0:

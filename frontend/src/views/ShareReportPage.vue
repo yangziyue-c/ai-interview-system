@@ -39,12 +39,21 @@
         <div class="report-col">
           <div class="score-card">
             <span class="score-number">{{ totalScore ?? '—' }}</span>
-            <span class="score-label">综合得分</span>
+            <span class="score-label">{{ scoreAvailable ? '综合得分' : '本场未形成正式分数' }}</span>
           </div>
 
           <div class="card">
             <h3 class="card-title">能力维度评估</h3>
-            <div ref="radarChartRef" class="chart-container"></div>
+            <div v-if="hasCompleteScores" ref="radarChartRef" class="chart-container"></div>
+            <div v-else class="dimension-list">
+              <div v-for="item in dimensionRows" :key="item.name" class="dimension-row">
+                <span>{{ item.name }}</span>
+                <strong>{{ item.value == null ? '本场未评出' : Number(item.value).toFixed(1) }}</strong>
+              </div>
+            </div>
+            <p v-if="behavioralRoleFit != null" class="dimension-footnote">
+              行为题岗位胜任力：{{ Number(behavioralRoleFit).toFixed(1) }}（单独统计）
+            </p>
           </div>
         </div>
 
@@ -184,6 +193,10 @@ const errorDesc = ref('请联系分享者重新生成')
 
 const totalScore = ref(null)
 const radarData = ref([])
+const dimensionRows = ref([])
+const scoreAvailable = ref(true)
+const scoreStatus = ref('valid')
+const behavioralRoleFit = ref(null)
 const summary = ref('')
 const strengths = ref([])
 const weaknesses = ref([])
@@ -195,10 +208,17 @@ let radarChart = null
 
 const isPartial = ref(false)
 const missingDimensions = ref([])
+const hasCompleteScores = computed(() =>
+  scoreAvailable.value &&
+  missingDimensions.value.length === 0 &&
+  dimensionRows.value.length === 5 &&
+  dimensionRows.value.every(item => item.value !== null && item.value !== undefined)
+)
 const expressionAnalysis = ref(null)
 
 const hasMissingData = computed(() => {
   return (
+    !scoreAvailable.value ||
     isPartial.value ||
     missingDimensions.value.length > 0 ||
     totalScore.value === null
@@ -317,15 +337,19 @@ onMounted(async () => {
       { name: '应变能力', value: data.adaptability_score },
       { name: '岗位匹配', value: data.match_score }
     ]
-    const missing = []
-    radarData.value = DIMENSIONS.map(d => {
+    const missing = [...(data.missing_dimensions || [])]
+    dimensionRows.value = DIMENSIONS.map(d => {
       if (d.value === null || d.value === undefined) {
-        missing.push(d.name)
-        return 0
+        if (!missing.includes(d.name)) missing.push(d.name)
+        return { name: d.name, value: null }
       }
-      return d.value
+      return { name: d.name, value: d.value }
     })
+    radarData.value = dimensionRows.value.map(item => item.value)
     missingDimensions.value = missing
+    scoreAvailable.value = data.score_available !== false
+    scoreStatus.value = data.score_status || (data.partial ? 'partial' : 'valid')
+    behavioralRoleFit.value = data.behavioral_role_fit ?? null
 
     isPartial.value = data.partial === true
 
@@ -340,7 +364,7 @@ onMounted(async () => {
 
     loading.value = false
     await nextTick()
-    initRadarChart()
+    if (hasCompleteScores.value) initRadarChart()
   } catch (e) {
     console.error('加载分享报告失败', e)
 
@@ -560,6 +584,11 @@ onUnmounted(() => {
 }
 
 .chart-container { width: 100%; height: 240px; }
+.dimension-list { display: grid; gap: var(--space-2); padding: var(--space-2) 0; }
+.dimension-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); font-size: var(--text-sm); color: var(--text-secondary); }
+.dimension-row:last-child { border-bottom: none; }
+.dimension-row strong { color: var(--text-primary); font-weight: var(--font-semibold); }
+.dimension-footnote { margin: var(--space-2) 0 0; font-size: var(--text-xs); line-height: var(--leading-relaxed); color: var(--text-tertiary); }
 
 .section-header {
   display: flex;

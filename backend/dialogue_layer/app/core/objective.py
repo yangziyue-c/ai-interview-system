@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Optional
 
 import httpx
 
 from app import config
+from app.core import question_bank as qb
 from app.core import score_cache
 from app.core.llm import _extract_json
 from app.logging_conf import get_logger
@@ -18,7 +20,8 @@ logger = get_logger(__name__)
 SYSTEM = """你是技术面试的客观核验器。
 只判断考生回答中的事实正确性、明确误区、未覆盖得分点和证据充分度。
 先抽取考生的技术主张，再逐条判断“支持 / 矛盾 / 证据不足”；不要因为出现关键词就算支持。
-如果提供了知识库证据，只把它用于核验事实；证据不足时判 insufficient，不能凭相似度加分。
+如果提供了知识库事实证据，只把它用于核验事实；证据不足时判 insufficient，不能凭相似度加分。
+知识图谱考点只用于检查前置关系、讲解层次和遗漏点，不代表考生已经回答。
 得分点必须拆成原子断言：一个断言只表达一个事实关系，不要把多个事实粘在一起。
 不评价逻辑风格、表达流畅度、性格或岗位匹配。拿不准就降低 confidence。
 correctness_score 使用以下硬锚点：
@@ -31,17 +34,20 @@ correctness_score 使用以下硬锚点：
 
 PROMPT = """【题目】{question}
 
-【基础得分点】
-{base_points}
+【基础得分点】（必须使用编号回填结果）
+{base_points_numbered}
 
-【进阶得分点】
-{adv_points}
+【进阶得分点】（必须使用编号回填结果）
+{adv_points_numbered}
 
 【本轮问答】
 {qa_block}
 
-【知识库证据】
+【知识库事实证据】
 {kb_evidence}
+
+【知识图谱考点】
+{kg_evidence}
 
 请输出：
 {{
@@ -56,8 +62,10 @@ PROMPT = """【题目】{question}
       "evidence": "<为什么这样判；引用考生原话或得分点>"}}
   ],
   "target_results": [
-    {{"target": "<基础或进阶得分点>", "covered": <true|false>,
-      "correct": <true|false|null>, "evidence": "<依据>"}}
+    {{"point_id": "B01|A01",
+      "verdict": "supported|contradicted|insufficient",
+      "severity": "none|minor|major",
+      "evidence": "<依据>"}}
   ],
   "point_atoms": [
     {{"point": "<原始得分点>",
@@ -72,6 +80,41 @@ PROMPT = """【题目】{question}
 
 _CLAIM_VERDICTS = {"supported", "contradicted", "insufficient"}
 _CLAIM_SEVERITY = {"none", "minor", "major"}
+
+
+def build_point_catalog(base_text: str, adv_text: str) -> list[dict]:
+    """Build stable point IDs used by the objective verifier.
+
+    String matching is intentionally avoided: the verifier may rewrite a point
+    while judging it. Stable IDs make coverage deterministic and auditable.
+    """
+    catalog: list[dict] = []
+    for kind, prefix, text in (
+        ("base", "B", base_text),
+        ("adv", "A", adv_text),
+    ):
+        for index, point in enumerate(qb.split_points(text), start=1):
+            catalog.append({
+                "point_id": f"{prefix}{index:02d}",
+                "kind": kind,
+                "text": point,
+            })
+    return catalog
+
+
+def format_point_catalog(catalog: list[dict]) -> tuple[str, str]:
+    """Render stable point IDs for the objective prompt."""
+    base = [
+        f'{row["point_id"]}. {row["text"]}'
+        for row in catalog
+        if row.get("kind") == "base"
+    ]
+    adv = [
+        f'{row["point_id"]}. {row["text"]}'
+        for row in catalog
+        if row.get("kind") == "adv"
+    ]
+    return "\n".join(base) or "（无）", "\n".join(adv) or "（无）"
 
 
 def _clean_claims(value) -> list[dict]:
@@ -97,20 +140,32 @@ def _clean_claims(value) -> list[dict]:
     return out
 
 
-def _clean_target_results(value) -> list[dict]:
+def _clean_target_results(value, valid_ids: set[str] | None = None) -> list[dict]:
     if not isinstance(value, list):
         return []
     out = []
-    for row in value[:8]:
+    for row in value[:32]:
         if not isinstance(row, dict):
             continue
+        point_id = str(row.get("point_id") or "").strip().upper()[:8]
         target = str(row.get("target") or "").strip()[:160]
-        if not target:
+        if not point_id and not target:
             continue
+        if point_id and valid_ids is not None and point_id not in valid_ids:
+            continue
+        verdict = str(row.get("verdict") or "").strip().lower()
+        severity = str(row.get("severity") or "").strip().lower()
+        if verdict not in _CLAIM_VERDICTS:
+            verdict = ""
+        if severity not in _CLAIM_SEVERITY:
+            severity = "none"
         covered = row.get("covered")
         correct = row.get("correct")
         out.append({
+            "point_id": point_id,
             "target": target,
+            "verdict": verdict,
+            "severity": severity,
             "covered": covered if isinstance(covered, bool) else None,
             "correct": correct if isinstance(correct, bool) else None,
             "evidence": str(row.get("evidence") or "").strip()[:160],
@@ -122,7 +177,7 @@ def _clean_point_atoms(value) -> list[dict]:
     if not isinstance(value, list):
         return []
     out = []
-    for row in value[:12]:
+    for row in value[:24]:
         if not isinstance(row, dict):
             continue
         point = str(row.get("point") or "").strip()[:160]
@@ -143,17 +198,29 @@ def _clean_point_atoms(value) -> list[dict]:
     return out
 
 
-def parse_objective_payload(data: dict) -> tuple[dict, Optional[str]]:
+def parse_objective_payload(
+    data: dict, point_catalog: Optional[list[dict]] = None
+) -> tuple[dict, Optional[str]]:
     """Validate the objective model output into the stable additive shape."""
     if not isinstance(data, dict):
         return {}, "客观线未返回可解析 JSON"
+    raw_correctness = data.get("correctness_score")
+    if isinstance(raw_correctness, bool):
+        return {}, "客观线 correctness_score 非法"
     try:
-        correctness = float(data.get("correctness_score"))
+        correctness = float(raw_correctness)
     except (TypeError, ValueError):
+        return {}, "客观线 correctness_score 非法"
+    if not math.isfinite(correctness):
         return {}, "客观线 correctness_score 非法"
     correctness = max(0.0, min(5.0, correctness))
     claims = _clean_claims(data.get("claims"))
-    targets = _clean_target_results(data.get("target_results"))
+    valid_ids = {
+        str(row.get("point_id") or "")
+        for row in (point_catalog or [])
+        if row.get("point_id")
+    } or None
+    targets = _clean_target_results(data.get("target_results"), valid_ids)
     point_atoms = _clean_point_atoms(data.get("point_atoms"))
     raw_misconceptions = data.get("misconceptions")
     raw_misconceptions = (raw_misconceptions
@@ -182,6 +249,59 @@ def parse_objective_payload(data: dict) -> tuple[dict, Optional[str]]:
         "point_atoms": point_atoms,
         "confidence": str(data.get("confidence") or "").lower(),
     }, None
+
+
+def point_coverage(
+    detail: dict, point_catalog: list[dict]
+) -> tuple[Optional[float], Optional[float], str]:
+    """Return verifier-owned base/advanced coverage rates.
+
+    Supported points count as 1.0, insufficient evidence as 0.5 and
+    contradicted/missing points as 0.0. This preserves the existing
+    atom-coverage semantics while removing SiliconFlow from the objective line.
+    """
+    if not isinstance(detail, dict) or not point_catalog:
+        return None, None, "unavailable"
+    rows = detail.get("target_results") or []
+    by_id = {
+        str(row.get("point_id") or ""): row
+        for row in rows
+        if isinstance(row, dict) and row.get("point_id")
+    }
+    rates: dict[str, Optional[float]] = {}
+    for kind in ("base", "adv"):
+        ids = [
+            row["point_id"] for row in point_catalog
+            if row.get("kind") == kind and row.get("point_id")
+        ]
+        if not ids:
+            rates[kind] = None
+            continue
+        credits = 0.0
+        answered = 0
+        for point_id in ids:
+            row = by_id.get(point_id)
+            if not row:
+                continue
+            answered += 1
+            verdict = str(row.get("verdict") or "").lower()
+            if verdict == "supported":
+                credits += 1.0
+            elif verdict == "insufficient":
+                credits += 0.5
+            elif verdict == "contradicted":
+                continue
+            elif row.get("covered") is True and row.get("correct") is True:
+                credits += 1.0
+            elif row.get("covered") is True and row.get("correct") is None:
+                credits += 0.5
+        # A missing point is a miss, not an excuse to shrink the denominator.
+        rates[kind] = round(credits / len(ids), 4)
+        if answered == 0:
+            rates[kind] = None
+    if rates["base"] is None and rates["adv"] is None:
+        return None, None, "unavailable"
+    return rates["base"], rates["adv"], "qwen_points"
 
 
 _STRONG_MARKERS = re.compile(
@@ -231,12 +351,19 @@ class ObjectiveScorer:
         url = config.OBJECTIVE_BASE_URL.rstrip("/")
         if not url.endswith("/chat/completions"):
             url += "/chat/completions"
+        point_catalog = build_point_catalog(
+            ctx.get("base_points") or "",
+            ctx.get("adv_points") or "",
+        )
+        base_points_numbered, adv_points_numbered = format_point_catalog(
+            point_catalog)
         user = PROMPT.format(
             question=ctx.get("question", ""),
-            base_points=ctx.get("base_points") or "（无）",
-            adv_points=ctx.get("adv_points") or "（无）",
+            base_points_numbered=base_points_numbered,
+            adv_points_numbered=adv_points_numbered,
             qa_block=ctx.get("qa_block") or "（无有效回答）",
             kb_evidence=ctx.get("kb_evidence") or "（无）",
+            kg_evidence=ctx.get("kg_evidence") or "（无）",
         )
         try:
             resp = httpx.post(
@@ -263,9 +390,19 @@ class ObjectiveScorer:
             return {}, f"{type(e).__name__}: {e}"
 
         data = _extract_json(self.last_raw)
-        result, error = parse_objective_payload(data)
+        result, error = parse_objective_payload(data, point_catalog)
         if result:
             result["model"] = model
+            result["point_catalog"] = point_catalog
+            result["evidence_used"] = {
+                "kb": bool(ctx.get("kb_evidence")
+                           and ctx.get("kb_evidence") != "（无）"),
+                "rag": False,
+                "question_rag_available": bool(
+                    ctx.get("question_rag_available")),
+                "kg": bool(ctx.get("kg_evidence")
+                           and ctx.get("kg_evidence") != "（无）"),
+            }
             score_cache.put("objective", cache_key, model, result)
         return result, error
 

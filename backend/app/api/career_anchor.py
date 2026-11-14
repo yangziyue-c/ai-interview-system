@@ -53,7 +53,18 @@ async def submit_anchor(req: AnchorSubmitRequest, user: CurrentUser, db: DbSessi
         item["name"] = names.get(item["position"], item["name"])
 
     top = scores[0]
-    if top["position"] != result["recommended"]["position"]:
+    second = scores[1] if len(scores) > 1 else None
+    enabled_margin = (
+        top["index"] - second["index"] if second is not None else top["index"]
+    )
+    result["margin"] = enabled_margin
+    result["decision"] = (
+        "ambiguous"
+        if result.get("decision") == "ambiguous" or enabled_margin < 5
+        else "clear"
+    )
+    original = result.get("recommended") or {}
+    if result["decision"] == "clear" and top["position"] != original.get("position"):
         # 首选岗位已下线：改用当前开放岗位里的第一名，文案同步重算
         result["recommended"] = {
             "position": top["position"],
@@ -64,9 +75,16 @@ async def submit_anchor(req: AnchorSubmitRequest, user: CurrentUser, db: DbSessi
         result["title"] = top["name"]
         result["guide"] = f"可以先用「{top['name']}」开始一场模拟面试，系统会按该岗位的题目出题。"
 
-    result["recommended"]["name"] = names.get(
-        result["recommended"]["position"], result["recommended"]["name"]
-    )
+    if result["decision"] == "ambiguous":
+        result["recommended"] = None
+    else:
+        result["recommended"]["name"] = names.get(
+            result["recommended"]["position"], result["recommended"]["name"]
+        )
+    result["shortlist"] = [
+        {"position": item["position"], "name": item["name"], "index": item["index"]}
+        for item in scores[:2]
+    ]
     result["alternatives"] = [
         {"position": item["position"], "name": item["name"], "index": item["index"]}
         for item in scores[1:3]
@@ -79,14 +97,29 @@ async def submit_anchor(req: AnchorSubmitRequest, user: CurrentUser, db: DbSessi
     if setting is None:
         setting = UserSetting(user_id=user.id)
         db.add(setting)
-    setting.career_anchor_result = {
-        "position": result["recommended"]["position"],
-        "name": result["recommended"]["name"],
-        "index": result["recommended"]["index"],
-        "consistency_percent": result["consistency_percent"],
-        "confidence": result["confidence"],
-        "tested_at": datetime.now().isoformat(timespec="seconds"),
-    }
+    setting.career_anchor_result = (
+        {
+            "decision": "clear",
+            "position": result["recommended"]["position"],
+            "name": result["recommended"]["name"],
+            "index": result["recommended"]["index"],
+            "shortlist": result["shortlist"],
+            "consistency_percent": result["consistency_percent"],
+            "confidence": result["confidence"],
+            "tested_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        if result["recommended"]
+        else {
+            "decision": "ambiguous",
+            "position": None,
+            "name": "方向暂不明确",
+            "index": None,
+            "shortlist": result["shortlist"],
+            "consistency_percent": result["consistency_percent"],
+            "confidence": result["confidence"],
+            "tested_at": datetime.now().isoformat(timespec="seconds"),
+        }
+    )
     await db.commit()
 
     return ok(result, "推荐岗位已生成")

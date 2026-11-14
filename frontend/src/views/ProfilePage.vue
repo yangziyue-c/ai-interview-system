@@ -288,6 +288,9 @@ const careerDone = computed(() => {
 const careerDesc = computed(() => {
   if (careerDone.value) {
     const result = globalSettings.value.career_anchor_result
+    if (result.decision === 'ambiguous') {
+      return '上次结果：方向暂不明确，可重新测试'
+    }
     return `上次推荐：${result.name}（倾向指数 ${result.index}），可重新测试`
   }
   return '尚未测试，完成测试即可获得最合适的岗位推荐'

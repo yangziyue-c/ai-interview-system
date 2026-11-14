@@ -70,6 +70,7 @@ class HealthResp(Loose):
     llm_mock: bool = False
     reranker_mock: bool = False
     score_step: float = 0.05
+    scoring_temperature: float = 0.0
     reranker_provider: str = ""
     reranker_model: str = ""
     embedding_provider: str = ""
@@ -180,7 +181,8 @@ class HealthResp(Loose):
         default_factory=lambda: ["general", "resume"])
     resume_enabled: bool = True
     resume_max_chars: int = 6000
-    body_score_enabled: bool = True
+    body_score_enabled: bool = False
+    body_display_only: bool = True
     probe_quality_guard_enabled: bool = True
     # ---- `raw` 的暴露档位（安全）----
     # 同样只有一个键。false（交付默认）= /finish 与 /result 的 `raw` 已脱敏成占位键,
@@ -200,6 +202,10 @@ class HealthResp(Loose):
     #    借不到就不检索（绝不自己加载 1.2GB）。所以这一位 true 只代表「开关开着」。
     rag_kb_enabled: bool = False
     kb_score_enabled: bool = False
+    kb_evidence_score_enabled: bool = False
+    question_rag_enabled: bool = False
+    kg_score_enabled: bool = False
+    tech_objective_weight: float = 0.0
 
     # ---- 「素材怎么被用」这三条（2026-09-25）----
     # 同样**各一个单键**。它们是**同题两臂对照**里 old/new 两档的全部差异，

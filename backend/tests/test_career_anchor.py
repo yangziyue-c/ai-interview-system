@@ -60,6 +60,7 @@ class TestCareerAnchor:
         )
         assert resp.status_code == 200, resp.text
         data = resp.json()["data"]
+        assert data["decision"] == "clear"
         assert data["recommended"]["position"] == position
         assert data["recommended"]["name"]
         assert data["recommended"]["reason"]
@@ -82,6 +83,12 @@ class TestCareerAnchor:
         # 五个岗位同分，分差为 0，不能形成明确推荐
         assert data["margin"] == 0
         assert data["title"] == "方向暂不明确"
+        assert data["decision"] == "ambiguous"
+        assert data["recommended"] is None
+        assert [item["position"] for item in data["shortlist"]] == [
+            "backend",
+            "frontend",
+        ]
         assert data["confidence"] == "低"
         assert data["consistency_percent"] == 100
 
@@ -100,12 +107,32 @@ class TestCareerAnchor:
 
         after = await client.get(f"{BASE}/settings", headers=headers)
         saved = after.json()["data"]["career_anchor_result"]
+        assert saved["decision"] == "clear"
         assert saved["position"] == "backend"
         assert saved["name"] == result["recommended"]["name"]
         assert saved["index"] == result["recommended"]["index"]
         assert saved["consistency_percent"] == result["consistency_percent"]
         assert saved["confidence"] == result["confidence"]
         assert saved["tested_at"]
+
+    async def test_ambiguous_result_is_saved_without_fake_position(
+        self, client: AsyncClient
+    ):
+        headers = await _register(client)
+        resp = await client.post(
+            f"{BASE}/career-anchor/submit",
+            json={"answers": [5] * 20},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["recommended"] is None
+
+        after = await client.get(f"{BASE}/settings", headers=headers)
+        saved = after.json()["data"]["career_anchor_result"]
+        assert saved["decision"] == "ambiguous"
+        assert saved["position"] is None
+        assert saved["name"] == "方向暂不明确"
+        assert len(saved["shortlist"]) == 2
 
     async def test_missing_answers_rejected(self, client: AsyncClient):
         headers = await _register(client)

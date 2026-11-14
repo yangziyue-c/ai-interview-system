@@ -43,6 +43,96 @@ const MOCK_QUESTIONS = {
     ]
 }
 
+const MOCK_POSITIONS = {
+    backend: '后端开发工程师',
+    frontend: '前端开发工程师',
+    test_engineer: '测试开发工程师',
+    algorithm: '算法工程师',
+    system_design: '系统设计工程师'
+}
+
+const buildMockCareerResult = (answers) => {
+    const codes = Object.keys(MOCK_POSITIONS)
+    const interest = Object.fromEntries(codes.map(code => [code, 0]))
+    const ability = Object.fromEntries(codes.map(code => [code, 0]))
+    MOCK_QUESTIONS.questions.forEach((question, index) => {
+        const bucket = question.category === 'interest' ? interest : ability
+        bucket[question.role] += answers[index]
+    })
+    const normalize = raw => (raw - 6) / 4
+    const scores = codes.map(code => {
+        const interestNorm = normalize(interest[code])
+        const abilityNorm = normalize(ability[code])
+        const composite = interestNorm * 0.6 + abilityNorm * 0.4
+        return {
+            position: code,
+            name: MOCK_POSITIONS[code],
+            interest_raw: interest[code],
+            ability_raw: ability[code],
+            interest_norm: interestNorm,
+            ability_norm: abilityNorm,
+            composite,
+            index: Math.round((composite + 1) * 50)
+        }
+    }).sort((a, b) =>
+        b.composite - a.composite ||
+        b.ability_norm - a.ability_norm ||
+        b.interest_norm - a.interest_norm
+    )
+    let difference = 0
+    let pairCount = 0
+    codes.forEach(code => {
+        ;['interest', 'ability'].forEach(category => {
+            const values = []
+            MOCK_QUESTIONS.questions.forEach((question, index) => {
+                if (question.role === code && question.category === category) {
+                    values.push(answers[index])
+                }
+            })
+            if (values.length === 2) {
+                difference += Math.abs(values[0] - values[1])
+                pairCount += 1
+            }
+        })
+    })
+    const consistency = pairCount
+        ? Math.round((1 - difference / (pairCount * 4)) * 100)
+        : 0
+    const margin = scores[0].index - scores[1].index
+    const ambiguous = margin < 5
+    const shortlist = scores.slice(0, 2).map(({ position, name, index }) => ({
+        position, name, index
+    }))
+    return {
+        decision: ambiguous ? 'ambiguous' : 'clear',
+        recommended: ambiguous ? null : {
+            position: scores[0].position,
+            name: scores[0].name,
+            index: scores[0].index,
+            reason: '当前兴趣与能力自评更支持这个方向。'
+        },
+        shortlist,
+        alternatives: scores.slice(1, 3).map(({ position, name, index }) => ({
+            position, name, index
+        })),
+        scores,
+        consistency_percent: consistency,
+        confidence: ambiguous ? '低' : margin >= 10 ? '高' : '中',
+        margin,
+        title: ambiguous ? '方向暂不明确' : scores[0].name,
+        narrative: ambiguous
+            ? '当前前两个方向比较接近，建议分别体验后再决定。'
+            : `当前更支持「${scores[0].name}」，建议先用模拟面试验证。`,
+        signal_label: ambiguous ? '各方向区分度不足' : '存在相对更接近的方向',
+        signal_narrative: ambiguous
+            ? '主次分差较小，本次结果只适合作为初步线索。'
+            : '主次方向有一定区分度，可结合项目经历进一步验证。',
+        guide: ambiguous
+            ? `可以先体验「${shortlist[0].name}」或「${shortlist[1].name}」。`
+            : `可以先用「${scores[0].name}」开始一场模拟面试。`
+    }
+}
+
 /**
  * 获取职业锚定测试题目
  */
@@ -61,33 +151,7 @@ export const getCareerAnchorQuestions = async () => {
 export const submitCareerAnchor = async (answers) => {
     if (USE_MOCK) {
         await mockDelay(800)
-        return {
-            recommended: {
-                position: "backend",
-                name: "后端开发工程师",
-                index: 100,
-                reason: "更关注数据、接口与系统稳定性，后端的学习路径和你的选择更接近。"
-            },
-            alternatives: [
-                { position: "frontend", name: "前端开发工程师", index: 25 },
-                { position: "test_engineer", name: "测试开发工程师", index: 25 }
-            ],
-            scores: [
-                { position: "backend", name: "后端开发工程师", interest_raw: 10, ability_raw: 10, interest_norm: 1.0, ability_norm: 1.0, composite: 1.0, index: 100 },
-                { position: "frontend", name: "前端开发工程师", interest_raw: 4, ability_raw: 4, interest_norm: -0.5, ability_norm: -0.5, composite: -0.5, index: 25 },
-                { position: "test_engineer", name: "测试开发工程师", interest_raw: 4, ability_raw: 4, interest_norm: -0.5, ability_norm: -0.5, composite: -0.5, index: 25 },
-                { position: "algorithm", name: "算法工程师", interest_raw: 4, ability_raw: 4, interest_norm: -0.5, ability_norm: -0.5, composite: -0.5, index: 25 },
-                { position: "system_design", name: "系统设计工程师", interest_raw: 4, ability_raw: 4, interest_norm: -0.5, ability_norm: -0.5, composite: -0.5, index: 25 }
-            ],
-            consistency_percent: 100,
-            confidence: "高",
-            margin: 75,
-            title: "后端开发工程师",
-            narrative: "兴趣量表与能力自评都更支持「后端开发工程师」。更关注数据、接口与系统稳定性，后端的学习路径和你的选择更接近。",
-            signal_label: "兴趣与能力方向一致",
-            signal_narrative: "两类量表都把「后端开发工程师」排在首位，方向较一致。 主次方向区分较清楚，可以作为优先探索方向。",
-            guide: "可以先用「后端开发工程师」开始一场模拟面试，系统会按该岗位的题目出题。"
-        }
+        return buildMockCareerResult(answers)
     }
     return request.post('/career-anchor/submit', { answers })
 }

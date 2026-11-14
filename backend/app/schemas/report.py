@@ -33,12 +33,12 @@ class ReportOut(BaseModel):
     # 前端报告页刷新 / 深链进入时需要它来显示岗位名——原先只能靠内存变量传递，
     # 一刷新就丢失（页面只剩「综合得分 ·」）。
     position: str = Field(default="", description="面试岗位 code（由接口从所属面试注入）")
-    total_score: float
-    tech_score: float
-    logic_score: float
-    expression_score: float
-    adaptability_score: float
-    match_score: float
+    total_score: float | None
+    tech_score: float | None
+    logic_score: float | None
+    expression_score: float | None
+    adaptability_score: float | None
+    match_score: float | None
     summary: str
     strengths: list[str]
     weaknesses: list[str]
@@ -47,6 +47,20 @@ class ReportOut(BaseModel):
     # 原链路与评分完整的场次恒为 false。它是 reports.engine_meta 里的一个键，
     # 由 report_out() 拉平成布尔下发——前端不必去解析明细 JSON。
     partial: bool = False
+    score_status: str = "valid"
+    score_available: bool = True
+    # 引擎返回 null 的维度在主后端会按其余维度均值回填以兼容 NOT NULL 列；
+    # 这个字段明确点名哪些列是回填值，前端不能把它们当成真实测量。
+    missing_dimensions: list[str] = []
+    partial_reasons: list[str] = []
+    effective_rate: float | None = None
+    behavioral_role_fit: float | None = None
+    difficulty_adjusted_meta: dict | None = None
+    objective_score_guard: list[dict] = []
+    # 客观核验与评分证据只做可解释性展示；正式总分仍由 reports.total_score 给出。
+    objective_audit: dict | None = None
+    scoring_evidence: dict | None = None
+    tech_objective_fusion: dict | None = None
     # 复盘清单（引擎链路的考生出口）：headline / gaps[] / covered[] / actions[] / caveats[]。
     # 原链路场次与引擎关掉该功能时都是 null——前端据此决定要不要画这一块。
     review: dict | None = None
@@ -75,10 +89,80 @@ def report_out(report, interview, qa_records: list | None = None) -> ReportOut:
     """
     meta = report.engine_meta
     records = list(qa_records or [])
+    missing_dimensions = (
+        list(meta.get("missing_dimensions") or [])
+        if isinstance(meta, dict) else []
+    )
+    score_status = (
+        str(meta.get("score_status") or "partial")
+        if isinstance(meta, dict) else "valid"
+    )
+    score_available = (
+        bool(meta.get("score_available", score_status != "unavailable"))
+        if isinstance(meta, dict) else True
+    )
+    score_updates = {}
+    if not score_available or score_status == "unavailable":
+        score_updates = {
+            "total_score": None,
+            "tech_score": None,
+            "logic_score": None,
+            "expression_score": None,
+            "adaptability_score": None,
+            "match_score": None,
+        }
+    else:
+        missing_field_map = {
+            "技术水平": "tech_score",
+            "逻辑思维": "logic_score",
+            "沟通表达": "expression_score",
+            "应变能力": "adaptability_score",
+            "岗位匹配度": "match_score",
+        }
+        score_updates = {
+            field: None
+            for dim, field in missing_field_map.items()
+            if dim in missing_dimensions
+        }
     return ReportOut.model_validate(report).model_copy(
         update={
             "position": interview.position,
-            "partial": bool(meta.get("partial")) if isinstance(meta, dict) else False,
+            "partial": (
+                bool(meta.get("partial"))
+                if isinstance(meta, dict) else False
+            ),
+            "score_status": score_status,
+            "score_available": score_available,
+            "missing_dimensions": missing_dimensions,
+            "partial_reasons": (
+                list(meta.get("partial_reasons") or [])
+                if isinstance(meta, dict) else []
+            ),
+            "effective_rate": (
+                meta.get("effective_rate")
+                if isinstance(meta, dict) else None
+            ),
+            "behavioral_role_fit": (
+                meta.get("behavioral_role_fit")
+                if isinstance(meta, dict) else None
+            ),
+            "difficulty_adjusted_meta": (
+                meta.get("difficulty_adjusted_meta")
+                if isinstance(meta, dict) else None
+            ),
+            "objective_score_guard": (
+                list(meta.get("objective_score_guard") or [])
+                if isinstance(meta, dict) else []
+            ),
+            "objective_audit": (
+                meta.get("objective_audit") if isinstance(meta, dict) else None
+            ),
+            "scoring_evidence": (
+                meta.get("scoring_evidence") if isinstance(meta, dict) else None
+            ),
+            "tech_objective_fusion": (
+                meta.get("tech_objective_fusion") if isinstance(meta, dict) else None
+            ),
             "expression_analysis": (
                 build_expression_analysis(records) if qa_records is not None else None
             ),
@@ -92,6 +176,7 @@ def report_out(report, interview, qa_records: list | None = None) -> ReportOut:
                 )
                 for qa in records
             ],
+            **score_updates,
         }
     )
 

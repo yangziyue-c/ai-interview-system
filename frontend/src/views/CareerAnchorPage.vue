@@ -15,7 +15,25 @@
     </div>
 
     <div v-else-if="result" class="result-section animate-up">
-      <div class="result-card recommended-card">
+      <div v-if="result.decision === 'ambiguous'" class="result-card recommended-card ambiguous-card">
+        <h2 class="result-title">方向暂不明确</h2>
+        <p class="result-reason">
+          当前两个方向比较接近。可以分别体验一场模拟面试，再决定优先方向。
+        </p>
+        <div class="shortlist-grid">
+          <button
+            v-for="item in result.shortlist"
+            :key="item.position"
+            class="shortlist-option"
+            @click="startInterview(item.position)"
+          >
+            <span class="shortlist-name">{{ item.name }}</span>
+            <span class="shortlist-index">倾向指数 {{ item.index }}</span>
+          </button>
+        </div>
+      </div>
+
+      <div v-else class="result-card recommended-card">
         <div class="result-icon-wrap">
           <AppIcon :name="getJobIconName((result.recommended.position || '').trim())" :size="32" />
         </div>
@@ -61,7 +79,7 @@
         <h4 class="alt-title">其他岗位指数</h4>
         <div class="alt-list">
           <div 
-            v-for="score in result.scores.filter(s => s.position !== result.recommended.position)" 
+            v-for="score in result.scores.filter(s => s.position !== result.recommended?.position)"
             :key="score.position" 
             class="alt-item"
           >
@@ -377,6 +395,11 @@ onMounted(() => {
 .index-badge { display: inline-block; padding: 4px 12px; background: var(--gray-100); border-radius: var(--radius-full); font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: var(--space-4); }
 .index-badge strong { color: var(--text-primary); font-size: var(--text-sm); }
 .result-reason { margin: 0 0 var(--space-5) 0; font-size: var(--text-sm); color: var(--text-tertiary); line-height: var(--leading-relaxed); padding: 0 var(--space-2); }
+.shortlist-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.shortlist-option { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); padding: var(--space-4); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-page); cursor: pointer; text-align: left; }
+.shortlist-option:hover { border-color: var(--border-strong); background: var(--gray-50); }
+.shortlist-name { font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--text-primary); }
+.shortlist-index { font-size: var(--text-sm); color: var(--text-tertiary); }
 
 .metrics-row { display: flex; justify-content: space-around; padding: var(--space-3); background: var(--gray-50); border-radius: var(--radius-md); margin-bottom: var(--space-6); }
 .metric-item { display: flex; flex-direction: column; align-items: center; gap: 2px; }
@@ -402,6 +425,10 @@ onMounted(() => {
 .guide-text { margin: 0; padding: var(--space-3) var(--space-4); background: var(--gray-50); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); font-size: var(--text-xs); color: var(--text-tertiary); line-height: var(--leading-relaxed); text-align: center; }
 .retake-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); margin: var(--space-2) auto 0; padding: var(--space-2) var(--space-4); background: transparent; color: var(--text-secondary); border: none; font-size: var(--text-sm); cursor: pointer; transition: color var(--duration-fast) var(--ease-out); }
 .retake-btn:hover { color: var(--text-primary); }
+
+@media (max-width: 767px) {
+  .shortlist-grid { grid-template-columns: 1fr; }
+}
 
 @media (min-width: 1024px) {
   .career-container { max-width: 800px; padding: 0 0 var(--space-12); }

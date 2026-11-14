@@ -58,6 +58,7 @@ if _ROOT not in sys.path:
 
 from app import config                                     # noqa: E402
 from app.core import blindspot as BS                       # noqa: E402
+from app.core import body_language as BODY                 # noqa: E402
 from app.core import kg as KG                              # noqa: E402
 from app.core import question_bank as qb                   # noqa: E402
 from app.core import rag as RAG                            # noqa: E402
@@ -920,8 +921,50 @@ def scoring_bridge():
        "合成分：客观线低置信时自动降权", str(_comb_weak))
     ok(SS.combine_scores(None, 3.5, "", "medium")["score"] == 3.5,
        "合成分：客观线不可用时只展示主观线，不拿虚构分补齐")
+    ok(_comb_ok["official"] is False and _comb_gap["official"] is False,
+       "合成分从未校准状态：只能作为审计展示，不得冒充正式总分")
+
+    _body_high = BODY.display_only_adjustment(
+        {"available": True, "score": 5, "confidence": "high",
+         "quality_status": "ready", "metrics": {}, "feedback": []})
+    _body_low = BODY.display_only_adjustment(
+        {"available": True, "score": 1, "confidence": "high",
+         "quality_status": "ready", "metrics": {}, "feedback": []})
+    ok(_body_high["applied"] is False and _body_low["applied"] is False
+       and _body_high["communication_delta"] == 0
+       and _body_low["adaptability_delta"] == 0,
+       "摄像头体态只展示，不改变五维分（高分不奖、低分不罚）",
+       f"{_body_high} / {_body_low}")
+
+    _old_kg_score = config.A11_KG_SCORE
+    try:
+        config.A11_KG_SCORE = True
+        _kg_round = _bare_round(
+            kg_refs=[{
+                "id": "K1", "title": "事务隔离级别",
+                "src": "kg", "weight": 1.0,
+            }],
+            kg_deepen=[{
+                "kp_id": "K2", "title": "MVCC 可见性", "weight": 0.8,
+            }],
+            deepen=[{
+                "kp_id": "BANK", "title": "主库知识点", "weight": 1.0,
+            }])
+        ok(_kg_round.scoring_kg_evidence(False) == ""
+           and "K1" in _kg_round.scoring_kg_evidence(True)
+           and "MVCC 可见性" in _kg_round.scoring_kg_evidence(True)
+           and "主库知识点" not in _kg_round.scoring_kg_evidence(True),
+           "KG 评分证据只注入图谱节点和纯图谱深挖，不混入出题用的主库种子",
+           _kg_round.scoring_kg_evidence(True))
+    finally:
+        config.A11_KG_SCORE = _old_kg_score
 
     from app.core import objective as OM
+    _catalog = [
+        {"point_id": "B01", "kind": "base", "text": "重写规则"},
+        {"point_id": "B02", "kind": "base", "text": "访问权限"},
+        {"point_id": "A01", "kind": "adv", "text": "字节码层面"},
+    ]
     _obj, _obj_err = OM.parse_objective_payload({
         "correctness_score": 4,
         "evidence": ["考生说重写要求参数列表兼容"],
@@ -936,23 +979,130 @@ def scoring_bridge():
              "severity": "none", "evidence": "缺少上下文"},
         ],
         "target_results": [
-            {"target": "重写规则", "covered": True, "correct": True,
-             "evidence": "参数列表兼容"},
+            {"point_id": "B01", "verdict": "supported",
+             "severity": "none", "evidence": "参数列表兼容"},
+            {"point_id": "B02", "verdict": "insufficient",
+             "severity": "none", "evidence": "只提了一句"},
+            {"point_id": "A01", "verdict": "contradicted",
+             "severity": "minor", "evidence": "结论错误"},
         ],
         "confidence": "high",
-    })
+    }, _catalog)
+    _qb_rate, _qa_rate, _qcov_src = OM.point_coverage(_obj, _catalog)
     ok(not _obj_err
        and _obj["claim_counts"] == {"supported": 1, "contradicted": 1,
                                     "insufficient": 1}
        and _obj["misconceptions"] == ["重写只要求方法名相同"]
-       and _obj["target_results"][0]["correct"] is True,
-       "客观线 claim-level：逐条主张分类、矛盾提取和目标核验都保留",
+       and _obj["target_results"][0]["point_id"] == "B01",
+       "客观线 claim-level：逐条主张分类、矛盾提取和编号目标核验都保留",
        str(_obj))
+    ok(abs(_qb_rate - 0.75) < 1e-9 and _qa_rate == 0.0
+       and _qcov_src == "qwen_points",
+       "千问覆盖率只由自己的 B/A 编号结果计算，不复用 SiliconFlow 命中",
+       f"{_qb_rate} / {_qa_rate} / {_qcov_src}")
+    _nan_obj, _nan_obj_err = OM.parse_objective_payload(
+        {"correctness_score": float("nan")}, _catalog)
+    ok(_nan_obj == {} and _nan_obj_err,
+       "客观线 NaN 分数必须按失败处理，不能进入融合或报告")
+    ok(SS.fuse_technical_score(4.0, 2.0, 0.25) == 3.5
+       and SS.fuse_technical_score(4.0, 2.0, 0.0) == 4.0,
+       "技术维融合只按配置权重移动，默认权重 0 不改变正式技术分")
+    _guard_dims, _guard_meta = S.apply_score_guards(
+        {"技术水平": 4.8, "逻辑思维": 3.8, "沟通表达": 3.5,
+         "应变能力": 3.2, "岗位匹配度": 4.1},
+        {"misconceptions": ["把重载说成运行时多态"]},
+        {"applicable": False, "correct": None},
+    )
+    ok(_guard_meta["applied"] and _guard_dims["技术水平"] == 2.5
+       and _guard_dims["岗位匹配度"] == 4.1
+       and _guard_meta["original"]["技术水平"] == 4.8,
+       "明确事实错误只封顶技术分，不把岗位适配一起判低")
+    _obj_guarded, _obj_guard = SS.apply_objective_score_guard(
+        {"技术水平": 4.6, "逻辑思维": 4.0, "沟通表达": 4.0,
+         "应变能力": 4.0, "岗位匹配度": 4.0},
+        {"confidence": "high",
+         "claims": [{"verdict": "contradicted", "severity": "major"}]},
+    )
+    ok(_obj_guard["applied"] and _obj_guarded["技术水平"] == 2.5,
+       "千问高置信重大矛盾会封顶技术分，并记录原始值")
     _obj_score = SS.objective_round_score(
         5.0, 4.0, _obj["claims"], _obj["misconceptions"])
     ok(abs(_obj_score - 3.6) < 1e-9,
        "客观轮分：明确矛盾按严重度扣分，insufficient 不当作讲错",
        f"{_obj_score}")
+    _canonical_score = SS.objective_round_score(
+        0.0, 5.0, claims=[],
+        point_atoms=[{"verdict": "supported", "severity": "none"}])
+    ok(abs(_canonical_score - 3.75) < 1e-9,
+       "客观分始终使用 target_results 覆盖率；point_atoms 只做矛盾处罚")
+
+    _tech_round = _bare_round(
+        category="技术知识题",
+        five_dim={"技术水平": 4.0, "逻辑思维": 3.0, "沟通表达": 3.0,
+                  "应变能力": 3.0, "岗位匹配度": 3.0},
+        attempts=[_attempt(1, 80.0)],
+    )
+    _beh_round = _bare_round(
+        category=config.CATEGORY_BEHAVIORAL,
+        five_dim={"技术水平": 2.0, "逻辑思维": 3.0, "沟通表达": 4.0,
+                  "应变能力": 4.0, "岗位匹配度": 4.0},
+        attempts=[_attempt(1, 80.0)],
+    )
+    _aggregated = SS.aggregate_dimension_scores([_tech_round, _beh_round])
+    ok(_aggregated["five_dim_avg"]["技术水平"] == 4.0
+       and _aggregated["behavioral_role_fit"] == 2.0,
+       "技术水平只统计技术题；行为题第一维单独输出岗位胜任力")
+    ok(_beh_round.tech_gap is None and _tech_round.tech_gap == 0.0,
+       "行为题不进入 tech_gap 一致性统计；技术题照常计算")
+    _nan_round = _bare_round(
+        category="技术知识题",
+        five_dim={"技术水平": float("nan"), "逻辑思维": 3.0,
+                  "沟通表达": 3.0, "应变能力": 3.0, "岗位匹配度": 3.0},
+        attempts=[_attempt(1, 80.0)],
+    )
+    ok(SS.aggregate_dimension_scores([_nan_round])["five_dim_avg"]["技术水平"] is None,
+       "非有限评分按缺失处理，不污染技术维均分")
+    _eight = [
+        _bare_round(
+            round_no=i,
+            attempts=[_attempt(1, 80.0)],
+        )
+        for i in range(1, 9)
+    ]
+    _partial = SS.assess_score_completeness(
+        _eight, total_questions=10, questions_asked=10,
+        failed_rounds=[], missing_dimensions=[],
+        has_any_score=True, has_objective=True,
+    )
+    ok(_partial["score_status"] == "partial"
+       and _partial["effective_rate"] == 0.8,
+       "问满10题但只有8题有效时不能标成 valid")
+    _difficulty_score, _difficulty_meta = SS.calculate_difficulty_adjusted({
+        "easy": {"rounds": 3, "evidence_weight": 0.8,
+                 "sample_sufficient": True, "total_score": 4.0},
+        "medium": {"rounds": 5, "evidence_weight": 1.0,
+                   "sample_sufficient": True, "total_score": 3.0},
+        "hard": {"rounds": 2, "evidence_weight": 1.2,
+                 "sample_sufficient": True, "total_score": 2.0},
+    })
+    ok(_difficulty_score == 3.0
+       and _difficulty_meta["groups"]["hard"]["evidence_weight"] == 1.2,
+       "难度调整分按有效题数和难度证据权重计算，不再三档等权")
+
+    from app.core import scoring_ablation as SAB
+    _ablation_rows = [
+        {"human_score": 1.0,
+         "scores": {"off": 4.0, "kb": 2.0, "kg": 3.5, "both": 1.5}},
+        {"human_score": 4.0,
+         "scores": {"off": 3.0, "kb": 4.0, "kg": 3.5, "both": 4.0}},
+    ]
+    _ablation = SAB.summarize(_ablation_rows)
+    ok(_ablation["arms"]["kb"]["mae"] == 0.5
+       and _ablation["arms"]["off"]["severe_low_recall"] == 0.0
+       and _ablation["arms"]["kb"]["severe_low_recall"] == 1.0,
+       "RAG/KG 消融统一输出 MAE、Spearman、严重低分召回和配对差值")
+    ok("spearman_delta_ci95" in _ablation["comparisons"][0],
+       "RAG/KG 消融同时输出相关系数差的配对 bootstrap 置信区间")
 
     _detail = S._clean_score_detail({
         "dimensions": {},
@@ -1344,6 +1494,11 @@ def adaptive_difficulty():
 
     d, _ = adapt_difficulties("核心考察", {"medium"}, ["L2"] * 3, 3, 0.6, 0.5)
     ok(d == {"medium", "hard"}, "三轮都被判深挖 → 向上扩一档", f"实际 {sorted(d)}")
+    d, note = adapt_difficulties(
+        "核心考察", {"medium"}, ["L3", "L3", "L1"], 3, 0.6, 0.5)
+    ok(d == {"medium", "hard"},
+       "L3 比 L2 更强，同样必须计入向上自适应",
+       f"{sorted(d)} {note}")
 
     d, _ = adapt_difficulties("核心考察", {"medium"}, ["L1"] * 4, 3, 0.6, 0.5)
     ok(d == {"medium"}, "走势正常（全 L1）→ 不动", f"实际 {sorted(d)}")
@@ -2110,9 +2265,25 @@ def _blindspots():
     ok(by["k3"]["last_score"] is None,
        "reranker 失败时的兜底 50.0 **不参与**统计（那是个假分）")
     ok(all("per_round" in e for e in by.values()), "每个知识点带 per_round 明细")
-    ok(all(0.0 <= v <= 5.0 for v in (d["domains"][0]["five_dim_avg"].values()
-                                     if d["domains"][0]["five_dim_avg"] else [])),
-       "领域五维均分在 0~5 之间")
+    _domain_dims = (d["domains"][0]["five_dim_avg"].values()
+                    if d["domains"][0]["five_dim_avg"] else [])
+    ok(all(v is None or 0.0 <= v <= 5.0 for v in _domain_dims),
+       "领域五维均分在 0~5 之间；无数据维度保持 null，不伪装成 0")
+    _behavior_round = _bare_round(
+        round_no=5,
+        question_id="T-BEH",
+        category=config.CATEGORY_BEHAVIORAL,
+        knowledge_points=[kp("kb", "行为考点")],
+        five_dim={"技术水平": 1.0, "逻辑思维": 3.0, "沟通表达": 4.0,
+                  "应变能力": 4.0, "岗位匹配度": 4.0},
+    )
+    _behavior_round.attempts.append(_attempt(1, 80.0))
+    _behavior_diag = BS.diagnose([_behavior_round], None)
+    _behavior_domain = _behavior_diag["domains"][0]
+    ok(_behavior_domain["five_dim_avg"]["技术水平"] is None
+       and _behavior_domain["five_dim_avg"]["沟通表达"] == 4.0,
+       "行为题领域的技术水平保持 null，其他维度照常统计",
+       str(_behavior_domain["five_dim_avg"]))
     # 五维均分不能被按 kp 个数加权：同领域两个 kp 命中同一轮时，那一轮只算一次
     ok(all("未归类" in dd["domain"] for dd in d["domains"]),
        "kg=None 时所有领域都归「未归类」（不假装知道）", str([x["domain"] for x in d["domains"]]))
@@ -2240,7 +2411,12 @@ def scorer_singleton():
 # 「只多了一块」不是我说了算：重铸时把改动前的旧串存了一份
 # （D:\A11-Data\_tmp_old_frozen.txt，从本文件里取出来的），与新渲染做逐行 diff，
 # delta 必须**恰好**是「【表达客观测量】P + 一个空行」这一处插入。
-_DIM1_SCORING_PARAMS = {'score_step': '0.05', 'question': 'Q', 'difficulty': 'hard', 'stage': '深度压轴', 'base_points': 'B', 'adv_points': 'A', 'qa_block': 'QA', 'reranker_note': 'N', 'pace_note': 'P'}
+_DIM1_SCORING_PARAMS = {
+    'score_step': '0.05', 'question': 'Q', 'difficulty': 'hard',
+    'stage': '深度压轴', 'base_points': 'B', 'adv_points': 'A',
+    'qa_block': 'QA', 'reranker_note': 'N', 'pace_note': 'P',
+    'kb_evidence': 'R', 'kg_evidence': 'K',
+}
 _FROZEN_ROUND_SCORING = """你是严格的技术面试官，现在要为一个「hard / 深度压轴」难度的题目打分。
 
 【题目】Q
@@ -2251,6 +2427,12 @@ B
 【进阶得分点】
 A
 
+【知识库事实核验证据】
+R
+
+【知识图谱考点证据】
+K
+
 【实际问答过程】
 QA
 
@@ -2260,6 +2442,8 @@ QA
 - 它**只**反映得分点覆盖情况，**不是**技术正确性结论；也**不**反映表达质量、逻辑条理、临场应变 —— 与后四维**无关**。
 - 它**会出错**：判为命中的可能只是提到了关键词而没真理解；判为未命中的可能用别的话把意思讲对了。
 - 请对照上面的实际问答**复核**这些判断，**以你的判断为准**；若你对「技术水平」的判断与它相差超过 1 分，在 errors 里写明原因。
+- 知识库证据只用于核验事实和补齐边界，**不是考生回答的一部分**。不得因为检索到了资料就加分，也不得把资料里的结论冒充成考生已经答到。
+- 知识图谱考点用于检查讲解层次、前置关系和遗漏点，**不是额外答案**。不得因为图谱节点存在就加分，必须看考生本人是否讲到。
 
 【表达客观测量】P
 
@@ -6820,9 +7004,9 @@ def raw_detail(client):
                    or isinstance(fin.get("difficulty_adjusted_score"), (int, float)),
                    f"{tag}：difficulty_adjusted_score 是数值或 null",
                    str(fin.get("difficulty_adjusted_score")))
-                ok(set(fin.get("content_analysis") or {}) ==
-                   {"technical_correctness", "knowledge_depth",
-                    "logical_rigor", "job_fit"},
+                ok({"technical_correctness", "knowledge_depth",
+                    "logical_rigor", "job_fit"}.issubset(
+                        set(fin.get("content_analysis") or {})),
                    f"{tag}：content_analysis 覆盖赛题四项内容能力",
                    str(fin.get("content_analysis")))
                 ok(isinstance(fin.get("code_review"), list),

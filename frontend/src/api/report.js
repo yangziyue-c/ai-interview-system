@@ -62,6 +62,11 @@ export const getReport = async (interviewId) => {
             suggestions: found.suggestions || [],
             created_at: found.finished_at,
             partial,
+            score_status: found.score_status || (partial ? 'partial' : 'valid'),
+            score_available: found.score_available !== false,
+            missing_dimensions: found.missing_dimensions || [],
+            partial_reasons: found.partial_reasons || [],
+            effective_rate: found.effective_rate ?? 1,
             expression_analysis: {
                 available: true,
                 voice: {
@@ -173,6 +178,11 @@ export const getSharedReport = async (code) => {
             suggestions: data.suggestions || [],
             created_at: data.finished_at,
             partial: false,
+            score_status: data.score_status || 'valid',
+            score_available: data.score_available !== false,
+            missing_dimensions: data.missing_dimensions || [],
+            partial_reasons: data.partial_reasons || [],
+            effective_rate: data.effective_rate ?? 1,
             expression_analysis: {
                 available: true,
                 voice: { available: true, avg_chars_per_min: 180, total_pauses: 2, total_fillers: 1, feedback: [] },
