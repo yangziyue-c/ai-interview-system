@@ -162,6 +162,12 @@
         </div>
       </div>
 
+      <ReviewSummary
+        v-if="review"
+        :review="review"
+        class="review-section"
+      />
+
       <div class="privacy-tip">
         <AppIcon name="info" :size="14" />
         <span>分享内容包含个人信息，请注意隐私</span>
@@ -180,6 +186,7 @@ import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import AppIcon from '@/components/AppIcon.vue'
+import ReviewSummary from '@/components/ReviewSummary.vue'
 import { getSharedReport } from '@/api/report'
 import { getPositions, getPositionName } from '@/api/position'
 
@@ -215,6 +222,7 @@ const hasCompleteScores = computed(() =>
   dimensionRows.value.every(item => item.value !== null && item.value !== undefined)
 )
 const expressionAnalysis = ref(null)
+const review = ref(null)
 
 const hasMissingData = computed(() => {
   return (
@@ -361,6 +369,7 @@ onMounted(async () => {
     reportDate.value = formatDate(data.created_at)
     
     expressionAnalysis.value = data.expression_analysis || null
+    review.value = data.review || null
 
     loading.value = false
     await nextTick()
@@ -678,6 +687,8 @@ onUnmounted(() => {
   color: var(--text-tertiary);
 }
 .expr-notice-bar :deep(.app-icon) { color: var(--text-disabled); flex-shrink: 0; }
+
+.review-section { margin-top: var(--space-4); }
 
 .privacy-tip {
   display: flex;
