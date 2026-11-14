@@ -19,6 +19,7 @@ session.py · 面试会话状态机
 "session 级计数器忘了重置" 这类 bug。
 """
 import difflib
+import math
 import os
 import random
 import re
@@ -325,6 +326,15 @@ class RoundRecord:
     #    保留的实验档）用**他没答到的得分点**，那一档命中的极可能就是本题标准答案
     #    所在的章节 ⇒ **无论哪一档**都不许露给前端。
     kb_refs: list[dict] = field(default_factory=list, repr=False)
+    # Graph-only knowledge points for this question. Unlike
+    # `knowledge_points`, this excludes bank-only rows and keeps provenance so
+    # scoring ablations can attribute changes to the graph rather than to the
+    # original question-bank metadata.
+    kg_refs: list[dict] = field(default_factory=list, repr=False)
+    # Graph-only co-occurrence directions frozen at question-selection time.
+    # `deepen` above remains the generation hint and may be seeded by bank rows;
+    # scoring ablations must use this pure graph view instead.
+    kg_deepen: list[dict] = field(default_factory=list, repr=False)
     # 可序列化的白名单元信息，四个键**结构上不可能夹带文本**。
     #
     # 默认值就带齐四个键、而不是空 dict：RAG **默认是关的**，若关掉时给 {}，
@@ -345,8 +355,8 @@ class RoundRecord:
     # 与 exchanges[].speech 同一份数据 —— 这里是为了让「按轮看表达」不用先遍历
     # exchanges。形状与 SPEECH_EMPTY 逐键相同，文字作答时 used=false。
     speech: dict = field(default_factory=lambda: dict(asrmod.SPEECH_EMPTY))
-    # Latest camera summary for this round. Independent from speech and only
-    # used as a bounded weak signal after the answer has been scored.
+    # Latest camera summary for this round. Independent from speech and
+    # display-only: it must never change a five-dimension score.
     body_language: dict = field(default_factory=lambda: dict(bodymod.BODY_EMPTY))
     # 评分结果（finish 时填）
     five_dim: Optional[dict] = None
@@ -427,6 +437,45 @@ class RoundRecord:
                 seen.add(key)
                 out.append(ref)
         return out
+
+    def scoring_kb_evidence(self) -> str:
+        """Hidden KB evidence used only when the scoring ablation is enabled."""
+        if not config.A11_KB_EVIDENCE_SCORE:
+            return ""
+        refs = self.scoring_kb_refs()
+        return kbmod.format_block(refs) if refs else ""
+
+    def scoring_rag_evidence(self) -> str:
+        """Deprecated alias; question-bank RAG is not a scoring evidence source."""
+        return self.scoring_kb_evidence()
+
+    def scoring_kg_evidence(self, kg_available: bool = False) -> str:
+        """Structured graph evidence, only when the KG is loaded and enabled."""
+        if not config.A11_KG_SCORE or not kg_available:
+            return ""
+        lines: list[str] = []
+        seen_titles: set[str] = set()
+        for row in self.kg_refs:
+            if not isinstance(row, dict):
+                continue
+            title = str(row.get("title") or "").strip()
+            kp_id = str(row.get("id") or row.get("kp_id") or "").strip()
+            source = str(row.get("src") or "").strip()
+            if title:
+                seen_titles.add(title)
+                suffix = []
+                if kp_id:
+                    suffix.append(kp_id)
+                if source:
+                    suffix.append(f"来源={source}")
+                lines.append(
+                    f"- {title}" + (f"（{'，'.join(suffix)}）" if suffix else ""))
+        for row in self.kg_deepen:
+            title = str(row.get("title") or "").strip()
+            if title and title not in seen_titles:
+                seen_titles.add(title)
+                lines.append(f"- {title}（来源=kg_cooccur）")
+        return "\n".join(lines[:12])
 
     # ---------- 表达：客观测量（赛题 3b）----------
     # 这一段是「**不用 ASR 也能算**」的那两条（用时 vs 建议用时、答题长度）+
@@ -559,9 +608,9 @@ class RoundRecord:
                 parts.append("综合相对偏差 %.2f" % sp["baseline_deviation"])
             lines.append("；".join(parts) + "。这只用于解释变化，不代表好坏。")
 
-        body_note = bodymod.prompt_note(self.body_language)
-        if body_note:
-            lines.append(body_note)
+        # Camera posture is exposed in the report's expression-analysis module.
+        # It must not enter the scoring prompt: a stable posture may not be used
+        # to raise content scores, and a poor camera setup may not lower them.
 
         # 使用规则。前三条恒在（划边界 / 快≠好 / 冲突以内容为准），
         # 第四条随**数据的有无**而变 —— 因为「有多弱」这件事本身取决于有没有语音。
@@ -589,13 +638,9 @@ class RoundRecord:
                 "**结论**，不是一个测量值。**禁止**因为它是「偏高」就给高分、"
                 "因为「偏低」就扣分 —— 它与「沟通表达」有关，**与第一维、逻辑思维、"
                 "岗位匹配度无关**。只在它与内容判断方向一致时当旁证，冲突以内容为准。")
-        if body_note:
-            rules.append(
-                "（摄像头只提供可解释的上半身姿态弱信号；不得推断情绪、"
-                "性格、紧张、诚实或自信，也不得据此改变技术水平、逻辑思维、"
-                "岗位匹配度。）")
-        else:
-            rules.append("（表达分析只做语音与文本，**不做**摄像头与肢体语言。）")
+        rules.append(
+            "（摄像头姿态只在报告的表达分析里展示；不得进入五维评分，"
+            "也不得据此推断情绪、性格、紧张、诚实或自信。）")
         lines.append("\n".join(rules))
         return "\n".join(lines)
 
@@ -618,6 +663,10 @@ class RoundRecord:
         值得人工看一眼是 reranker 误判还是 LLM 判偏 —— 这是调阈值的前提数据。
         None = 数据不足（reranker 失败 / 该轮没评上分），**不是 0**。
         """
+        if self.dim1_label != config.DIMENSIONS[0]:
+            # Behavioral rounds use the first slot for role-fit evidence; they
+            # are not technical scores and must not enter technical-gap stats.
+            return None
         r5 = self.reranker_5
         tech = (self.five_dim or {}).get(config.DIMENSIONS[0])
         if r5 is None or not isinstance(tech, (int, float)):
@@ -631,8 +680,8 @@ class RoundRecord:
 
         ⚠️ 由 category **派生**、不单独存字段 —— 存两份迟早会不一致，而这里
         「题型 → 标签」是一条纯函数关系，没有独立存一份的必要。
-        ⚠️ five_dim 的**键**恒为 config.DIMENSIONS[0]，这个标签只说明那一列的
-        分这轮是在量什么。键不变 → 3 号 / 前端 / 聚合一律不用分情况。
+        ⚠️ five_dim 的**键**恒为 config.DIMENSIONS[0]，这个标签说明那一列
+        这一轮在量什么。聚合和报告必须同时看标签，不能把所有轮次直接平均。
         """
         return config.dim1_label(self.category)
 
@@ -683,7 +732,8 @@ class RoundRecord:
             # tech_gap 是它跟 LLM 判的「技术水平」之差。都是 None = 数据不足，不是 0。
             "reranker_5": self.reranker_5,
             "tech_gap": self.tech_gap,
-            # ---- 知识图谱 / RAG（加法；不参与任何评分）----
+            # ---- 知识图谱 / RAG 的检索元数据 ----
+            # 评分期实际使用证据由 score_detail.evidence_used 单独记录。
             # ⚠️ self.rag_refs **故意不在这里** —— 它含「答题要点/示例话术」原文，
             #    而 raw 会返回给前端。这里只出白名单四键的 rag_meta。
             "deepen_directions": self.deepen,
@@ -965,7 +1015,7 @@ def combine_scores(objective_score, subjective_score,
         return {
             "score": None, "rule": "no_score", "objective_weight": 0.0,
             "subjective_weight": 0.0, "agreement": "", "confidence": "",
-            "calibrated": False,
+            "calibrated": False, "official": False,
         }
     if objective_score is None:
         return {
@@ -973,7 +1023,7 @@ def combine_scores(objective_score, subjective_score,
             "rule": "subjective only", "objective_weight": 0.0,
             "subjective_weight": 1.0, "agreement": "",
             "confidence": subjective_confidence or "",
-            "calibrated": False,
+            "calibrated": False, "official": False,
         }
     if subjective_score is None:
         return {
@@ -981,7 +1031,7 @@ def combine_scores(objective_score, subjective_score,
             "rule": "objective only", "objective_weight": 1.0,
             "subjective_weight": 0.0, "agreement": "",
             "confidence": objective_confidence or "",
-            "calibrated": False,
+            "calibrated": False, "official": False,
         }
 
     obj_conf = objective_confidence if objective_confidence in _CONF_ORDER else "low"
@@ -1033,6 +1083,202 @@ def combine_scores(objective_score, subjective_score,
         "agreement": agreement,
         "confidence": confidence,
         "calibrated": False,
+        "official": False,
+    }
+
+
+def fuse_technical_score(
+    subjective_score: float,
+    objective_score: float,
+    objective_weight: float,
+) -> float:
+    """Blend Qwen correctness into the technical dimension only."""
+    subjective = float(subjective_score)
+    objective = float(objective_score)
+    if not math.isfinite(subjective):
+        return 0.0
+    if not math.isfinite(objective):
+        return round(max(0.0, min(5.0, subjective)), 2)
+    weight = float(objective_weight)
+    if not math.isfinite(weight):
+        weight = 0.0
+    weight = max(0.0, min(1.0, weight))
+    fused = (
+        (1.0 - weight) * subjective
+        + weight * objective
+    )
+    return round(max(0.0, min(5.0, fused)), 2)
+
+
+def apply_objective_score_guard(
+    five_dim: dict | None,
+    objective_detail: dict | None,
+) -> tuple[dict, dict]:
+    """Cap a technical score when Qwen reports a high-confidence major error."""
+    data = dict(five_dim or {})
+    detail = objective_detail if isinstance(objective_detail, dict) else {}
+    original = data.get(config.DIMENSIONS[0])
+    claims = [
+        row for row in (detail.get("claims") or [])
+        if isinstance(row, dict)
+        and row.get("verdict") == "contradicted"
+        and str(row.get("severity") or "").lower() == "major"
+    ]
+    confidence = str(detail.get("confidence") or "").lower()
+    applied = bool(
+        claims
+        and confidence in ("high", "medium")
+        and isinstance(original, (int, float))
+        and not isinstance(original, bool)
+        and math.isfinite(float(original))
+    )
+    if applied:
+        data[config.DIMENSIONS[0]] = round(min(float(original), 2.5), 2)
+    return data, {
+        "applied": applied,
+        "reason": "objective_major_contradiction" if applied else "",
+        "confidence": confidence,
+        "major_contradictions": claims,
+        "original": round(float(original), 2) if isinstance(
+            original, (int, float))
+            and not isinstance(original, bool)
+            and math.isfinite(float(original)) else None,
+        "guarded": data.get(config.DIMENSIONS[0]),
+    }
+
+
+def aggregate_dimension_scores(records: list[RoundRecord]) -> dict:
+    """Aggregate dimensions without mixing behavioral role fit into tech."""
+    technical_rows = [
+        r for r in records
+        if r.five_dim and r.dim1_label == config.DIMENSIONS[0]
+    ]
+    dims: dict[str, list[float]] = {d: [] for d in config.DIMENSIONS}
+    for rec in records:
+        if not rec.five_dim:
+            continue
+        for d in config.DIMENSIONS:
+            if (d == config.DIMENSIONS[0]
+                    and rec.dim1_label != config.DIMENSIONS[0]):
+                continue
+            value = rec.five_dim.get(d)
+            if (
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and math.isfinite(float(value))
+            ):
+                dims[d].append(float(value))
+    avg = {
+        d: (round(sum(values) / len(values), 2) if values else None)
+        for d, values in dims.items()
+    }
+    behavioral_values = [
+        float(r.five_dim[config.DIMENSIONS[0]])
+        for r in records
+        if r.five_dim
+        and r.dim1_label == config.DIM1_LABEL_BEHAVIORAL
+        and isinstance(r.five_dim.get(config.DIMENSIONS[0]), (int, float))
+        and not isinstance(r.five_dim.get(config.DIMENSIONS[0]), bool)
+        and math.isfinite(float(r.five_dim[config.DIMENSIONS[0]]))
+    ]
+    return {
+        "dims": dims,
+        "five_dim_avg": avg,
+        "technical_rows": technical_rows,
+        "behavioral_role_fit": (
+            round(sum(behavioral_values) / len(behavioral_values), 2)
+            if behavioral_values else None
+        ),
+        "missing_dimensions": [
+            d for d in config.DIMENSIONS if avg.get(d) is None
+        ],
+    }
+
+
+def assess_score_completeness(
+    records: list[RoundRecord],
+    *,
+    total_questions: int,
+    questions_asked: int,
+    failed_rounds: list[int],
+    missing_dimensions: list[str],
+    has_any_score: bool,
+    has_objective: bool,
+) -> dict:
+    """Return valid/partial/invalid plus evidence completeness metadata."""
+    effective_rounds = [
+        r for r in records
+        if any(bool(getattr(a, "effective", True)) for a in r.attempts)
+    ]
+    effective_count = len(effective_rounds)
+    effective_rate = (
+        round(effective_count / total_questions, 4)
+        if total_questions else 0.0
+    )
+    minimum_effective_rounds = (
+        int(math.ceil(total_questions * config.MIN_EFFECTIVE_RATE))
+        if total_questions else 0
+    )
+    completion_rate = (
+        round(questions_asked / total_questions, 4)
+        if total_questions else 0.0
+    )
+    partial_reasons = []
+    if failed_rounds:
+        partial_reasons.append("scoring_failed_rounds")
+    if questions_asked < total_questions:
+        partial_reasons.append("interview_not_completed")
+    if effective_count < total_questions:
+        partial_reasons.append("effective_answers_incomplete")
+    if effective_count < minimum_effective_rounds:
+        partial_reasons.append("effective_answers_below_minimum")
+    if missing_dimensions:
+        partial_reasons.append("missing_dimensions")
+    if completion_rate < 1:
+        partial_reasons.append("completion_rate_below_100")
+    if (not has_any_score and not has_objective) or not effective_rounds:
+        status = "invalid"
+    elif partial_reasons:
+        status = "partial"
+    else:
+        status = "valid"
+    return {
+        "score_status": status,
+        "final_score": status == "valid",
+        "partial": status != "valid",
+        "invalid_session": status == "invalid",
+        "effective_rounds": effective_rounds,
+        "effective_count": effective_count,
+        "effective_rate": effective_rate,
+        "minimum_effective_rounds": minimum_effective_rounds,
+        "completion_rate": completion_rate,
+        "partial_reasons": partial_reasons,
+    }
+
+
+def calculate_difficulty_adjusted(
+    score_by_difficulty: dict[str, dict],
+) -> tuple[float | None, dict]:
+    """Weight observed difficulty groups by samples and evidence weight."""
+    numerator = 0.0
+    denominator = 0.0
+    for row in score_by_difficulty.values():
+        if row.get("total_score") is None or not row.get("sample_sufficient"):
+            continue
+        weight = (
+            float(row.get("rounds") or 0)
+            * float(row.get("evidence_weight") or 1.0)
+        )
+        numerator += float(row["total_score"]) * weight
+        denominator += weight
+    score = round(numerator / denominator, 2) if denominator else None
+    return score, {
+        "score": score,
+        "method": "round_count_x_difficulty_weight",
+        "minimum_samples_per_observed_difficulty": (
+            config.MIN_DIFFICULTY_SAMPLES
+        ),
+        "groups": score_by_difficulty,
     }
 
 
@@ -1050,28 +1296,14 @@ def objective_round_score(coverage_05: float, correctness: float,
     atoms = [row for row in (point_atoms or []) if isinstance(row, dict)]
     atom_penalty = 0.0
     coverage_for_score = float(coverage_05)
-    atom_total = 0
-    supported_atoms = 0
-    insufficient_atoms = 0
     for row in atoms:
         verdict = str(row.get("verdict") or "")
         if verdict not in ("supported", "contradicted", "insufficient"):
             continue
-        atom_total += 1
-        if verdict == "supported":
-            supported_atoms += 1
-        elif verdict == "insufficient":
-            insufficient_atoms += 1
-        else:
+        if verdict == "contradicted":
             severity = str(row.get("severity") or "none").lower()
             atom_penalty += {"minor": 0.30, "major": 0.65}.get(
                 severity, 0.40)
-    if atom_total:
-        # Atomic verification is more reliable than raw keyword coverage.
-        coverage_for_score = round(
-            (supported_atoms + 0.5 * insufficient_atoms) / atom_total * 5,
-            2,
-        )
     # Coverage is currently much less reliable than claim-level correctness.
     base = 0.25 * coverage_for_score + 0.75 * float(correctness)
     claim_penalty = 0.0
@@ -1251,17 +1483,25 @@ def adapt_difficulties(stage: str, base, trajectory: list[str],
     n = len(trajectory)
     if n < min_rounds:
         return base, f"走势样本不足（{n}/{min_rounds} 轮），按原计划 {sorted(base)}"
-    l2 = sum(1 for b in trajectory if b == BAND_L2) / n
+    # L3 is stronger evidence than L2; counting only exact L2 made the
+    # adaptive path ignore the strongest candidates.
+    strong = min(1.0, sum(
+        1.5 if b == BAND_L3 else 1.0 if b == BAND_L2 else 0.0
+        for b in trajectory
+    ) / n)
     dg = sum(1 for b in trajectory if b == BAND_DEGRADE) / n
     # 两个分支互斥：L2 与 degrade 不可能落在同一条首答上，l2+dg ≤ 1，
     # 而两个阈值之和 > 1。所以这里不需要优先级规则（config 里也写了这条）。
     if dg >= dg_rate:
         return (widen_difficulties(base, -1),
                 f"走势偏弱（降难度 {dg:.0%} ≥ {dg_rate:.0%}）→ 向下扩一档")
-    if l2 >= l2_rate:
+    if strong >= l2_rate:
         return (widen_difficulties(base, +1),
-                f"走势偏强（深挖 {l2:.0%} ≥ {l2_rate:.0%}）→ 向上扩一档")
-    return base, f"走势正常（深挖 {l2:.0%}／降难度 {dg:.0%}），按原计划 {sorted(base)}"
+                f"走势偏强（深挖加权 {strong:.2f} ≥ {l2_rate:.2f}）→ 向上扩一档")
+    return base, (
+        f"走势正常（深挖加权 {strong:.2f}／降难度 {dg:.0%}），"
+        f"按原计划 {sorted(base)}"
+    )
 
 
 def decide_action(band: str, record: RoundRecord, repeat: bool = False) -> str:
@@ -2214,13 +2454,31 @@ class InterviewSession:
         round_no = self.questions_asked + 1
 
         km, kpw, deepen, picked_overlap = {}, {}, [], None
+        kg_refs: list[dict] = []
+        kg_deepen: list[dict] = []
         if self.kg is not None:
             km = self._kp_map_of(qid, raw)
             kpw = kgmod.overlap_weights(km)
             picked_overlap = (self.cov.overlap(kpw) if kpw else None)
+            kg_refs = [
+                {
+                    "id": kp_id,
+                    "title": str(info.get("title") or kp_id),
+                    "weight": info.get("weight"),
+                    "src": info.get("src"),
+                }
+                for kp_id, info in km.items()
+                if isinstance(info, dict) and info.get("src") in ("kg", "both")
+            ]
+            kg_weights = kgmod.overlap_weights({
+                row["id"]: {"weight": row.get("weight")}
+                for row in kg_refs
+            })
             # ⚠️ 顺序写死：**先**算深挖方向（此刻 cov 里还只有之前的轮次，语义才对），
             #    **再** cov.add。反过来的话本题自己的知识点会被当成"已考过"而排除。
             deepen = kgmod.deepen_directions(kpw, self.cov.seen_ids(), self.kg)
+            kg_deepen = kgmod.deepen_directions(
+                kg_weights, self.cov.seen_ids(), self.kg)
 
         # 两个累计结构同生共死 —— 物理相邻是它们不走散的唯一可靠保证
         self.asked_pids.append(qid)
@@ -2245,6 +2503,8 @@ class InterviewSession:
             pick_level=trace.get("level", ""),
             kp_overlap=picked_overlap,
             deepen=deepen,
+            kg_refs=kg_refs,
+            kg_deepen=kg_deepen,
             diffs_planned=sorted(difficulties),
             adapt_note=adapt_note,
             transcript_start=len(self.transcript),
@@ -3190,6 +3450,8 @@ class InterviewSession:
                     judge_band, r_band, self.stage_idx, self.stage_used)
 
     def _scoring_context(self, rec: RoundRecord) -> dict:
+        kb_evidence = rec.scoring_kb_evidence()
+        kg_evidence = rec.scoring_kg_evidence(self.kg is not None)
         return {
             "question": rec.question,
             "difficulty": rec.difficulty,
@@ -3199,11 +3461,16 @@ class InterviewSession:
             "adv_points": qb.truncate(rec.adv_points, config.POINT_TRUNCATE),
             "qa_block": rec.qa_block(),
             "reranker_note": rec.reranker_note(),
-            "kb_evidence": (
-                kbmod.format_block(rec.scoring_kb_refs())
-                if config.A11_KB_SCORE and rec.scoring_kb_refs()
-                else "（无）"
-            ),
+            "kb_evidence": kb_evidence or "（无）",
+            # Compatibility alias for caches/consumers written before the
+            # station-bank RAG / KB split.
+            "rag_evidence": kb_evidence,
+            "kg_evidence": kg_evidence,
+            "kb_evidence_available": bool(kb_evidence),
+            "kg_evidence_available": bool(kg_evidence),
+            "question_rag_available": bool(rec.rag_refs),
+            "effective_answer": any(
+                bool(getattr(a, "effective", True)) for a in rec.attempts),
             "pace_note": rec.pace_note(),
         }
 
@@ -3266,25 +3533,17 @@ class InterviewSession:
             rec.score_error = err or "模型未返回可解析的五维分"
         else:
             adjusted = dict(data["five_dim"])
-            adjustment = (
-                bodymod.score_adjustment(rec.body_language)
-                if config.A11_BODY_SCORE
-                else {
-                    "applied": False,
-                    "reason": "disabled",
-                    "communication_delta": 0.0,
-                    "adaptability_delta": 0.0,
-                }
-            )
-            if adjustment.get("applied"):
-                adjusted = bodymod.apply_to_five_dim(
-                    adjusted, rec.body_language)
+            adjustment = bodymod.display_only_adjustment(rec.body_language)
             rec.body_score_adjustment = adjustment
             rec.five_dim = adjusted
             rec.code_check = data.get("code_check") or {
                 "applicable": False, "correct": None, "note": "",
             }
             rec.score_detail = data.get("score_detail") or {}
+            rec.score_detail["evidence_used"] = data.get("evidence_used") or {
+                "rag": False,
+                "kg": False,
+            }
             if adjustment.get("applied"):
                 rec.score_detail["body_language_adjustment"] = adjustment
             rec.comment = data.get("comment", "")
@@ -3426,22 +3685,7 @@ class InterviewSession:
         # 主观线与客观线是两次独立模型调用。放进同一个线程池同时发出，
         # 避免旧的“4 线程 × 每轮两段串行”结构。
         def _score_ctx(rec: RoundRecord) -> dict:
-            return {
-                "question": rec.question,
-                "difficulty": rec.difficulty,
-                "stage": rec.stage,
-                "category": rec.category,
-                "base_points": qb.truncate(rec.base_points, config.POINT_TRUNCATE),
-                "adv_points": qb.truncate(rec.adv_points, config.POINT_TRUNCATE),
-                "qa_block": rec.qa_block(),
-                "reranker_note": rec.reranker_note(),
-                "kb_evidence": (
-                    kbmod.format_block(rec.scoring_kb_refs())
-                    if config.A11_KB_SCORE and rec.scoring_kb_refs()
-                    else "（无）"
-                ),
-                "pace_note": rec.pace_note(),
-            }
+            return self._scoring_context(rec)
 
         def _score_llm(rec: RoundRecord):
             started = time.time()
@@ -3500,41 +3744,74 @@ class InterviewSession:
                         failed_rounds.append(rec.round_no)
                     else:
                         adjusted = dict(payload["five_dim"])
-                        adjustment = (
-                            bodymod.score_adjustment(rec.body_language)
-                            if config.A11_BODY_SCORE
-                            else {
-                                "applied": False,
-                                "reason": "disabled",
-                                "communication_delta": 0.0,
-                                "adaptability_delta": 0.0,
-                            }
-                        )
-                        if adjustment.get("applied"):
-                            adjusted = bodymod.apply_to_five_dim(
-                                adjusted, rec.body_language)
+                        adjustment = bodymod.display_only_adjustment(
+                            rec.body_language)
                         rec.body_score_adjustment = adjustment
                         rec.five_dim = adjusted
                         rec.code_check = payload.get("code_check") or {
                             "applicable": False, "correct": None, "note": "",
                         }
                         rec.score_detail = payload.get("score_detail") or {}
+                        rec.score_detail["evidence_used"] = payload.get(
+                            "evidence_used") or {"rag": False, "kg": False}
                         if adjustment.get("applied"):
                             rec.score_detail["body_language_adjustment"] = adjustment
                         rec.comment = payload.get("comment", "")
                         rec.errors = payload.get("errors", [])
                         rec.scored = True
 
-        # 汇总（修 #5：失败轮次不进均分，且**不伪装成 0 分**）
-        dims: dict[str, list[float]] = {d: [] for d in config.DIMENSIONS}
-        for rec in scorable:
-            if not rec.five_dim:
-                continue
-            for d in config.DIMENSIONS:
-                if d in rec.five_dim:
-                    dims[d].append(rec.five_dim[d])
+        # Optional technical-dimension fusion. Behavioral rounds keep the
+        # DeepSeek first-dimension score because their first dimension means
+        # "岗位胜任力关联度", not technical correctness.
+        tech_fusion_rows: list[dict] = []
+        tech_weight = config.TECH_OBJECTIVE_WEIGHT
+        if tech_weight > 0:
+            for rec in scorable:
+                if not rec.five_dim:
+                    continue
+                if rec.dim1_label != config.DIMENSIONS[0]:
+                    continue
+                correctness = (rec.objective_detail or {}).get(
+                    "correctness_score")
+                subjective_tech = rec.five_dim.get(config.DIMENSIONS[0])
+                if not isinstance(correctness, (int, float)):
+                    continue
+                if not isinstance(subjective_tech, (int, float)):
+                    continue
+                fused = fuse_technical_score(
+                    float(subjective_tech), float(correctness), tech_weight)
+                rec.five_dim[config.DIMENSIONS[0]] = fused
+                fusion_detail = {
+                    "round": rec.round_no,
+                    "subjective": round(float(subjective_tech), 2),
+                    "objective": round(float(correctness), 2),
+                    "weight": tech_weight,
+                    "fused": fused,
+                }
+                rec.score_detail = dict(rec.score_detail or {})
+                rec.score_detail["tech_objective_fusion"] = fusion_detail
+                tech_fusion_rows.append(fusion_detail)
 
-        avg = {d: (round(sum(v) / len(v), 2) if v else None) for d, v in dims.items()}
+        objective_guard_rows: list[dict] = []
+        for rec in scorable:
+            if not rec.five_dim or rec.dim1_label != config.DIMENSIONS[0]:
+                continue
+            guarded, guard_detail = apply_objective_score_guard(
+                rec.five_dim, rec.objective_detail)
+            if guard_detail.get("applied"):
+                rec.five_dim = guarded
+                rec.score_detail = dict(rec.score_detail or {})
+                rec.score_detail["objective_guard"] = guard_detail
+                objective_guard_rows.append({
+                    "round": rec.round_no,
+                    **guard_detail,
+                })
+
+        aggregate = aggregate_dimension_scores(scorable)
+        avg = aggregate["five_dim_avg"]
+        technical_rows = aggregate["technical_rows"]
+        behavioral_role_fit = aggregate["behavioral_role_fit"]
+        missing_dimensions = aggregate["missing_dimensions"]
         has_any = any(v is not None for v in avg.values())
         weights = self.weights
         total = None
@@ -3544,33 +3821,35 @@ class InterviewSession:
             # 权重归一化：某个维度整体缺失时，不能拿 0 去顶
             total = round(sum(usable[d] * weights[d] for d in usable) / wsum, 2) if wsum else None
 
-        completion_rate = (
-            round(self.questions_asked / self.total_questions, 4)
-            if self.total_questions else 0.0
-        )
-        effective_rounds = [
-            r for r in scorable
-            if any(bool(getattr(a, "effective", True)) for a in r.attempts)
-        ]
         has_objective = any(
             isinstance((r.objective_detail or {}).get("correctness_score"),
                        (int, float))
             for r in scorable
         )
-        if (not has_any and not has_objective) or not effective_rounds:
-            score_status = "invalid"
-        elif failed_rounds or self.questions_asked < self.total_questions:
-            score_status = "partial"
-        else:
-            score_status = "valid"
-        final_score = score_status == "valid"
-        partial = score_status != "valid"
-        invalid_session = score_status == "invalid"
+        completeness = assess_score_completeness(
+            scorable,
+            total_questions=self.total_questions,
+            questions_asked=self.questions_asked,
+            failed_rounds=failed_rounds,
+            missing_dimensions=missing_dimensions,
+            has_any_score=has_any,
+            has_objective=has_objective,
+        )
+        completion_rate = completeness["completion_rate"]
+        effective_rounds = completeness["effective_rounds"]
+        effective_rate = completeness["effective_rate"]
+        minimum_effective_rounds = completeness["minimum_effective_rounds"]
+        partial_reasons = completeness["partial_reasons"]
+        score_status = completeness["score_status"]
+        final_score = completeness["final_score"]
+        partial = completeness["partial"]
+        invalid_session = completeness["invalid_session"]
         if invalid_session:
             # 没有任何有效回答时，最低档 1 也不该被展示成“20 分”。
             # 分数键保留为 null，与“没有数据”同一语义；原始逐轮记录仍在 raw。
             avg = {d: None for d in config.DIMENSIONS}
             total = None
+            behavioral_role_fit = None
 
         score_by_difficulty: dict[str, dict] = {}
         for diff in ("easy", "medium", "hard"):
@@ -3578,30 +3857,40 @@ class InterviewSession:
             vals = {d: [] for d in config.DIMENSIONS}
             for rec in rows:
                 for d in config.DIMENSIONS:
+                    if (d == config.DIMENSIONS[0]
+                            and rec.dim1_label != config.DIMENSIONS[0]):
+                        continue
                     v = (rec.five_dim or {}).get(d)
-                    if isinstance(v, (int, float)):
+                    if (
+                        isinstance(v, (int, float))
+                        and not isinstance(v, bool)
+                        and math.isfinite(float(v))
+                    ):
                         vals[d].append(float(v))
             d_avg = {d: (round(sum(v) / len(v), 2) if v else None)
                      for d, v in vals.items()}
             score_by_difficulty[diff] = {
                 "rounds": len(rows),
+                "evidence_weight": config.DIFFICULTY_SCORE_WEIGHTS.get(diff, 1.0),
+                "sample_sufficient": (
+                    bool(rows) and len(rows) >= config.MIN_DIFFICULTY_SAMPLES
+                ),
                 "five_dim_avg": d_avg,
                 "total_score": weighted_llm_score(d_avg, self.job),
             }
-        _diff_totals = [x["total_score"] for x in score_by_difficulty.values()
-                        if x["total_score"] is not None]
-        difficulty_adjusted_total = (
-            round(sum(_diff_totals) / len(_diff_totals), 2)
-            if _diff_totals else None)
+        difficulty_adjusted_total, difficulty_adjusted_meta = (
+            calculate_difficulty_adjusted(score_by_difficulty)
+        )
 
-        technical_rows = [
-            r for r in scorable
-            if r.five_dim and r.dim1_label == config.DIMENSIONS[0]
-        ]
         tech_values = [
             (r.five_dim or {}).get(config.DIMENSIONS[0]) for r in technical_rows
         ]
-        tech_values = [float(v) for v in tech_values if isinstance(v, (int, float))]
+        tech_values = [
+            float(v) for v in tech_values
+            if isinstance(v, (int, float))
+            and not isinstance(v, bool)
+            and math.isfinite(float(v))
+        ]
         technical_correctness = (
             round(sum(tech_values) / len(tech_values), 2) if tech_values else None)
         content_analysis = {
@@ -3612,8 +3901,8 @@ class InterviewSession:
             },
             "knowledge_depth": {
                 "score": avg.get(config.DIMENSIONS[0]),
-                "rounds": [r.round_no for r in scorable if r.five_dim],
-                "note": "与第一维共用证据，不宣称独立测量；明细仍看逐轮分与评语。",
+                "rounds": [r.round_no for r in technical_rows],
+                "note": "只使用技术类题目的第一维证据；行为题单独记为岗位胜任力。",
             },
             "logical_rigor": {
                 "score": avg.get("逻辑思维"),
@@ -3624,6 +3913,16 @@ class InterviewSession:
                 "score": avg.get("岗位匹配度"),
                 "rounds": [r.round_no for r in scorable if r.five_dim],
                 "note": "直接对应“岗位匹配度”维度。",
+            },
+            "behavioral_role_fit": {
+                "score": behavioral_role_fit,
+                "rounds": [
+                    r.round_no for r in scorable
+                    if r.five_dim
+                    and r.dim1_label == config.DIM1_LABEL_BEHAVIORAL
+                ],
+                "note": "行为素质题第一维“岗位胜任力关联度”单独统计，"
+                        "不进入技术水平键。",
             },
         }
 
@@ -3651,6 +3950,9 @@ class InterviewSession:
             reasons, evidence = [], []
             conf_counts = {"high": 0, "medium": 0, "low": 0}
             for r in detail_rows:
+                if (d == config.DIMENSIONS[0]
+                        and r.dim1_label != config.DIMENSIONS[0]):
+                    continue
                 row = (((r.score_detail or {}).get("dimensions") or {}).get(d) or {})
                 if not isinstance(row, dict):
                     continue
@@ -3694,7 +3996,7 @@ class InterviewSession:
         }
 
         base_hit = base_total = adv_hit = adv_total = 0
-        for r in scorable:
+        for r in technical_rows:
             if not r.attempts:
                 continue
             best = max(r.attempts, key=lambda a: a.reranker_score)
@@ -3718,13 +4020,14 @@ class InterviewSession:
             "available": detail_available,
             "dimensions": detail_dims,
             "coverage": {
+                "kind": "siliconflow_reranker_signal",
                 "base_hit": base_hit,
                 "base_total": base_total,
                 "adv_hit": adv_hit,
                 "adv_total": adv_total,
                 "base_rate": round(base_hit / base_total, 3) if base_total else None,
                 "adv_rate": round(adv_hit / adv_total, 3) if adv_total else None,
-                "note": "取每轮覆盖率最高的一次作答；这是覆盖率信号，不是事实正确性。",
+                "note": "取技术题每轮覆盖率最高的一次作答；这是检索信号，不是事实正确性。",
             },
             "missing_points": missing_points,
             "misconceptions": misconceptions,
@@ -3733,7 +4036,7 @@ class InterviewSession:
             "confidence": overall_confidence,
         }
 
-        # ---- 客观线：SiliconFlow 覆盖率 + Qwen 事实核验 ----
+        # ---- 客观线：Qwen owns point coverage and fact verification ----
         objective_rows = []
         objective_errors = []
         objective_conf = []
@@ -3745,14 +4048,26 @@ class InterviewSession:
             correctness = detail.get("correctness_score")
             if not isinstance(correctness, (int, float)):
                 continue
-            best = (max(rec.attempts, key=lambda a: a.reranker_score)
-                    if rec.attempts else None)
-            if best is None:
-                continue
-            b_total = len(best.base_hits) + len(best.base_misses)
-            a_total = len(best.adv_hits) + len(best.adv_misses)
-            b_rate = len(best.base_hits) / b_total if b_total else 1.0
-            a_rate = len(best.adv_hits) / a_total if a_total else 0.0
+            catalog = detail.get("point_catalog") or objectivemod.build_point_catalog(
+                rec.base_points, rec.adv_points)
+            q_base, q_adv, coverage_source = objectivemod.point_coverage(
+                detail, catalog)
+            if q_base is not None or q_adv is not None:
+                b_rate = q_base if q_base is not None else 0.0
+                a_rate = q_adv if q_adv is not None else 0.0
+            else:
+                # Compatibility fallback only. This path is explicit in the
+                # output so consumers never confuse it with independent Qwen
+                # point verification.
+                best = (max(rec.attempts, key=lambda a: a.reranker_score)
+                        if rec.attempts else None)
+                if best is None:
+                    continue
+                b_total = len(best.base_hits) + len(best.base_misses)
+                a_total = len(best.adv_hits) + len(best.adv_misses)
+                b_rate = len(best.base_hits) / b_total if b_total else 1.0
+                a_rate = len(best.adv_hits) / a_total if a_total else 0.0
+                coverage_source = "siliconflow_fallback"
             coverage_05 = round((0.6 * b_rate + 0.4 * a_rate) * 5, 2)
             misconceptions = detail.get("misconceptions") or []
             claims = detail.get("claims") or []
@@ -3762,6 +4077,10 @@ class InterviewSession:
             objective_rows.append({
                 "round": rec.round_no,
                 "coverage_score": coverage_05,
+                "coverage_source": coverage_source,
+                "base_rate": round(b_rate, 4),
+                "adv_rate": round(a_rate, 4),
+                "point_catalog": catalog,
                 "correctness_score": round(float(correctness), 2),
                 "objective_score": round(objective_round, 2),
                 "evidence": detail.get("evidence") or [],
@@ -3770,7 +4089,12 @@ class InterviewSession:
                 "claims": claims,
                 "claim_counts": detail.get("claim_counts") or {},
                 "target_results": detail.get("target_results") or [],
+                "point_results": detail.get("target_results") or [],
                 "point_atoms": detail.get("point_atoms") or [],
+                "evidence_used": detail.get("evidence_used") or {
+                    "rag": False,
+                    "kg": False,
+                },
                 "confidence": detail.get("confidence") or "",
             })
             if detail.get("confidence") in ("high", "medium", "low"):
@@ -3800,6 +4124,14 @@ class InterviewSession:
             "model": config.OBJECTIVE_MODEL,
             "score": objective_score,
             "rounds": objective_rows,
+            "coverage_sources": sorted({
+                str(row.get("coverage_source") or "unavailable")
+                for row in objective_rows
+            }),
+            "independent": bool(objective_rows) and all(
+                row.get("coverage_source") == "qwen_points"
+                for row in objective_rows
+            ),
             "errors": objective_errors,
             "confidence": objective_confidence,
             "claims": objective_claims,
@@ -3817,6 +4149,12 @@ class InterviewSession:
             "score": total,
             "five_dim": avg,
             "breakdown": score_breakdown,
+            "tech_objective_fusion": {
+                "enabled": config.TECH_OBJECTIVE_WEIGHT > 0,
+                "weight": config.TECH_OBJECTIVE_WEIGHT,
+                "applied_rounds": len(tech_fusion_rows),
+                "rounds": tech_fusion_rows,
+            },
         }
         combined = combine_scores(
             objective["score"],
@@ -3894,10 +4232,9 @@ class InterviewSession:
                     max(_ov) if _ov else -1.0,
                     config.KP_OVERLAP_THRESHOLD, config.KP_OVERLAP_RELAXED)
 
-        # 整场第一维的**构成**。一场里行为素质题与技术题混着抽时，
-        # five_dim_avg["技术水平"] 是**两种东西的平均**：算法本身没错（第一维那一格的
-        # 权重不变，文档也没给行为素质题单独一套权重），但不加标注会被 3 号读成
-        # 单一量 —— 所以这里如实给出两种标签各占几轮。
+        # 整场第一维的构成计数。自 SCORING_VERSION=8 起，
+        # five_dim_avg["技术水平"] 只统计技术题；行为题第一维单独输出为
+        # behavioral_role_fit。这里保留计数用于核对两类题各占多少轮。
         #
         # ⚠️ 为什么不写进 notes：notes 会经 _write_evaluation 进 FINAL_SUMMARY 的
         #    【需要说明的情况】，进而污染**给考生看的那段评语**。这是内部口径说明，
@@ -3914,6 +4251,28 @@ class InterviewSession:
         difficulty_mix: dict[str, int] = {}
         for r in scorable:
             difficulty_mix[r.difficulty] = difficulty_mix.get(r.difficulty, 0) + 1
+
+        scoring_evidence = {
+            "kb_score_enabled": config.A11_KB_EVIDENCE_SCORE,
+            "question_rag_enabled": config.A11_RAG,
+            "kg_enabled": config.A11_KG_SCORE,
+            "kb_rounds": [
+                r.round_no for r in scorable
+                if (r.score_detail or {}).get("evidence_used", {}).get("kb")
+            ],
+            "question_rag_rounds": [
+                r.round_no for r in scorable
+                if (r.rag_meta or {}).get("used")
+            ],
+            "kg_rounds": [
+                r.round_no for r in scorable
+                if (r.score_detail or {}).get("evidence_used", {}).get("kg")
+            ],
+            "objective_independent": bool(objective_rows) and all(
+                row.get("coverage_source") == "qwen_points"
+                for row in objective_rows
+            ),
+        }
 
         self.finished_at = time.time()
         self.phase = PHASE_DONE
@@ -3942,6 +4301,10 @@ class InterviewSession:
             "total_questions": self.total_questions,
             "completion_rate": completion_rate,
             "effective_rounds": len(effective_rounds),
+            "effective_rate": effective_rate,
+            "minimum_effective_rounds": minimum_effective_rounds,
+            "missing_dimensions": missing_dimensions,
+            "partial_reasons": partial_reasons,
             "score_status": score_status,
             "score_scope": "completed_rounds_only" if not final_score else "full_session",
             "final_score": final_score,
@@ -3950,7 +4313,12 @@ class InterviewSession:
             "difficulty_mix": difficulty_mix,
             "score_by_difficulty": score_by_difficulty,
             "difficulty_adjusted_score": difficulty_adjusted_total,
+            "difficulty_adjusted_meta": difficulty_adjusted_meta,
             "content_analysis": content_analysis,
+            "tech_objective_fusion": subjective["tech_objective_fusion"],
+            "objective_score_guard": objective_guard_rows,
+            "behavioral_role_fit": behavioral_role_fit,
+            "scoring_evidence": scoring_evidence,
             "score_breakdown": score_breakdown,
             "objective": objective,
             "subjective": subjective,
@@ -3996,7 +4364,9 @@ class InterviewSession:
                 for r in self.swapped_rounds
             ],
             "notes": notes,
-            # ---- 知识图谱 / RAG（加法；不参与任何评分、不进任何阈值）----
+            # ---- 知识图谱 / RAG 的可用性 ----
+            # 生成期检索与评分期证据是两个独立链路；是否进入评分见
+            # scoring_evidence。
             # ⚠️ blindspots 必须在上面那个评分 pool.map **之后**才算 ——
             #    它的 five_dim 直接来自 rec.five_dim。这是顺序硬约束。
             "kg_error": kg_st["kg_error"],
@@ -4039,8 +4409,14 @@ class InterviewSession:
             ],
             "difficulty_mix": difficulty_mix,
             "difficulty_adjusted_score": difficulty_adjusted_total,
+            "difficulty_adjusted_meta": difficulty_adjusted_meta,
             "score_by_difficulty": score_by_difficulty,
             "content_analysis": content_analysis,
+            "tech_objective_fusion": subjective["tech_objective_fusion"],
+            "objective_score_guard": objective_guard_rows,
+            "behavioral_role_fit": behavioral_role_fit,
+            "missing_dimensions": missing_dimensions,
+            "scoring_evidence": scoring_evidence,
             "score_breakdown": score_breakdown,
             "objective": objective,
             "subjective": subjective,
@@ -4058,26 +4434,34 @@ class InterviewSession:
                 "scoring_version": config.SCORING_VERSION,
                 "five_dim_avg": "0-5 分；null 表示该维度没有数据，不是 0 分",
                 "score_step": config.SCORE_STEP,
-                "score_status": "valid=完整正式分；partial=完成度或评分失败；invalid=没有有效评分",
+                "scoring_temperature": config.LLM_TEMPERATURE_SCORE,
+                "score_status": "valid=完整且全维有效；partial=有效回答、维度或评分不完整；invalid=没有有效评分",
                 "completion_rate": "questions_asked / total_questions",
+                "effective_rate": "有效回答轮次 / 计划题数",
                 "reranker_score": "得分点覆盖率信号，不是技术正确性结论",
                 "coverage_method": "full_then_window_max",
                 "total_score_100": "由 0-5 总分折算，仅用于展示",
-                "difficulty_adjusted_score": "easy/medium/hard 各自均分后再等权平均；"
-                                             "避免难度构成直接改变总均分",
-                "content_analysis": "从已有逐轮五维派生；knowledge_depth 与第一维共用证据，"
-                                    "不是独立模型指标",
+                "difficulty_adjusted_score": "按有效题数×难度证据权重加权；"
+                                             "观察难度不足2题时不参与",
+                "content_analysis": "从已有逐轮五维派生；技术水平只使用技术题，"
+                                    "行为题岗位胜任力单独统计",
                 "score_breakdown": "逐维评分依据、覆盖率与 followup_eval 明细；"
                                    "不新增第六维、不改五维权重",
-                "objective": "SiliconFlow 覆盖信号 + Qwen 逐主张事实核验；"
+                "objective": "Qwen 独立得分点覆盖 + 逐主张事实核验；"
                              "不评价表达和软技能",
                 "subjective": "DeepSeek 五维评分；覆盖逻辑、表达、应变和岗位匹配",
                 "combined": "客观与主观的未校准合成分，仅用于展示",
+                "tech_objective_fusion": "千问correctness仅按配置权重融合技术维；"
+                                         "行为素质题永不融合，默认权重0等待标注校准",
                 "code_review": "算法/编程题的附加检查，不新增维度、不改五维权重",
             },
             # ---- 新增：给 3 号评估用的完整明细 ----
             "completion_rate": completion_rate,
             "effective_rounds": len(effective_rounds),
+            "effective_rate": effective_rate,
+            "minimum_effective_rounds": minimum_effective_rounds,
+            "missing_dimensions": missing_dimensions,
+            "partial_reasons": partial_reasons,
             "score_status": score_status,
             "score_scope": "completed_rounds_only" if not final_score else "full_session",
             "final_score": final_score,

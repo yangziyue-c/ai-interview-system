@@ -214,13 +214,33 @@ def score_answers(answers: list[int]) -> dict:
         else:
             signal_narrative += " 主次方向区分较清楚，可以作为优先探索方向。"
 
+    ambiguous = margin < 5
+    shortlist = [
+        {"position": item["position"], "name": item["name"], "index": item["index"]}
+        for item in ranked[:2]
+    ]
+    if ambiguous:
+        guide = (
+            f"当前更接近「{shortlist[0]['name']}」和「{shortlist[1]['name']}」。"
+            "建议分别体验一场模拟面试，再决定优先方向。"
+        )
+    else:
+        guide = (
+            f"可以先用「{top['name']}」开始一场模拟面试，"
+            "系统会按该岗位的题目出题。"
+        )
+
     return {
-        "recommended": {
-            "position": top["position"],
-            "name": top["name"],
-            "index": top["index"],
-            "reason": POSITION_REASONS[top["position"]],
-        },
+        "decision": "ambiguous" if ambiguous else "clear",
+        "recommended": (
+            None if ambiguous else {
+                "position": top["position"],
+                "name": top["name"],
+                "index": top["index"],
+                "reason": POSITION_REASONS[top["position"]],
+            }
+        ),
+        "shortlist": shortlist,
         "alternatives": [
             {"position": item["position"], "name": item["name"], "index": item["index"]}
             for item in ranked[1:3]
@@ -233,5 +253,5 @@ def score_answers(answers: list[int]) -> dict:
         "narrative": narrative,
         "signal_label": signal_label,
         "signal_narrative": signal_narrative,
-        "guide": f"可以先用「{top['name']}」开始一场模拟面试，系统会按该岗位的题目出题。",
+        "guide": guide,
     }

@@ -60,21 +60,30 @@ async def get_growth(
         .where(*conditions)
         .order_by(Interview.finished_at.asc())
     )
-    points = [
-        GrowthPoint(
-            interview_id=interview.id,
-            position=interview.position,
-            engine=interview.engine or "",
-            finished_at=interview.finished_at,
-            total_score=report.total_score,
-            tech_score=report.tech_score,
-            logic_score=report.logic_score,
-            expression_score=report.expression_score,
-            adaptability_score=report.adaptability_score,
-            match_score=report.match_score,
-        ).model_dump()
-        for interview, report in result.all()
-    ]
+    points = []
+    for interview, report in result.all():
+        meta = report.engine_meta if isinstance(report.engine_meta, dict) else {}
+        if (
+            meta.get("score_status") == "unavailable"
+            or meta.get("score_available") is False
+        ):
+            # A failed scoring run is not a zero-score interview and must not
+            # distort the growth curve.
+            continue
+        points.append(
+            GrowthPoint(
+                interview_id=interview.id,
+                position=interview.position,
+                engine=interview.engine or "",
+                finished_at=interview.finished_at,
+                total_score=report.total_score,
+                tech_score=report.tech_score,
+                logic_score=report.logic_score,
+                expression_score=report.expression_score,
+                adaptability_score=report.adaptability_score,
+                match_score=report.match_score,
+            ).model_dump()
+        )
     return ok(points)
 
 
@@ -164,12 +173,18 @@ async def get_latest_suggestion(user: CurrentUser, db: DbSession) -> dict:
     if row is None:
         return ok(None)
     interview, report = row
+    meta = report.engine_meta if isinstance(report.engine_meta, dict) else {}
+    score_available = (
+        meta.get("score_status") != "unavailable"
+        and meta.get("score_available") is not False
+    )
     return ok(
         {
             "interview_id": interview.id,
             "position": interview.position,
             "finished_at": interview.finished_at,
-            "total_score": report.total_score,
+            "total_score": report.total_score if score_available else None,
+            "score_status": meta.get("score_status") or "valid",
             "suggestions": report.suggestions,
         }
     )

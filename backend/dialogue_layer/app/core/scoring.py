@@ -534,6 +534,58 @@ def _clean_score_detail(value, dim1_aliases: list[str]) -> dict:
     return empty
 
 
+def apply_score_guards(
+    dims: dict,
+    detail: dict | None,
+    code_check: dict | None,
+    *,
+    effective_answer: bool = True,
+) -> tuple[dict, dict]:
+    """Apply deterministic caps that the prompt alone cannot guarantee.
+
+    The model still owns the score inside the allowed band. This function only
+    enforces explicit contradiction/no-answer rules and keeps the original
+    values in ``score_guard`` for auditability.
+    """
+    original = {
+        d: round(float(v), 2)
+        for d, v in (dims or {}).items()
+        if isinstance(v, (int, float)) and not isinstance(v, bool)
+        and math.isfinite(float(v))
+    }
+    guarded = dict(original)
+    rules: list[str] = []
+    d0 = config.DIMENSIONS[0]
+    misconceptions = list((detail or {}).get("misconceptions") or [])
+
+    if not effective_answer:
+        for dim in config.DIMENSIONS:
+            if dim in guarded:
+                guarded[dim] = min(guarded[dim], 1.5)
+        rules.append("no_effective_answer<=1.5")
+    elif misconceptions:
+        if d0 in guarded:
+            guarded[d0] = min(guarded[d0], 2.5)
+        rules.append("explicit_misconception_tech<=2.5")
+
+    if (code_check or {}).get("applicable") is True and (
+        code_check or {}
+    ).get("correct") is False:
+        if d0 in guarded:
+            guarded[d0] = min(guarded[d0], 2.5)
+        rules.append("code_incorrect_tech<=2.5")
+
+    guarded = {d: round(max(0.0, min(5.0, v)), 2)
+               for d, v in guarded.items()}
+    meta = {
+        "applied": bool(rules),
+        "rules": rules,
+        "original": original,
+        "guarded": guarded,
+    }
+    return guarded, meta
+
+
 class LLMScorer:
     def __init__(self, llm):
         self.llm = llm
@@ -568,6 +620,8 @@ class LLMScorer:
             base_points=ctx.get("base_points") or "（无）",
             adv_points=ctx.get("adv_points") or "（无）",
             qa_block=ctx.get("qa_block", ""),
+            kb_evidence=ctx.get("kb_evidence") or ctx.get("rag_evidence") or "（无）",
+            kg_evidence=ctx.get("kg_evidence") or "（无）",
             # 传的是**一句话摘要**（含 reranker 失败时的说明），不是一个裸数字。
             # 原来这里是 ctx.get("reranker_score", 50) —— 缺省值 50 意味着
             # reranker 挂掉时会凭空空降一个「客观命中 50 分」给评分模型当真。
@@ -625,12 +679,32 @@ class LLMScorer:
             code_check["note"] = str(raw_cc.get("note") or "")[:200]
         score_detail = _clean_score_detail(
             data.get("score_detail"), config.dim1_labels())
+        dims, score_guard = apply_score_guards(
+            dims,
+            score_detail,
+            code_check,
+            effective_answer=bool(ctx.get("effective_answer", True)),
+        )
+        if score_guard.get("applied"):
+            score_detail["score_guard"] = score_guard
         result = {
             "five_dim": dims,
             "comment": str(data.get("comment", "") or "")[:200],
             "errors": errors[:20],
             "code_check": code_check,
             "score_detail": score_detail,
+            "score_guard": score_guard,
+            "evidence_used": {
+                "kb": bool(
+                    ctx.get("kb_evidence_available")
+                    or (ctx.get("kb_evidence") not in (None, "", "（无）"))
+                ),
+                # Question-bank RAG informs generation, never scoring.
+                "rag": False,
+                "question_rag_available": bool(ctx.get("question_rag_available")),
+                "kg": bool(ctx.get("kg_evidence_available")
+                           or ctx.get("kg_evidence")),
+            },
         }
         score_cache.put("subjective", cache_key, model, result)
         return result, None

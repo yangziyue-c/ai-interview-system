@@ -71,93 +71,44 @@ def normalize_summary(value: Any) -> dict:
 
 
 def score_adjustment(summary: dict | None) -> dict:
-    """Return bounded score deltas; low-confidence or incomplete data abstains."""
+    """Legacy compatibility entry point; camera data never changes scores."""
     body = normalize_summary(summary) if summary else dict(BODY_EMPTY)
-    result = {
+    return {
         "applied": False,
-        "reason": "no_body_data",
+        "mode": "display_only",
+        "reason": (
+            "body_data_available"
+            if body.get("available") and body.get("score") is not None
+            else "body_score_unavailable"
+        ),
         "communication_delta": 0.0,
         "adaptability_delta": 0.0,
         "body_score": body.get("score"),
         "confidence": body.get("confidence") or "low",
     }
-    if not body.get("available") or body.get("score") is None:
-        result["reason"] = "body_score_unavailable"
-        return result
-    if body.get("confidence") == "low":
-        result["reason"] = "low_confidence_abstain"
-        return result
-    quality = body.get("quality_status")
-    if quality and quality != "ready":
-        result["reason"] = "quality_not_ready"
-        return result
-    centered = max(-1.5, min(1.5, float(body["score"]) - 3.0))
-    factor = 1.0 if body["confidence"] == "high" else 0.5
-    communication = max(-0.30, min(0.30, centered * 0.20 * factor))
-    adaptability = max(-0.20, min(0.20, centered * 0.133333 * factor))
-    result.update({
-        "applied": True,
-        "reason": "bounded_weak_signal",
-        "communication_delta": round(communication, 2),
-        "adaptability_delta": round(adaptability, 2),
-    })
-    return result
+
+
+def display_only_adjustment(summary: dict | None) -> dict:
+    """Describe camera data without allowing it to change any five-dim score.
+
+    Body-language data is useful as candidate-facing feedback, but it is not a
+    valid measure of technical, logical, communication or adaptability ability.
+    Keeping the field in the payload preserves observability without turning a
+    device-dependent posture signal into score movement.
+    """
+    return score_adjustment(summary)
 
 
 def apply_to_five_dim(five_dim: dict | None, summary: dict | None) -> dict:
-    """Return a copy of five_dim with only the two permitted dimensions moved."""
-    data = dict(five_dim or {})
-    adjustment = score_adjustment(summary)
-    if not adjustment.get("applied") or not data:
-        return data
-    for dimension, key in (
-        ("沟通表达", "communication_delta"),
-        ("应变能力", "adaptability_delta"),
-    ):
-        current = _number(data.get(dimension))
-        if current is None:
-            continue
-        data[dimension] = round(max(0.0, min(5.0, current + adjustment[key])), 2)
-    return data
+    """Compatibility no-op: camera posture is feedback, never score movement."""
+    return dict(five_dim or {})
 
 
 def prompt_note(summary: dict | None) -> str:
-    """A short note for the scoring prompt; empty when no camera data exists."""
+    """Candidate-facing status only; never attach camera data to score prompts."""
     body = normalize_summary(summary) if summary else dict(BODY_EMPTY)
     if not body.get("used"):
         return ""
     if not body.get("available") or body.get("score") is None:
-        return (
-            "摄像头姿态数据不足或质量不合格，本项弃权；不得据此推测紧张、"
-            "自信、诚实、性格或技术能力。"
-        )
-    adjustment = score_adjustment(body)
-    metrics = body.get("metrics") or {}
-    fields = []
-    for key, label in (
-        ("presence_rate", "画面覆盖"),
-        ("head_stability", "头部稳定"),
-        ("shoulder_tilt_delta_deg", "肩线漂移"),
-        ("upper_body_motion", "上身移动"),
-        ("gesture_rate_per_min", "手势频率"),
-        ("framing_stability", "取景稳定"),
-    ):
-        value = _number(metrics.get(key))
-        if value is not None:
-            fields.append(f"{label} {value:g}")
-    if adjustment.get("applied"):
-        rule = (
-            "该信号最多只允许调整「沟通表达」±0.30、"
-            "「应变能力」±0.20；不得影响技术水平、逻辑思维、岗位匹配度。"
-        )
-        if adjustment["body_score"] >= 3:
-            rule += "它只能是同向旁证，禁止因为姿态平稳就替答案加分。"
-        else:
-            rule += "低质量、低可信或画面覆盖不足时必须弃权，不能据此扣分。"
-    else:
-        rule = "该信号不可用，本项弃权；不得转换成加分或扣分。"
-    detail = ("；".join(fields) + "。" if fields else "")
-    return (
-        f"摄像头姿态摘要：分 {body['score']:.2f}/5，可信度 {body['confidence']}。"
-        f"{detail}{rule}"
-    )
+        return "摄像头姿态数据不足或质量不合格，仅作展示，不参与评分。"
+    return "摄像头姿态数据仅作表达反馈，不进入五维评分。"

@@ -240,7 +240,10 @@ def health():
     extra["interview_modes"] = ["general", "resume"]
     extra["resume_enabled"] = config.A11_RESUME
     extra["resume_max_chars"] = config.RESUME_MAX_CHARS
-    extra["body_score_enabled"] = config.A11_BODY_SCORE
+    # Kept for wire compatibility. Camera posture is display-only in the
+    # current scoring stack even if the legacy environment flag is set.
+    extra["body_score_enabled"] = False
+    extra["body_display_only"] = True
     extra["probe_quality_guard_enabled"] = config.A11_PROBE_QUALITY_GUARD
 
     # `raw` 的暴露档位（同样只有一个键）。
@@ -263,6 +266,14 @@ def health():
     #    A11_RAG=0（借不到编码器）时也是「什么都没发生」，两者分不开。
     extra["rag_kb_enabled"] = config.A11_RAG_KB
     extra["kb_score_enabled"] = config.A11_KB_SCORE
+    extra["kb_evidence_score_enabled"] = config.A11_KB_EVIDENCE_SCORE
+    # Deprecated compatibility key. It refers to KB fact evidence, not the
+    # question-bank retrieval layer.
+    extra["rag_score_enabled"] = config.A11_KB_EVIDENCE_SCORE
+    extra["question_rag_enabled"] = config.A11_RAG
+    extra["kg_score_enabled"] = config.A11_KG_SCORE
+    extra["tech_objective_weight"] = config.TECH_OBJECTIVE_WEIGHT
+    extra["scoring_temperature"] = config.LLM_TEMPERATURE_SCORE
 
     # 2026-09-25 的三条「素材怎么被用」开关 —— 各一个**单键**，理由同上两条。
     # ⚠️ 为什么这次尤其必须上：同题两臂对照的 `old` 臂与 `new` 臂的差异**全在这三个键上**，

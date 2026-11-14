@@ -5,6 +5,8 @@
 （见 backend/dialogue_layer/README-集成说明.md）。
 """
 import uuid
+from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 from httpx import AsyncClient
@@ -15,6 +17,7 @@ from app.config import settings
 from app.core.engine_report import build_engine_meta, build_engine_report
 from app.database import async_session
 from app.models import QARecord, Report
+from app.schemas.report import report_out
 
 BASE = "/api/v1"
 
@@ -158,6 +161,9 @@ def test_engine_report_fills_missing_dimension_with_average():
     payload["five_dim_avg"]["应变能力"] = None      # 引擎的 null 是「没有数据」，不是 0 分
     report = build_engine_report("backend", [], payload)
     assert report["adaptability_score"] == 75.0     # (80+60+90+70)/4，不是 0
+    meta = build_engine_meta(payload)
+    assert meta["missing_dimensions"] == ["应变能力"]
+    assert meta["imputed_dimensions"] == ["应变能力"]
 
 
 def test_engine_report_ignores_out_of_range_and_bool():
@@ -168,6 +174,9 @@ def test_engine_report_ignores_out_of_range_and_bool():
     # 两者都按缺失处理 → 被其余三维（90 / 40 / 70）的均值 66.7 回填
     assert report["tech_score"] == 66.7
     assert report["logic_score"] == 66.7
+    assert set(build_engine_meta(payload)["missing_dimensions"]) == {
+        "技术水平", "逻辑思维",
+    }
 
 
 def test_engine_report_falls_back_when_nothing_scored():
@@ -176,10 +185,94 @@ def test_engine_report_falls_back_when_nothing_scored():
     payload["total_score_100"] = None
     qa_list = [{"round": 1, "question": "题目", "answer": "我的回答" * 20, "audio_url": None}]
     report = build_engine_report("backend", qa_list, payload)
+    meta = build_engine_meta(payload)
+    # DB 列仍非空，写 0.0 只是持久化占位；API 会按 score_available=false
+    # 统一输出 null，不能按回答长度伪造可比较分数。
     for key in _DIM_FIELDS:
-        assert 0.0 <= report[key] <= 100.0   # 兜底报告也必须满足 NOT NULL 与取值范围
-    assert report["summary"]
+        assert report[key] == 0.0
+    assert meta["score_status"] == "unavailable"
+    assert meta["score_available"] is False
+    assert "未完成" in report["summary"]
     assert report["suggestions"]
+
+
+def test_engine_report_rejects_out_of_range_total():
+    payload = _finish_payload()
+    payload["total_score_100"] = 9999
+    report = build_engine_report("backend", [], payload)
+    assert 0.0 <= report["total_score"] <= 100.0
+
+
+def test_report_out_hides_unavailable_and_missing_dimensions():
+    report = SimpleNamespace(
+        id=1,
+        interview_id=2,
+        total_score=0.0,
+        tech_score=70.0,
+        logic_score=70.0,
+        expression_score=70.0,
+        adaptability_score=70.0,
+        match_score=70.0,
+        summary="评分未完成",
+        strengths=[],
+        weaknesses=[],
+        suggestions=[],
+        engine_meta={
+            "score_status": "unavailable",
+            "score_available": False,
+            "partial": True,
+            "missing_dimensions": ["技术水平"],
+        },
+        digest=None,
+        review=None,
+        created_at=datetime.now(),
+    )
+    interview = SimpleNamespace(position="backend")
+    out = report_out(report, interview, [])
+    assert out.score_status == "unavailable"
+    assert out.score_available is False
+    assert out.total_score is None
+    assert out.tech_score is None
+    assert all(
+        getattr(out, field) is None
+        for field in (
+            "logic_score", "expression_score",
+            "adaptability_score", "match_score",
+        )
+    )
+
+
+def test_report_out_returns_null_for_only_missing_dimension():
+    report = SimpleNamespace(
+        id=1,
+        interview_id=2,
+        total_score=76.0,
+        tech_score=76.0,
+        logic_score=80.0,
+        expression_score=72.0,
+        adaptability_score=74.0,
+        match_score=78.0,
+        summary="评分不完整",
+        strengths=[],
+        weaknesses=[],
+        suggestions=[],
+        engine_meta={
+            "score_status": "partial",
+            "score_available": True,
+            "partial": True,
+            "missing_dimensions": ["技术水平"],
+            "partial_reasons": ["missing_dimensions"],
+        },
+        digest=None,
+        review=None,
+        created_at=datetime.now(),
+    )
+    out = report_out(report, SimpleNamespace(position="backend"), [])
+    assert out.score_status == "partial"
+    assert out.score_available is True
+    assert out.total_score == 76.0
+    assert out.tech_score is None
+    assert out.logic_score == 80.0
 
 
 def test_engine_meta_keeps_notes_out_of_summary():

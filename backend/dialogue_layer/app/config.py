@@ -185,6 +185,22 @@ def dim1_labels() -> tuple[str, ...]:
 # 面试流程参数
 # ============================================================
 TOTAL_QUESTIONS = 10
+# A session is only a "full" score when every planned question produced at
+# least one effective answer. Lower completion remains usable as a partial
+# report, but it must never be presented as a complete measurement.
+MIN_EFFECTIVE_RATE = float(os.environ.get("A11_MIN_EFFECTIVE_RATE", "0.8"))
+MIN_EFFECTIVE_RATE = max(0.0, min(1.0, MIN_EFFECTIVE_RATE))
+
+# Difficulty-adjusted scores use fixed evidence weights rather than treating
+# three easy rounds and two hard rounds as equally informative. The raw
+# total_score remains unchanged; this is a separate comparison view.
+DIFFICULTY_SCORE_WEIGHTS = {
+    "easy": float(os.environ.get("A11_DIFF_EASY_WEIGHT", "0.8")),
+    "medium": float(os.environ.get("A11_DIFF_MEDIUM_WEIGHT", "1.0")),
+    "hard": float(os.environ.get("A11_DIFF_HARD_WEIGHT", "1.2")),
+}
+MIN_DIFFICULTY_SAMPLES = int(
+    os.environ.get("A11_MIN_DIFFICULTY_SAMPLES", "2"))
 
 # (阶段名, 该阶段题数, 该阶段允许的难度值)
 # 「难度等级」在主库里的真实取值就是这几个英文串
@@ -215,9 +231,23 @@ SCORE_MAX_WINDOWS = int(os.environ.get("A11_SCORE_MAX_WINDOWS", "12"))
 # 3 = 两阶段覆盖率 + 五维范围校验 + 难度/内容派生报告 + 代码附加检查；
 # 4 = 五维细粒度评分（0.1 步进）+ 逐维证据/可信度 + 覆盖率细化；
 # 5 = 五维细粒度评分（默认 0.05 步进）+ 逐维证据/可信度 + 覆盖率细化；
-# 6 = L3 工程追问 + 置信度加权合成分。
+# 6 = L3 工程追问 + 置信度加权合成分；
+# 7 = 摄像头退出五维、千问覆盖率独立、RAG/KG 证据通道与
+#     技术维可配置融合；
+# 8 = 技术/行为第一维分离、有效回答完整度、统一覆盖口径、
+#     确定性分数护栏和难度调整口径修正。
 # 真跑对照、人工标注和历史报告都靠它区分口径。
-SCORING_VERSION = int(os.environ.get("A11_SCORING_VERSION", "6"))
+SCORING_VERSION = int(os.environ.get("A11_SCORING_VERSION", "8"))
+
+# How much Qwen's fact-verification score may contribute to the technical
+# dimension. It is intentionally zero until a held-out annotation run selects
+# and locks the weight. Other dimensions never receive objective fusion.
+try:
+    TECH_OBJECTIVE_WEIGHT = float(
+        os.environ.get("A11_TECH_OBJECTIVE_WEIGHT", "0"))
+except ValueError:
+    TECH_OBJECTIVE_WEIGHT = 0.0
+TECH_OBJECTIVE_WEIGHT = max(0.0, min(1.0, TECH_OBJECTIVE_WEIGHT))
 # 结束面试时并行评分的工作线程数。每轮主观线与客观线是独立任务；
 # 从 4 提到 8 只改变等待结构，不改变任何评分公式或阈值。
 A11_SCORE_WORKERS = int(os.environ.get("A11_SCORE_WORKERS", "10"))
@@ -416,7 +446,7 @@ DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.co
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 
 LLM_TEMPERATURE = 0.6      # 对话（要有人味）
-LLM_TEMPERATURE_SCORE = 0.2  # 评分（要稳定）
+LLM_TEMPERATURE_SCORE = 0.0  # 正式评分必须可复现
 LLM_TIMEOUT = float(os.environ.get("LLM_TIMEOUT", "60"))
 LLM_MAX_RETRIES = int(os.environ.get("LLM_MAX_RETRIES", "2"))
 
@@ -829,11 +859,20 @@ KB_PROBE_TOP_N = int(os.environ.get("A11_KB_PROBE_TOP_N", "3"))
 # RAG question-angle hint. The retrieved text is already head-only, but this
 # switch controls whether the angle is attached to the probe plan.
 A11_RAG_ANGLE = os.environ.get("A11_RAG_ANGLE", "1") == "1"
-# Experimental scoring evidence channel. It is intentionally off by default:
-# the first calibration showed that raw KB snippets made the objective prompt
-# slower and slightly less accurate. Keep the channel available for the next
-# atomic-evidence experiment without changing the validated score by default.
-A11_KB_SCORE = os.environ.get("A11_KB_SCORE", "0") == "1"
+# Scoring-time evidence switches. `A11_KB_EVIDENCE_SCORE` is the canonical
+# switch: it injects knowledge-base passages into fact verification. The old
+# A11_KB_SCORE / A11_RAG_SCORE names remain accepted so existing ablation
+# scripts keep working, but they no longer mean question-bank RAG.
+_kb_score_env = (
+    os.environ.get("A11_KB_EVIDENCE_SCORE")
+    or os.environ.get("A11_KB_SCORE")
+    or os.environ.get("A11_RAG_SCORE")
+    or "0"
+)
+A11_KB_EVIDENCE_SCORE = _kb_score_env == "1"
+A11_KB_SCORE = A11_KB_EVIDENCE_SCORE
+A11_RAG_SCORE = A11_KB_EVIDENCE_SCORE  # deprecated alias
+A11_KG_SCORE = os.environ.get("A11_KG_SCORE", "0") == "1"
 
 # 每个追问轮最多挂几条、每条截多长、整个块硬顶多少字。
 # ⚠️ 这三个数是**定的，不是量出来的**（与 `KB_MIN_SCORE` 那种标定值不同）：
@@ -1114,10 +1153,11 @@ INTRO_MAX_CHARS = int(os.environ.get("A11_INTRO_MAX_CHARS", "1200"))
 A11_RESUME = os.environ.get("A11_RESUME", "1") == "1"
 RESUME_MAX_CHARS = int(os.environ.get("A11_RESUME_MAX_CHARS", "6000"))
 
-# Camera posture is opt-in in the browser. When enabled, its numeric summary
-# may move only communication and adaptability by the hard bounds enforced in
-# app/core/body_language.py. No camera data means no adjustment.
-A11_BODY_SCORE = os.environ.get("A11_BODY_SCORE", "1") == "1"
+# Camera posture is candidate-facing feedback only. It is deliberately excluded
+# from the five-dimension score: posture is heavily affected by camera angle,
+# lighting, device and personal habits, so it is not a comparable ability
+# measure. The legacy environment key remains accepted but has no score effect.
+A11_BODY_SCORE = os.environ.get("A11_BODY_SCORE", "0") == "1"
 
 # Reject descriptor-only interviewer replies such as "特殊情况处理？".
 # The guard buffers the first few streaming characters and replaces a weak
