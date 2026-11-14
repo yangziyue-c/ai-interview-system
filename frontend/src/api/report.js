@@ -183,6 +183,8 @@ export const getSharedReport = async (code) => {
             missing_dimensions: data.missing_dimensions || [],
             partial_reasons: data.partial_reasons || [],
             effective_rate: data.effective_rate ?? 1,
+            behavioral_role_fit: data.behavioral_role_fit ?? null,
+            review: data.review || null,
             expression_analysis: {
                 available: true,
                 voice: { available: true, avg_chars_per_min: 180, total_pauses: 2, total_fillers: 1, feedback: [] },

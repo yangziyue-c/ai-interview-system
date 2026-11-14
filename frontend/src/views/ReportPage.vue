@@ -229,6 +229,12 @@
           <span>{{ expressionAnalysis.notice || '本场没有语音或体态数据' }}</span>
         </div>
       </div>
+
+      <ReviewSummary
+        v-if="!loading && review"
+        :review="review"
+        class="review-section animate-card"
+      />
     </div>
 
     <!-- 逐题回顾 -->
@@ -359,6 +365,7 @@ import { useRouter, useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import { useMediaQuery } from '@/utils/useMediaQuery'
 import AppIcon from '@/components/AppIcon.vue'
+import ReviewSummary from '@/components/ReviewSummary.vue'
 import {
   getReport,
   getGrowth,
@@ -407,6 +414,7 @@ const expressionAnalysis = ref(null)
 const objectiveAudit = ref(null)
 const scoringEvidence = ref(null)
 const techFusion = ref(null)
+const review = ref(null)
 
 const qaReviewList = ref([])
 
@@ -893,6 +901,7 @@ onMounted(async () => {
     techFusion.value = report.tech_objective_fusion || null
     behavioralRoleFit.value = report.behavioral_role_fit ?? null
     objectiveScoreGuard.value = report.objective_score_guard || []
+    review.value = report.review || null
     qaReviewList.value = report.qa_review || []
     qaCount.value =
       qaReviewList.value.length ||
@@ -1017,6 +1026,7 @@ onUnmounted(() => {
 .expr-feedback li { font-size: var(--text-sm); line-height: var(--leading-relaxed); color: var(--text-secondary); }
 .expr-notice-bar { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); background: var(--gray-50); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); font-size: var(--text-sm); color: var(--text-tertiary); }
 .expr-notice-bar :deep(.app-icon) { color: var(--text-disabled); flex-shrink: 0; }
+.review-section { margin-top: var(--space-4); }
 .qa-review-section { margin-top: var(--space-5); padding: var(--space-5); background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); }
 .qa-review-header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
 .qa-review-title { margin: 0; font-size: var(--text-base); font-weight: var(--font-bold); color: var(--text-primary); letter-spacing: var(--tracking-tight); }
