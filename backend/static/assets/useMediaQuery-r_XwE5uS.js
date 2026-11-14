@@ -1,0 +1,1 @@
+import{C as e,P as t,S as n}from"./_plugin-vue_export-helper-CHIF6JTv.js";var r=r=>{let i=t(typeof window<`u`&&window.matchMedia(r).matches),a=null,o=e=>{i.value=e.matches};return n(()=>{a=window.matchMedia(r),i.value=a.matches,a.addEventListener(`change`,o)}),e(()=>{a&&a.removeEventListener(`change`,o)}),i};export{r as t};
